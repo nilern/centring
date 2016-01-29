@@ -1,0 +1,10 @@
+
+(def (dec n)
+  (- n 1))
+
+(def (factorial n)
+  (if (< n 1)
+    1
+    (* n (factorial (dec n)))))
+
+(writeLn (number->String (factorial 5)))
