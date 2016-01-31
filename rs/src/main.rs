@@ -1,6 +1,8 @@
-use std::ops::Index;
+use std::ops::{Index, IndexMut, Range};
 use std::mem::transmute;
 use std::fmt;
+use std::io;
+use std::io::stdout;
 
 // Examine tags of Words:
 const INT_MASK: usize = 0b1;
@@ -22,13 +24,20 @@ const SPECIAL_BITS: usize = 0b1110;
 const INT_SHIFT: usize = 1;
 const BOOL_SHIFT: usize = 4;
 const CHAR_SHIFT: usize = 8;
+const BLOCK_SHIFT: usize = 2;
 
 // Bool representation:
 const TRUE: usize = 0b10110;
 const FALSE: usize = 0b00110;
 
 // Examine tags of block objects:
-const BH_TYPE_BITS: usize = 0xf00000000000000;
+// (these only work on 64-bit architectures)
+const BH_TYPE_MASK: usize = 0x0f00000000000000;
+const BH_LENGTH_MASK: usize = 0x00ffffffffffffff;
+const BH_SHIFT: usize = 56;
+
+// Type tags of block objects:
+const ARRAY_BITS: usize = 0;
 
 #[derive(Debug)]
 struct Word(usize);
@@ -43,7 +52,26 @@ struct GcHeap {
 impl Index<usize> for GcHeap {
     type Output = Word;
     fn index<'a>(&'a self, index: usize) -> &'a Word {
-        & self.fromspace[index >> 2]
+        & self.fromspace[index]
+    }
+}
+
+impl IndexMut<usize> for GcHeap {
+    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Word {
+        &mut self.fromspace[index]
+    }
+}
+
+impl Index<Range<usize>> for GcHeap {
+    type Output = [Word];
+    fn index<'a>(&'a self, idxs: Range<usize>) -> &'a [Word] {
+        & self.fromspace[idxs]
+    }
+}
+
+impl IndexMut<Range<usize>> for GcHeap {
+    fn index_mut<'a>(&'a mut self, idxs: Range<usize>) -> &'a mut [Word] {
+        &mut self.fromspace[idxs]
     }
 }
 
@@ -104,16 +132,37 @@ impl Word {
 
 //// Block Values
 
+#[derive(Debug)]
 enum BlockValue<'a> {
-    Array(&'a mut [Word])
+    Array(&'a [Word])
 }
 
 use BlockValue::*;
 
+impl Word {
+    fn block_val<'a>(& self, heap: &'a GcHeap) -> Option<BlockValue<'a>> {
+        let Word(w) = *self;
+        if w & LOW_TAG_MASK == BLOCK_BITS {
+            let Word(header) = heap[w >> BLOCK_SHIFT];
+            let len = header & BH_LENGTH_MASK;
+            match header & BH_TYPE_MASK {
+                ARRAY_BITS => Some(Array(& heap[(w + 1)..(w + 1 + len)])),
+                bp => panic!("Unimplemented block tag `{:b}`!", bp >> BH_SHIFT)
+            }
+        } else {
+            None
+        }
+    }
+}
+
 //// Print
 
-impl fmt::Display for ImmediateValue {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+trait Write {
+    fn write(&self, heap: & GcHeap, f: &mut io::Write) -> io::Result<()>;
+}
+
+impl Write for ImmediateValue {
+    fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
         match *self {
             Int(i)  => write!(f, "{}", i),
             Bool(b) => if b { write!(f, "True") } else { write!(f, "False") },
@@ -122,21 +171,49 @@ impl fmt::Display for ImmediateValue {
     }
 }
 
+impl<'a> Write for BlockValue<'a> {
+    fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
+        match *self {
+            Array(ref ws) => {
+                try!(write!(f, "#.(core::Array"));
+                for w in ws.iter() {
+                    try!(write!(f, " "));
+                    try!(w.imm_val().unwrap().write(heap, f));
+                }
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+fn writeln<T>(v: &T, heap: &GcHeap, f: &mut io::Write) -> io::Result<()>
+    where T: Write {
+    try!(v.write(heap, f));
+    io::Write::write(f, b"\n").map(|_| ())
+}
+
 //// Eval
 
-fn eval(expr: Word) -> Word {
-    if let Some(_) = expr.imm_val() {
+fn eval(expr: Word, heap: & GcHeap) -> Word {
+    if expr.imm_val().is_some() || expr.block_val(heap).is_some() {
         expr
     } else {
-        panic!()
+        unreachable!() // No such bit patterns
     }
 }
 
 //// Main
 
 fn main() {
-//     let gc_heap = GcHeap { fromspace: vec![], tospace: vec![] };
+    let gc_heap = GcHeap {
+        fromspace: vec![Word(ARRAY_BITS | 2), Word(TRUE), Word(3)],
+        tospace: vec![]
+    };
+    let mut out = &mut stdout();
 
     let w: Word = From::from(true);
-    println!("{}", eval(w).imm_val().unwrap());
+    writeln(&eval(w, &gc_heap).imm_val().unwrap(), &gc_heap, out);
+
+    let aw = Word(0);
+    writeln(&aw.block_val(&gc_heap).unwrap(), &gc_heap, out);
 }
