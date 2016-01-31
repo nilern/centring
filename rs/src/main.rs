@@ -134,7 +134,36 @@ impl Word {
 
 #[derive(Debug)]
 enum BlockValue<'a> {
-    Array(&'a [Word])
+    BuiltinType {
+        name: &'a Word
+    },
+    RecordType {
+        name: &'a Word,
+        field_names: &'a [Word]
+    },
+    EnumType {
+        name: &'a Word,
+        shards: &'a [Word]
+    },
+
+    EnumShard {
+        name: &'a Word,
+        parent_type: &'a Word,
+        field_names: &'a [Word]
+    },
+
+    Record {
+        typ: &'a Word,
+        field_values: &'a [Word]
+    },
+    Tagged {
+        shard: &'a Word,
+        field_values: &'a [Word]
+    },
+
+    Array {
+        data: &'a [Word]
+    }
 }
 
 use BlockValue::*;
@@ -146,7 +175,7 @@ impl Word {
             let Word(header) = heap[w >> BLOCK_SHIFT];
             let len = header & BH_LENGTH_MASK;
             match header & BH_TYPE_MASK {
-                ARRAY_BITS => Some(Array(& heap[(w + 1)..(w + 1 + len)])),
+                ARRAY_BITS => Some(Array { data: &heap[(w + 1)..(w + 1 + len)] }),
                 bp => panic!("Unimplemented block tag `{:b}`!", bp >> BH_SHIFT)
             }
         } else {
@@ -174,7 +203,7 @@ impl Write for ImmediateValue {
 impl<'a> Write for BlockValue<'a> {
     fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
         match *self {
-            Array(ref ws) => {
+            Array { data: ref ws } => {
                 try!(write!(f, "#.(core::Array"));
                 for w in ws.iter() {
                     try!(write!(f, " "));
@@ -182,6 +211,7 @@ impl<'a> Write for BlockValue<'a> {
                 }
                 write!(f, ")")
             }
+            _ => panic!()
         }
     }
 }
