@@ -88,7 +88,7 @@ use ImmediateValue::*;
 
 impl From<isize> for Word {
     fn from(i: isize) -> Word {
-        unsafe { Word(transmute::<isize, usize>(i << INT_SHIFT) | INT_BIT) }
+        Word((i << INT_SHIFT) as usize | INT_BIT)
     }
 }
 
@@ -108,7 +108,7 @@ impl Word {
     fn imm_val(&self) -> Option<ImmediateValue> {
         let Word(w) = *self;
         if w & INT_MASK == INT_BIT {
-            unsafe { Some(Int(transmute::<usize, isize>(w) >> INT_SHIFT)) }
+            Some(Int((w as isize) >> INT_SHIFT))
         } else {
             match w & LOW_TAG_MASK {
                 IMMEDIATE_BITS => match w & TAG_MASK {
@@ -211,7 +211,7 @@ fn main() {
     };
     let mut out = &mut stdout();
 
-    let w: Word = From::from(true);
+    let w: Word = From::from(-3);
     writeln(&eval(w, &gc_heap).imm_val().unwrap(), &gc_heap, out);
 
     let aw = Word(0);
