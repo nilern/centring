@@ -147,8 +147,8 @@ enum BlockValue<'a> {
     },
 
     EnumShard {
-        name: &'a Word,
         parent_type: &'a Word,
+        name: &'a Word,
         field_names: &'a [Word]
     },
 
