@@ -40,7 +40,7 @@ const BH_SHIFT: usize = 56;
 const ARRAY_BITS: usize = 0;
 
 #[derive(Debug)]
-struct Word(usize);
+pub struct Word(usize);
 
 //// Garbage-collected Heap
 
@@ -72,6 +72,22 @@ impl Index<Range<usize>> for GcHeap {
 impl IndexMut<Range<usize>> for GcHeap {
     fn index_mut<'a>(&'a mut self, idxs: Range<usize>) -> &'a mut [Word] {
         &mut self.fromspace[idxs]
+    }
+}
+
+impl GcHeap {
+    fn alloc(&mut self, v: BlockValue) -> Word {
+        match v {
+            BlockValue::Array(ws) => {
+                let res = From::from(self.fromspace.len());
+                let header = Word(ws.len() & BH_LENGTH_MASK | ARRAY_BITS);
+                self.fromspace.push(header);
+                for w in ws {
+                    self.fromspace.push(w)
+                }
+                res
+            }
+        }
     }
 }
 
@@ -132,8 +148,26 @@ impl Word {
 
 //// Block Values
 
+impl From<usize> for Word {
+    fn from(u: usize) -> Word {
+        Word(u << BLOCK_SHIFT)
+    }
+}
+
+impl<'a> From<&'a Word> for usize {
+    fn from(word: &'a Word) -> usize {
+        let Word(w) = *word;
+        w >> BLOCK_SHIFT
+    }
+}
+
 #[derive(Debug)]
-enum BlockValue<'a> {
+enum BlockValue {
+    Array(Vec<Word>)
+}
+
+#[derive(Debug)]
+enum BlockRef<'a> {
     BuiltinType {
         name: &'a Word
     },
@@ -166,16 +200,20 @@ enum BlockValue<'a> {
     }
 }
 
-use BlockValue::*;
+use BlockRef::*;
 
 impl Word {
-    fn block_val<'a>(& self, heap: &'a GcHeap) -> Option<BlockValue<'a>> {
+    fn block_val<'a>(& self, heap: &'a GcHeap) -> Option<BlockRef<'a>> {
         let Word(w) = *self;
         if w & LOW_TAG_MASK == BLOCK_BITS {
-            let Word(header) = heap[w >> BLOCK_SHIFT];
+            let hdri: usize = From::from(self);
+            let Word(header) = heap[hdri];
             let len = header & BH_LENGTH_MASK;
             match header & BH_TYPE_MASK {
-                ARRAY_BITS => Some(Array { data: &heap[(w + 1)..(w + 1 + len)] }),
+                ARRAY_BITS => {
+                    let bdi = hdri + 1;
+                    Some(Array { data: &heap[bdi..(bdi + len)] })
+                },
                 bp => panic!("Unimplemented block tag `{:b}`!", bp >> BH_SHIFT)
             }
         } else {
@@ -200,14 +238,19 @@ impl Write for ImmediateValue {
     }
 }
 
-impl<'a> Write for BlockValue<'a> {
+impl<'a> Write for BlockRef<'a> {
     fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
         match *self {
             Array { data: ref ws } => {
                 try!(write!(f, "#.(core::Array"));
                 for w in ws.iter() {
                     try!(write!(f, " "));
-                    try!(w.imm_val().unwrap().write(heap, f));
+                    if let Some(iv) = w.imm_val() {
+                        try!(iv.write(heap, f));
+                    } else {
+                        // unwrap() can't panic since .*_val would have already:
+                        try!(w.block_val(heap).unwrap().write(heap, f))
+                    }
                 }
                 write!(f, ")")
             }
@@ -235,15 +278,18 @@ fn eval(expr: Word, heap: & GcHeap) -> Word {
 //// Main
 
 fn main() {
-    let gc_heap = GcHeap {
-        fromspace: vec![Word(ARRAY_BITS | 2), Word(TRUE), Word(3)],
+    let mut gc_heap = GcHeap {
+        fromspace: vec![],
         tospace: vec![]
     };
     let mut out = &mut stdout();
 
-    let w: Word = From::from(-3);
+    let w: Word = From::from(-3isize);
     writeln(&eval(w, &gc_heap).imm_val().unwrap(), &gc_heap, out);
 
-    let aw = Word(0);
+    let arr0 = BlockValue::Array(vec![From::from(2isize)]);
+    let aw0 = gc_heap.alloc(arr0);
+    let arr1 = BlockValue::Array(vec![From::from(true), From::from(1isize), aw0]);
+    let aw = gc_heap.alloc(arr1);
     writeln(&aw.block_val(&gc_heap).unwrap(), &gc_heap, out);
 }
