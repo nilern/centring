@@ -325,16 +325,14 @@ impl Parser {
     }
 
     fn parse_bool(&mut self) -> Result<bool, ()> {
-        match self.peek() {
-            Some(c) if c == '#' => {
-                self.pos += 1;
-                match self.peek() {
-                    Some('t') => { self.pos += 1; Ok(true)},
-                    Some('f') => { self.pos += 1; Ok(false)},
-                    _ => { self.pos -= 1; Err(()) }
-                }
-            },
-            _ => Err(())
+        if self.consume_if(|c| c == '#').is_some() {
+            match self.peek() {
+                Some('t') => { self.pos += 1; Ok(true)},
+                Some('f') => { self.pos += 1; Ok(false)},
+                _ => { self.pos -= 1; Err(()) }
+            }
+        } else {
+            Err(())
         }
     }
 }
