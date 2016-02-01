@@ -1,6 +1,5 @@
 use std::ops::{Index, IndexMut, Range};
 use std::mem::transmute;
-use std::fmt;
 use std::io;
 use std::io::stdout;
 
@@ -232,7 +231,7 @@ impl Write for ImmediateValue {
     fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
         match *self {
             Int(i)  => write!(f, "{}", i),
-            Bool(b) => if b { write!(f, "True") } else { write!(f, "False") },
+            Bool(b) => if b { write!(f, "#t") } else { write!(f, "#f") },
             Char(c) => write!(f, "{}", c),
         }
     }
@@ -265,6 +264,91 @@ fn writeln<T>(v: &T, heap: &GcHeap, f: &mut io::Write) -> io::Result<()>
     io::Write::write(f, b"\n").map(|_| ())
 }
 
+//// Read
+
+struct Parser {
+    pos: usize,
+    input: String
+}
+
+impl Parser {
+    fn peek(&self) -> Option<char> {
+        self.input[self.pos..].chars().next()
+    }
+
+    fn char(&mut self) -> Option<char> {
+        let mut iter = self.input[self.pos..].char_indices();
+        let res = iter.next().map(|(_, c)| c);
+        self.pos += iter.next().unwrap_or((1, ' ')).0;
+        res
+    }
+
+    fn eof(&self) -> bool {
+        self.pos >= self.input.len()
+    }
+
+    // Conditions
+
+    fn starts_with(&self, s: &str) -> bool {
+        self.input[self.pos ..].starts_with(s)
+    }
+
+    fn consume_if<F>(&mut self, pred: F) -> Option<char>
+        where F: Fn(char) -> bool {
+        self.peek().and_then(|c| if pred(c) { self.pos += 1; Some(c) } else { None })
+    }
+
+    fn consume_while<F>(&mut self, pred: F) -> String
+        where F: Fn(char) -> bool {
+        let mut res = String::new();
+        loop {
+            match self.peek() {
+                Some(c) if pred(c) => res.push(self.char().unwrap()),
+                _ => return res
+            }
+        }
+    }
+
+    // Immediate values
+
+    fn parse_isize(&mut self) -> Result<isize, ()> {
+        self.consume_while(|c| c.is_digit(10)).parse::<isize>().or(Err(()))
+    }
+
+
+    fn parse_char(&mut self) -> Result<char, ()> {
+        if self.consume_if(|c| c == '\\').is_some() {
+            self.consume_if(|c| !c.is_whitespace()).ok_or(())
+        } else {
+            Err(())
+        }
+    }
+
+    fn parse_bool(&mut self) -> Result<bool, ()> {
+        match self.peek() {
+            Some(c) if c == '#' => {
+                self.pos += 1;
+                match self.peek() {
+                    Some('t') => { self.pos += 1; Ok(true)},
+                    Some('f') => { self.pos += 1; Ok(false)},
+                    _ => { self.pos -= 1; Err(()) }
+                }
+            },
+            _ => Err(())
+        }
+    }
+}
+
+fn read(cs: &str, heap: &mut GcHeap) -> Result<Word, ()> {
+    let mut p = Parser { pos: 0, input: cs.to_string() };
+    match p.peek() {
+        Some(c) if c.is_digit(10) => p.parse_isize().map(From::from),
+        Some('\\') => p.parse_char().map(From::from),
+        Some('#') => p.parse_bool().map(From::from),
+        _ => Err(())
+    }
+}
+
 //// Eval
 
 fn eval(expr: Word, heap: & GcHeap) -> Word {
@@ -292,4 +376,10 @@ fn main() {
     let arr1 = BlockValue::Array(vec![From::from(true), From::from(1isize), aw0]);
     let aw = gc_heap.alloc(arr1);
     writeln(&aw.block_val(&gc_heap).unwrap(), &gc_heap, out);
+
+    //
+
+    let input = String::from("#f");
+    writeln(&read(&input, &mut gc_heap).unwrap().imm_val().unwrap(),
+            &gc_heap, out);
 }
