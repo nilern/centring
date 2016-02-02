@@ -2,6 +2,7 @@ use std::ops::{Index, IndexMut, Range};
 use std::mem::transmute;
 use std::io;
 use std::io::stdout;
+use std::collections::HashMap;
 
 // Examine tags of Words:
 const INT_MASK: usize = 0b1;
@@ -40,7 +41,7 @@ const ARRAY_BITS: usize = 0;
 const SYMBOL_BITS: usize = 0x0100000000000000;
 const STRING_BITS: usize = 0x0200000000000000;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Word(usize);
 
 //// Garbage-collected Heap
@@ -48,7 +49,8 @@ pub struct Word(usize);
 #[derive(Debug)]
 struct GcHeap {
     fromspace: Vec<Word>,
-    tospace: Vec<Word>
+    tospace: Vec<Word>,
+    symtab: HashMap<BlockValue, Word>
 }
 
 impl Index<usize> for GcHeap {
@@ -78,6 +80,14 @@ impl IndexMut<Range<usize>> for GcHeap {
 }
 
 impl GcHeap {
+    fn new() -> GcHeap {
+        GcHeap {
+            fromspace: vec![],
+            tospace: vec![],
+            symtab: HashMap::new()
+        }
+    }
+
     fn alloc(&mut self, v: BlockValue) -> Word {
         match v {
             BlockValue::Array(ws) => {
@@ -109,6 +119,15 @@ impl GcHeap {
                 res
             }
         }
+    }
+
+    fn intern(&mut self, v: BlockValue) -> Word {
+        if let Some(w) = self.symtab.get(&v) {
+            return w.clone()
+        }
+        let w = self.alloc(v.clone());
+        self.symtab.insert(v, w.clone());
+        w
     }
 }
 
@@ -189,7 +208,7 @@ impl<'a> From<&'a Word> for usize {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum BlockValue {
     Array(Vec<Word>),
     Symbol(String, String),
@@ -247,8 +266,6 @@ impl Word {
                     Some(Array { data: &heap[bdi..(bdi + len)] })
                 },
                 SYMBOL_BITS => {
-                    let nsi = hdri + 1;
-                    let nmi = nsi + 1;
                     Some(Symbol(&heap[hdri + 1], &heap[hdri + 2]))
                 },
                 STRING_BITS => {
@@ -395,7 +412,7 @@ impl Parser {
     fn parse_symbol(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
         let s = self.consume_while(|c| c.is_alphabetic());
         if !s.is_empty() {
-            Ok(heap.alloc(BlockValue::Symbol("user".to_string(), s)))
+            Ok(heap.intern(BlockValue::Symbol("user".to_string(), s)))
         } else {
             Err(())
         }
@@ -440,10 +457,7 @@ fn eval(expr: Word, heap: & GcHeap) -> Word {
 //// Main
 
 fn main() {
-    let mut gc_heap = GcHeap {
-        fromspace: vec![],
-        tospace: vec![]
-    };
+    let mut gc_heap = GcHeap::new();
     let mut out = &mut stdout();
 
     let w: Word = From::from(-3isize);
