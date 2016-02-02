@@ -37,12 +37,15 @@ const BH_SHIFT: usize = 56;
 
 // Type tags of block objects:
 const ARRAY_BITS: usize = 0;
+const SYMBOL_BITS: usize = 0x0100000000000000;
+const STRING_BITS: usize = 0x0200000000000000;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Word(usize);
 
 //// Garbage-collected Heap
 
+#[derive(Debug)]
 struct GcHeap {
     fromspace: Vec<Word>,
     tospace: Vec<Word>
@@ -85,6 +88,25 @@ impl GcHeap {
                     self.fromspace.push(w)
                 }
                 res
+            },
+            BlockValue::Symbol(ns, name) => {
+                let header = Word(2 & BH_LENGTH_MASK | SYMBOL_BITS);
+                let nsw = self.alloc(BlockValue::String(ns));
+                let nmw = self.alloc(BlockValue::String(name));
+                let res = From::from(self.fromspace.len());
+                self.fromspace.push(header);
+                self.fromspace.push(nsw);
+                self.fromspace.push(nmw);
+                res
+            },
+            BlockValue::String(s) => {
+                let res = From::from(self.fromspace.len());
+                let header = Word(s.len() & BH_LENGTH_MASK | STRING_BITS);
+                self.fromspace.push(header);
+                for c in s.chars() {
+                    self.fromspace.push(From::from(c))
+                }
+                res
             }
         }
     }
@@ -119,6 +141,16 @@ impl From<char> for Word {
     }
 }
 
+impl From<Word> for char {
+    fn from(word: Word) -> char {
+        let Word(w) = word;
+        unsafe {
+            // This only works on 64-bit architectures:
+            transmute::<usize, [char; 2]>(w >> CHAR_SHIFT)[0]
+        }
+    }
+}
+
 impl Word {
     fn imm_val(&self) -> Option<ImmediateValue> {
         let Word(w) = *self;
@@ -132,10 +164,7 @@ impl Word {
                         TRUE  => Some(Bool(true)),
                         _     => panic!("No such Bool value `{}`!", w >> BOOL_SHIFT)
                     },
-                    CHAR_BITS => unsafe {
-                        // This only works on 64-bit architectures:
-                        Some(Char(transmute::<usize, [char; 2]>(w >> CHAR_SHIFT)[0]))
-                    },
+                    CHAR_BITS => Some(Char(From::from(self.clone()))),
                     bp => panic!("Unimplemented immediate tag `{:b}`!", bp)
                 },
                 BLOCK_BITS => None, // Non-immediate value
@@ -162,44 +191,48 @@ impl<'a> From<&'a Word> for usize {
 
 #[derive(Debug)]
 enum BlockValue {
-    Array(Vec<Word>)
+    Array(Vec<Word>),
+    Symbol(String, String),
+    String(String)
 }
 
 #[derive(Debug)]
 enum BlockRef<'a> {
-    BuiltinType {
-        name: &'a Word
-    },
-    RecordType {
-        name: &'a Word,
-        field_names: &'a [Word]
-    },
-    EnumType {
-        name: &'a Word,
-        shards: &'a [Word]
-    },
-
-    EnumShard {
-        parent_type: &'a Word,
-        name: &'a Word,
-        field_names: &'a [Word]
-    },
-
-    Record {
-        typ: &'a Word,
-        field_values: &'a [Word]
-    },
-    Tagged {
-        shard: &'a Word,
-        field_values: &'a [Word]
-    },
-
     Array {
         data: &'a [Word]
-    }
+    },
+    Symbol(&'a Word, &'a Word),
+    String(String)
+
+//     BuiltinType {
+//         name: &'a Word
+//     },
+//     RecordType {
+//         name: &'a Word,
+//         field_names: &'a [Word]
+//     },
+//     EnumType {
+//         name: &'a Word,
+//         shards: &'a [Word]
+//     },
+// 
+//     EnumShard {
+//         parent_type: &'a Word,
+//         name: &'a Word,
+//         field_names: &'a [Word]
+//     },
+// 
+//     Record {
+//         typ: &'a Word,
+//         field_values: &'a [Word]
+//     },
+//     Tagged {
+//         shard: &'a Word,
+//         field_values: &'a [Word]
+//     }
 }
 
-use BlockRef::*;
+use BlockRef::{Array, Symbol};
 
 impl Word {
     fn block_val<'a>(& self, heap: &'a GcHeap) -> Option<BlockRef<'a>> {
@@ -212,6 +245,19 @@ impl Word {
                 ARRAY_BITS => {
                     let bdi = hdri + 1;
                     Some(Array { data: &heap[bdi..(bdi + len)] })
+                },
+                SYMBOL_BITS => {
+                    let nsi = hdri + 1;
+                    let nmi = nsi + 1;
+                    Some(Symbol(&heap[hdri + 1], &heap[hdri + 2]))
+                },
+                STRING_BITS => {
+                    let bdi = hdri + 1;
+                    let mut s = String::new();
+                    for w in heap[bdi..(bdi + len)].iter() {
+                        s.push(From::from(w.clone()));
+                    }
+                    Some(BlockRef::String(s))
                 },
                 bp => panic!("Unimplemented block tag `{:b}`!", bp >> BH_SHIFT)
             }
@@ -232,7 +278,7 @@ impl Write for ImmediateValue {
         match *self {
             Int(i)  => write!(f, "{}", i),
             Bool(b) => if b { write!(f, "#t") } else { write!(f, "#f") },
-            Char(c) => write!(f, "{}", c),
+            Char(c) => write!(f, "\\{}", c),
         }
     }
 }
@@ -241,7 +287,7 @@ impl<'a> Write for BlockRef<'a> {
     fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
         match *self {
             Array { data: ref ws } => {
-                try!(write!(f, "#.(core::Array"));
+                try!(write!(f, "#.(core/Array"));
                 for w in ws.iter() {
                     try!(write!(f, " "));
                     if let Some(iv) = w.imm_val() {
@@ -252,8 +298,18 @@ impl<'a> Write for BlockRef<'a> {
                     }
                 }
                 write!(f, ")")
+            },
+            Symbol(nsw, nmw) => {
+                if let (Some(BlockRef::String(ns)), Some(BlockRef::String(name)))
+                       = (nsw.block_val(heap), nmw.block_val(heap)) {
+                    write!(f, "{}/{}", ns, name)
+                } else {
+                    panic!()
+                }
+            },
+            BlockRef::String(ref s) => {
+                write!(f, "\"{}\"", s)
             }
-            _ => panic!()
         }
     }
 }
@@ -335,6 +391,28 @@ impl Parser {
             Err(())
         }
     }
+
+    fn parse_symbol(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
+        let s = self.consume_while(|c| c.is_alphabetic());
+        if !s.is_empty() {
+            Ok(heap.alloc(BlockValue::Symbol("user".to_string(), s)))
+        } else {
+            Err(())
+        }
+    }
+
+    fn parse_string(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
+        if self.consume_if(|c| c == '"').is_some() {
+            let s = self.consume_while(|c| c != '"');
+            if self.consume_if(|c| c == '"').is_some() {
+                return Ok(heap.alloc(BlockValue::String(s)));
+            } else {
+                Err(())
+            }
+        } else {
+            Err(())
+        }
+    }
 }
 
 fn read(cs: &str, heap: &mut GcHeap) -> Result<Word, ()> {
@@ -343,6 +421,8 @@ fn read(cs: &str, heap: &mut GcHeap) -> Result<Word, ()> {
         Some(c) if c.is_digit(10) => p.parse_isize().map(From::from),
         Some('\\') => p.parse_char().map(From::from),
         Some('#') => p.parse_bool().map(From::from),
+        Some(c) if c.is_alphabetic() => p.parse_symbol(heap),
+        Some('"') => p.parse_string(heap),
         _ => Err(())
     }
 }
@@ -375,9 +455,17 @@ fn main() {
     let aw = gc_heap.alloc(arr1);
     writeln(&aw.block_val(&gc_heap).unwrap(), &gc_heap, out);
 
+    let sym = BlockValue::Symbol("foo".to_string(), "bar".to_string());
+    let sw = gc_heap.alloc(sym);
+    writeln(&sw.block_val(&gc_heap).unwrap(), &gc_heap, out);
+
     //
 
     let input = String::from("#f");
     writeln(&read(&input, &mut gc_heap).unwrap().imm_val().unwrap(),
+            &gc_heap, out);
+
+    let symput = String::from("foo");
+    writeln(&read(&symput, &mut gc_heap).unwrap().block_val(&gc_heap).unwrap(),
             &gc_heap, out);
 }
