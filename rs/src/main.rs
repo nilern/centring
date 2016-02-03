@@ -30,6 +30,9 @@ const BLOCK_SHIFT: usize = 2;
 const TRUE: usize = 0b10110;
 const FALSE: usize = 0b00110;
 
+// Special objects:
+const EMPTY_LIST: usize = 0b1110;
+
 // Examine tags of block objects:
 // (these only work on 64-bit architectures)
 const BH_TYPE_MASK: usize = 0x0f00000000000000;
@@ -40,6 +43,7 @@ const BH_SHIFT: usize = 56;
 const ARRAY_BITS: usize = 0;
 const SYMBOL_BITS: usize = 0x0100000000000000;
 const STRING_BITS: usize = 0x0200000000000000;
+const PAIR_BITS: usize = 0x0300000000000000;
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Word(usize);
@@ -92,7 +96,7 @@ impl GcHeap {
         match v {
             BlockValue::Array(ws) => {
                 let res = From::from(self.fromspace.len());
-                let header = Word(ws.len() & BH_LENGTH_MASK | ARRAY_BITS);
+                let header = Word(ws.len() | ARRAY_BITS);
                 self.fromspace.push(header);
                 for w in ws {
                     self.fromspace.push(w)
@@ -100,7 +104,7 @@ impl GcHeap {
                 res
             },
             BlockValue::Symbol(ns, name) => {
-                let header = Word(2 & BH_LENGTH_MASK | SYMBOL_BITS);
+                let header = Word(2 | SYMBOL_BITS);
                 let nsw = self.alloc(BlockValue::String(ns));
                 let nmw = self.alloc(BlockValue::String(name));
                 let res = From::from(self.fromspace.len());
@@ -111,11 +115,19 @@ impl GcHeap {
             },
             BlockValue::String(s) => {
                 let res = From::from(self.fromspace.len());
-                let header = Word(s.len() & BH_LENGTH_MASK | STRING_BITS);
+                let header = Word(s.len() | STRING_BITS);
                 self.fromspace.push(header);
                 for c in s.chars() {
                     self.fromspace.push(From::from(c))
                 }
+                res
+            },
+            BlockValue::Pair(car, cdr) => {
+                let res = From::from(self.fromspace.len());
+                let header = Word(2 | PAIR_BITS);
+                self.fromspace.push(header);
+                self.fromspace.push(car);
+                self.fromspace.push(cdr);
                 res
             }
         }
@@ -137,7 +149,8 @@ impl GcHeap {
 enum ImmediateValue {
     Int(isize),
     Bool(bool),
-    Char(char)
+    Char(char),
+    EmptyList
 }
 
 use ImmediateValue::*;
@@ -184,6 +197,10 @@ impl Word {
                         _     => panic!("No such Bool value `{}`!", w >> BOOL_SHIFT)
                     },
                     CHAR_BITS => Some(Char(From::from(self.clone()))),
+                    SPECIAL_BITS => match w {
+                        EMPTY_LIST => Some(EmptyList),
+                        bp => panic!("Unimplemented special value `{:b}`!", bp)
+                    },
                     bp => panic!("Unimplemented immediate tag `{:b}`!", bp)
                 },
                 BLOCK_BITS => None, // Non-immediate value
@@ -212,7 +229,8 @@ impl<'a> From<&'a Word> for usize {
 enum BlockValue {
     Array(Vec<Word>),
     Symbol(String, String),
-    String(String)
+    String(String),
+    Pair(Word, Word)
 }
 
 #[derive(Debug)]
@@ -221,7 +239,8 @@ enum BlockRef<'a> {
         data: &'a [Word]
     },
     Symbol(&'a Word, &'a Word),
-    String(String)
+    String(String),
+    Pair(&'a Word, &'a Word)
 
 //     BuiltinType {
 //         name: &'a Word
@@ -276,6 +295,9 @@ impl Word {
                     }
                     Some(BlockRef::String(s))
                 },
+                PAIR_BITS => {
+                    Some(BlockRef::Pair(&heap[hdri + 1], &heap[hdri + 2]))
+                },
                 bp => panic!("Unimplemented block tag `{:b}`!", bp >> BH_SHIFT)
             }
         } else {
@@ -296,6 +318,7 @@ impl Write for ImmediateValue {
             Int(i)  => write!(f, "{}", i),
             Bool(b) => if b { write!(f, "#t") } else { write!(f, "#f") },
             Char(c) => write!(f, "\\{}", c),
+            EmptyList => write!(f, "()")
         }
     }
 }
@@ -307,12 +330,7 @@ impl<'a> Write for BlockRef<'a> {
                 try!(write!(f, "#.(core/Array"));
                 for w in ws.iter() {
                     try!(write!(f, " "));
-                    if let Some(iv) = w.imm_val() {
-                        try!(iv.write(heap, f));
-                    } else {
-                        // unwrap() can't panic since .*_val would have already:
-                        try!(w.block_val(heap).unwrap().write(heap, f))
-                    }
+                    try!(w.write(heap, f));
                 }
                 write!(f, ")")
             },
@@ -326,7 +344,49 @@ impl<'a> Write for BlockRef<'a> {
             },
             BlockRef::String(ref s) => {
                 write!(f, "\"{}\"", s)
+            },
+            BlockRef::Pair(car, cdr) => {
+                let mut first = car;
+                let mut rest = cdr;
+                try!(write!(f, "("));
+                try!(first.write(heap, f));
+                loop {
+                    if let Some(iv) = rest.imm_val() {
+                        if rest.0 != EMPTY_LIST {
+                            try!(write!(f, " . "));
+                            try!(iv.write(heap, f));
+                        }
+                        break;
+                    } else {
+                        match rest.block_val(heap) {
+                            Some(BlockRef::Pair(cadr, cddr)) => {
+                                first = cadr;
+                                rest = cddr;
+                                try!(write!(f, " "));
+                                try!(first.write(heap, f));
+                            },
+                            Some(bv) => {
+                                try!(write!(f, " . "));
+                                try!(bv.write(heap, f));
+                                break;
+                            },
+                            None => unreachable!() // No such bit patterns
+                        }
+                    }
+                }
+                write!(f, ")")
             }
+        }
+    }
+}
+
+impl Write for Word {
+    fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
+        if let Some(iv) = self.imm_val() {
+            iv.write(heap, f)
+        } else {
+            // .unwrap() can't panic since .*_val() would have already:
+            self.block_val(heap).unwrap().write(heap, f)
         }
     }
 }
@@ -382,6 +442,10 @@ impl Parser {
         }
     }
 
+    fn whitespace(&mut self) -> String {
+        self.consume_while(|c| c.is_whitespace())
+    }
+
     // Immediate values
 
     fn parse_isize(&mut self) -> Result<isize, ()> {
@@ -390,23 +454,46 @@ impl Parser {
 
 
     fn parse_char(&mut self) -> Result<char, ()> {
-        if self.consume_if(|c| c == '\\').is_some() {
-            self.consume_if(|c| !c.is_whitespace()).ok_or(())
-        } else {
-            Err(())
-        }
+        try!(self.consume_if(|c| c == '#').ok_or(()));
+        self.consume_if(|c| !c.is_whitespace()).ok_or(())
     }
 
     fn parse_bool(&mut self) -> Result<bool, ()> {
-        if self.consume_if(|c| c == '#').is_some() {
-            match self.peek() {
-                Some('t') => { self.pos += 1; Ok(true)},
-                Some('f') => { self.pos += 1; Ok(false)},
-                _ => { self.pos -= 1; Err(()) }
-            }
-        } else {
-            Err(())
+        try!(self.consume_if(|c| c == '#').ok_or(()));
+        match self.peek() {
+            Some('t') => { self.pos += 1; Ok(true)},
+            Some('f') => { self.pos += 1; Ok(false)},
+            _ => { self.pos -= 1; Err(()) }
         }
+    }
+
+    fn parse_list(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
+        try!(self.consume_if(|c| c == '(').ok_or(()));
+        let mut vals = vec![];
+        let mut tail = Word(EMPTY_LIST);
+        loop {
+            self.whitespace();
+            match self.peek() {
+                Some(')') => {self.char(); break; },
+                Some('.') => {
+                    // FIXME
+                    tail = try!(self.parse_expr(heap));
+                    self.whitespace();
+                    try!(self.consume_if(|c| c == ')').ok_or(()));
+                    break;
+                },
+                Some(c) => match self.parse_expr(heap) {
+                    Ok(w) => vals.push(w),
+                    err => return err
+                },
+                None => return Err(())
+            }
+            self.whitespace();
+        }
+        for head in vals.into_iter().rev() {
+            tail = heap.alloc(BlockValue::Pair(head, tail));
+        }
+        Ok(tail)
     }
 
     fn parse_symbol(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
@@ -419,39 +506,28 @@ impl Parser {
     }
 
     fn parse_string(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
-        if self.consume_if(|c| c == '"').is_some() {
-            let s = self.consume_while(|c| c != '"');
-            if self.consume_if(|c| c == '"').is_some() {
-                return Ok(heap.alloc(BlockValue::String(s)));
-            } else {
-                Err(())
-            }
-        } else {
-            Err(())
+        try!(self.consume_if(|c| c == '"').ok_or(()));
+        let s = self.consume_while(|c| c != '"');
+        try!(self.consume_if(|c| c == '"').ok_or(()));
+        Ok(heap.alloc(BlockValue::String(s)))
+    }
+
+    fn parse_expr(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
+        match self.peek() {
+            Some(c) if c.is_digit(10) => self.parse_isize().map(From::from),
+            Some('\\') => self.parse_char().map(From::from),
+            Some('#') => self.parse_bool().map(From::from),
+            Some('(') => self.parse_list(heap),
+            Some(c) if c.is_alphabetic() => self.parse_symbol(heap),
+            Some('"') => self.parse_string(heap),
+            _ => Err(())
         }
     }
 }
 
 fn read(cs: &str, heap: &mut GcHeap) -> Result<Word, ()> {
     let mut p = Parser { pos: 0, input: cs.to_string() };
-    match p.peek() {
-        Some(c) if c.is_digit(10) => p.parse_isize().map(From::from),
-        Some('\\') => p.parse_char().map(From::from),
-        Some('#') => p.parse_bool().map(From::from),
-        Some(c) if c.is_alphabetic() => p.parse_symbol(heap),
-        Some('"') => p.parse_string(heap),
-        _ => Err(())
-    }
-}
-
-//// Eval
-
-fn eval(expr: Word, heap: & GcHeap) -> Word {
-    if expr.imm_val().is_some() || expr.block_val(heap).is_some() {
-        expr
-    } else {
-        unreachable!() // No such bit patterns
-    }
+    p.parse_expr(heap)
 }
 
 //// Main
@@ -460,26 +536,6 @@ fn main() {
     let mut gc_heap = GcHeap::new();
     let mut out = &mut stdout();
 
-    let w: Word = From::from(-3isize);
-    writeln(&eval(w, &gc_heap).imm_val().unwrap(), &gc_heap, out);
-
-    let arr0 = BlockValue::Array(vec![From::from(2isize)]);
-    let aw0 = gc_heap.alloc(arr0);
-    let arr1 = BlockValue::Array(vec![From::from(true), From::from(1isize), aw0]);
-    let aw = gc_heap.alloc(arr1);
-    writeln(&aw.block_val(&gc_heap).unwrap(), &gc_heap, out);
-
-    let sym = BlockValue::Symbol("foo".to_string(), "bar".to_string());
-    let sw = gc_heap.alloc(sym);
-    writeln(&sw.block_val(&gc_heap).unwrap(), &gc_heap, out);
-
-    //
-
-    let input = String::from("#f");
-    writeln(&read(&input, &mut gc_heap).unwrap().imm_val().unwrap(),
-            &gc_heap, out);
-
-    let symput = String::from("foo");
-    writeln(&read(&symput, &mut gc_heap).unwrap().block_val(&gc_heap).unwrap(),
-            &gc_heap, out);
+    let input = String::from("(foo 23 (bar \"fnord\"))");
+    writeln(&read(&input, &mut gc_heap).unwrap(), &gc_heap, out);
 }
