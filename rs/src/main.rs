@@ -50,6 +50,11 @@ pub struct Word(usize);
 
 //// Garbage-collected Heap
 
+trait Allocate {
+    fn alloc(&mut self, v: BlockValue) -> Word;
+    fn intern(&mut self, v: BlockValue) -> Word;
+}
+
 #[derive(Debug)]
 struct GcHeap {
     fromspace: Vec<Word>,
@@ -64,22 +69,10 @@ impl Index<usize> for GcHeap {
     }
 }
 
-impl IndexMut<usize> for GcHeap {
-    fn index_mut<'a>(&'a mut self, index: usize) -> &'a mut Word {
-        &mut self.fromspace[index]
-    }
-}
-
 impl Index<Range<usize>> for GcHeap {
     type Output = [Word];
     fn index<'a>(&'a self, idxs: Range<usize>) -> &'a [Word] {
         & self.fromspace[idxs]
-    }
-}
-
-impl IndexMut<Range<usize>> for GcHeap {
-    fn index_mut<'a>(&'a mut self, idxs: Range<usize>) -> &'a mut [Word] {
-        &mut self.fromspace[idxs]
     }
 }
 
@@ -91,7 +84,10 @@ impl GcHeap {
             symtab: HashMap::new()
         }
     }
+}
 
+
+impl Allocate for GcHeap {
     fn alloc(&mut self, v: BlockValue) -> Word {
         match v {
             BlockValue::Array(ws) => {
@@ -225,23 +221,15 @@ impl<'a> From<&'a Word> for usize {
     }
 }
 
+// Hmm, those Words might get invalidated...
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 enum BlockValue {
     Array(Vec<Word>),
     Symbol(String, String),
     String(String),
     Pair(Word, Word)
-}
 
-#[derive(Debug)]
-enum BlockRef<'a> {
-    Array {
-        data: &'a [Word]
-    },
-    Symbol(&'a Word, &'a Word),
-    String(String),
-    Pair(&'a Word, &'a Word)
-
+// These should be stripped of refs
 //     BuiltinType {
 //         name: &'a Word
 //     },
@@ -270,33 +258,42 @@ enum BlockRef<'a> {
 //     }
 }
 
-use BlockRef::{Array, Symbol};
+use BlockValue::{Array, Symbol};
 
 impl Word {
-    fn block_val<'a>(& self, heap: &'a GcHeap) -> Option<BlockRef<'a>> {
+    fn block_val(& self, vm: &VM) -> Option<BlockValue> {
         let Word(w) = *self;
         if w & LOW_TAG_MASK == BLOCK_BITS {
             let hdri: usize = From::from(self);
-            let Word(header) = heap[hdri];
+            let Word(header) = vm.memory[hdri].clone();
             let len = header & BH_LENGTH_MASK;
             match header & BH_TYPE_MASK {
                 ARRAY_BITS => {
                     let bdi = hdri + 1;
-                    Some(Array { data: &heap[bdi..(bdi + len)] })
+                    Some(Array(vm.memory[bdi..(bdi + len)].iter()
+                                                          .map(Clone::clone)
+                                                          .collect()))
                 },
                 SYMBOL_BITS => {
-                    Some(Symbol(&heap[hdri + 1], &heap[hdri + 2]))
+                    if let (Some(BlockValue::String(ns)), Some(BlockValue::String(name)))
+                           = (vm.memory[hdri + 1].block_val(vm),
+                              vm.memory[hdri + 2].block_val(vm)) {
+                        Some(Symbol(ns, name))
+                    } else {
+                        panic!()
+                    }
                 },
                 STRING_BITS => {
                     let bdi = hdri + 1;
                     let mut s = String::new();
-                    for w in heap[bdi..(bdi + len)].iter() {
+                    for w in vm.memory[bdi..(bdi + len)].iter() {
                         s.push(From::from(w.clone()));
                     }
-                    Some(BlockRef::String(s))
+                    Some(BlockValue::String(s))
                 },
                 PAIR_BITS => {
-                    Some(BlockRef::Pair(&heap[hdri + 1], &heap[hdri + 2]))
+                    Some(BlockValue::Pair(vm.memory[hdri + 1].clone(),
+                                          vm.memory[hdri + 2].clone()))
                 },
                 bp => panic!("Unimplemented block tag `{:b}`!", bp >> BH_SHIFT)
             }
@@ -309,92 +306,89 @@ impl Word {
 //// Print
 
 trait Write {
-    fn write(&self, heap: & GcHeap, f: &mut io::Write) -> io::Result<()>;
+    fn write(&self, vm: &mut VM) -> io::Result<()>;
 }
 
 impl Write for ImmediateValue {
-    fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
+    fn write(&self, vm: &mut VM) -> io::Result<()> {
         match *self {
-            Int(i)  => write!(f, "{}", i),
-            Bool(b) => if b { write!(f, "#t") } else { write!(f, "#f") },
-            Char(c) => write!(f, "\\{}", c),
-            EmptyList => write!(f, "()")
+            Int(i)  => write!(vm.curr_output, "{}", i),
+            Bool(true) => write!(vm.curr_output, "True"),
+            Bool(false) => write!(vm.curr_output, "True"),
+            Char(c) => write!(vm.curr_output, "\\{}", c),
+            EmptyList => write!(vm.curr_output, "()")
         }
     }
 }
 
-impl<'a> Write for BlockRef<'a> {
-    fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
+impl Write for BlockValue {
+    fn write(&self, vm: &mut VM) -> io::Result<()> {
         match *self {
-            Array { data: ref ws } => {
-                try!(write!(f, "#.(core/Array"));
+            Array(ref ws) => {
+                try!(write!(vm.curr_output, "#.(core/Array"));
                 for w in ws.iter() {
-                    try!(write!(f, " "));
-                    try!(w.write(heap, f));
+                    try!(write!(vm.curr_output, " "));
+                    try!(w.write(vm));
                 }
-                write!(f, ")")
+                write!(vm.curr_output, ")")
             },
-            Symbol(nsw, nmw) => {
-                if let (Some(BlockRef::String(ns)), Some(BlockRef::String(name)))
-                       = (nsw.block_val(heap), nmw.block_val(heap)) {
-                    write!(f, "{}/{}", ns, name)
-                } else {
-                    panic!()
-                }
+            Symbol(ref ns, ref name) => {
+                write!(vm.curr_output, "{}/{}", ns, name)
             },
-            BlockRef::String(ref s) => {
-                write!(f, "\"{}\"", s)
+            BlockValue::String(ref s) => {
+                write!(vm.curr_output, "\"{}\"", s)
             },
-            BlockRef::Pair(car, cdr) => {
-                let mut first = car;
-                let mut rest = cdr;
-                try!(write!(f, "("));
-                try!(first.write(heap, f));
+            BlockValue::Pair(ref car, ref cdr) => {
+                let mut first = car.clone();
+                let mut rest = cdr.clone();
+                try!(write!(vm.curr_output, "("));
+                try!(first.write(vm));
                 loop {
                     if let Some(iv) = rest.imm_val() {
                         if rest.0 != EMPTY_LIST {
-                            try!(write!(f, " . "));
-                            try!(iv.write(heap, f));
+                            try!(write!(vm.curr_output, " . "));
+                            try!(iv.write(vm));
                         }
                         break;
                     } else {
-                        match rest.block_val(heap) {
-                            Some(BlockRef::Pair(cadr, cddr)) => {
+                        let bvr = rest.block_val(vm);
+                        match bvr {
+                            Some(BlockValue::Pair(cadr, cddr)) => {
                                 first = cadr;
                                 rest = cddr;
-                                try!(write!(f, " "));
-                                try!(first.write(heap, f));
+                                try!(write!(vm.curr_output, " "));
+                                try!(first.write(vm));
                             },
                             Some(bv) => {
-                                try!(write!(f, " . "));
-                                try!(bv.write(heap, f));
+                                try!(write!(vm.curr_output, " . "));
+                                try!(bv.write(vm));
                                 break;
                             },
                             None => unreachable!() // No such bit patterns
                         }
                     }
                 }
-                write!(f, ")")
+                write!(vm.curr_output, ")")
             }
         }
     }
 }
 
 impl Write for Word {
-    fn write(&self, heap: &GcHeap, f: &mut io::Write) -> io::Result<()> {
+    fn write(&self, vm: &mut VM) -> io::Result<()> {
         if let Some(iv) = self.imm_val() {
-            iv.write(heap, f)
+            iv.write(vm)
         } else {
             // .unwrap() can't panic since .*_val() would have already:
-            self.block_val(heap).unwrap().write(heap, f)
+            self.block_val(vm).unwrap().write(vm)
         }
     }
 }
 
-fn writeln<T>(v: &T, heap: &GcHeap, f: &mut io::Write) -> io::Result<()>
+fn writeln<T>(v: &T, vm: &mut VM) -> io::Result<()>
     where T: Write {
-    try!(v.write(heap, f));
-    io::Write::write(f, b"\n").map(|_| ())
+    try!(v.write(vm));
+    io::Write::write(&mut vm.curr_output, b"\n").map(|_| ())
 }
 
 //// Read
@@ -467,7 +461,7 @@ impl Parser {
         }
     }
 
-    fn parse_list(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
+    fn parse_list(&mut self, vm: &mut VM) -> Result<Word, ()> {
         try!(self.consume_if(|c| c == '(').ok_or(()));
         let mut vals = vec![];
         let mut tail = Word(EMPTY_LIST);
@@ -477,12 +471,12 @@ impl Parser {
                 Some(')') => {self.char(); break; },
                 Some('.') => {
                     // FIXME
-                    tail = try!(self.parse_expr(heap));
+                    tail = try!(self.parse_expr(vm));
                     self.whitespace();
                     try!(self.consume_if(|c| c == ')').ok_or(()));
                     break;
                 },
-                Some(c) => match self.parse_expr(heap) {
+                Some(c) => match self.parse_expr(vm) {
                     Ok(w) => vals.push(w),
                     err => return err
                 },
@@ -491,51 +485,110 @@ impl Parser {
             self.whitespace();
         }
         for head in vals.into_iter().rev() {
-            tail = heap.alloc(BlockValue::Pair(head, tail));
+            tail = vm.alloc(BlockValue::Pair(head, tail));
         }
         Ok(tail)
     }
 
-    fn parse_symbol(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
+    fn parse_symbol(&mut self, vm: &mut VM) -> Result<Word, ()> {
         let s = self.consume_while(|c| c.is_alphabetic());
         if !s.is_empty() {
-            Ok(heap.intern(BlockValue::Symbol("user".to_string(), s)))
+            Ok(vm.intern(BlockValue::Symbol("user".to_string(), s)))
         } else {
             Err(())
         }
     }
 
-    fn parse_string(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
+    fn parse_string(&mut self, vm: &mut VM) -> Result<Word, ()> {
         try!(self.consume_if(|c| c == '"').ok_or(()));
         let s = self.consume_while(|c| c != '"');
         try!(self.consume_if(|c| c == '"').ok_or(()));
-        Ok(heap.alloc(BlockValue::String(s)))
+        Ok(vm.alloc(BlockValue::String(s)))
     }
 
-    fn parse_expr(&mut self, heap: &mut GcHeap) -> Result<Word, ()> {
+    fn parse_expr(&mut self, vm: &mut VM) -> Result<Word, ()> {
         match self.peek() {
             Some(c) if c.is_digit(10) => self.parse_isize().map(From::from),
             Some('\\') => self.parse_char().map(From::from),
             Some('#') => self.parse_bool().map(From::from),
-            Some('(') => self.parse_list(heap),
-            Some(c) if c.is_alphabetic() => self.parse_symbol(heap),
-            Some('"') => self.parse_string(heap),
+            Some('(') => self.parse_list(vm),
+            Some(c) if c.is_alphabetic() => self.parse_symbol(vm),
+            Some('"') => self.parse_string(vm),
             _ => Err(())
         }
     }
 }
 
-fn read(cs: &str, heap: &mut GcHeap) -> Result<Word, ()> {
-    let mut p = Parser { pos: 0, input: cs.to_string() };
-    p.parse_expr(heap)
+fn read(vm: &mut VM, n: usize) {
+    let s = vm.pop().unwrap();
+    if let Some(BlockValue::String(s)) = s.block_val(vm) {
+        let mut p = Parser { pos: 0, input: s };
+        let res = p.parse_expr(vm);
+        vm.push(res.unwrap());
+    } else {
+        let msg = vm.alloc(BlockValue::String("Not a string!".to_string()));
+        vm.throw(msg);
+    }
+}
+
+//// VM
+
+struct VM {
+    codeobject: Word,
+    env: Word,
+    ip: usize,
+    framestack: Option<Word>,
+    valuestack: Vec<Word>,
+    memory: GcHeap,
+    curr_output: Box<io::Write>
+}
+
+impl VM {
+    fn new(codeobject: Word, env: Word) -> VM {
+        VM {
+            codeobject: codeobject,
+            env: env,
+            ip: 0,
+            framestack: None,
+            valuestack: Vec::with_capacity(20),
+            memory: GcHeap::new(),
+            curr_output: Box::new(stdout())
+        }
+    }
+
+    fn push(&mut self, w: Word) {
+        self.valuestack.push(w)
+    }
+
+    fn pop(&mut self) -> Option<Word> {
+        self.valuestack.pop()
+    }
+
+    fn throw(&mut self, word: Word) -> io::Result<()> {
+        self.valuestack.push(word);
+        self.framestack = None;
+        writeln(&self.pop().unwrap(), self)
+    }
+}
+
+impl Allocate for VM {
+    fn alloc(&mut self, v: BlockValue) -> Word {
+        self.memory.alloc(v)
+    }
+
+    fn intern(&mut self, v: BlockValue) -> Word {
+        self.memory.intern(v)
+    }
 }
 
 //// Main
 
 fn main() {
-    let mut gc_heap = GcHeap::new();
-    let mut out = &mut stdout();
+    let mut vm = VM::new(Word(FALSE), Word(FALSE));
 
-    let input = String::from("(foo 23 (bar \"fnord\"))");
-    writeln(&read(&input, &mut gc_heap).unwrap(), &gc_heap, out);
+    let input = vm.alloc(BlockValue::String("(foo 23 (bar \"fnord\"))".to_string()));
+    vm.push(input);
+    read(&mut vm, 1);
+    let sexpr = vm.pop().unwrap();
+    writeln(&sexpr, &mut vm);
 }
