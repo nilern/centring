@@ -1,0 +1,26 @@
+;; this will be in RT
+;; (defenum List
+;;   (Cons car cdr)
+;;   Empty)
+
+(defenum Option
+  (Some value)
+  None)
+
+(defmethod (first (List l))
+  (match l
+    (List::Cons v _) (Option::Some v)
+    List::Empty      Option::None))
+
+(defmethod (rest (List l))
+  (match l
+    (List::Cons _ v) v
+    List::Empty      List::Empty))
+
+(defmethod (foldLeft f v (List l))
+  (loop (acc acc l l)
+    (match l
+      (List::Cons v vs) (recur (f acc v) vs)
+      List::Empty       acc)))
+
+(printLn (foldLeft + 0 (list 1 2 3 4 5)))

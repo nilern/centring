@@ -1,0 +1,24 @@
+(module centring.macrosys)
+
+(def (assoc-meta o k v)
+  (vary-meta o assoc k v))
+
+(def (dissoc-meta o . ks)
+  (apply vary-meta o dissoc ks))
+
+;;;
+
+(def (assoc-from-callee o) o)
+
+(def (assoc-from-callee o :Symbol)
+  (assoc-meta o :from-callee true))
+
+(def (binds form)
+  (match form
+    `((centring.ct/fn ,formals . _) . _) formals
+     _                                   '()))
+
+(def (rename binds o) o)
+
+(def (rename binds o :Symbol)
+  (if (:injected (meta o)) o (get binds o o)))
