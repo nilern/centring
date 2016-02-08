@@ -15,7 +15,7 @@
   (Fn formals body))
 
 (defmethod (print-object node :ASTNode port)
-  (write 
+  (write
     (match node
       (? ASTNode/Lit?)  (slot-value node 'val)
       (? ASTNode/Var?)  (slot-value node 'sym)
@@ -35,8 +35,8 @@
 
 ;;;; Macroexpand
 
-;; Something like ir-macro-transformer or Julia macros? Need to study hygiene.
-;; Not essential for trivial examples.
+;; Need an interpreter to expand macros (at least while the language is being
+;; bootstrapped).
 
 ;;;; Analyze
 
