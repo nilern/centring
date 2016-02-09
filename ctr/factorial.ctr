@@ -1,10 +1,11 @@
 
-(def (dec n)
-  (- n 1))
+(def dec
+  (fn (n) (- n 1)))
 
-(def (factorial n)
-  (if (< n 1)
-    1
-    (* n (factorial (dec n)))))
+(def fact
+  (fn (n)
+    (if (< n 1)
+      1
+      (* n (fact (dec n))))))
 
-(writeLn (number->string (factorial 5)))
+(writeln (fact 5))
