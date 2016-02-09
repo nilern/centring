@@ -170,9 +170,9 @@
 
   (def (evaluate-args args evargs env k)
     (evaluate (first args) env
-                  (if (empty? (rest args))
               (lambda (v)
                 (let ((evargs (cons v evargs)))
+                  (if (empty? (rest args))
                     (k (reverse evargs))
                     (evaluate-args (rest args) evargs env k))))))
 
