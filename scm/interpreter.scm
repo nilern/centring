@@ -9,11 +9,13 @@
 
    analyze
    denotate
+   cexpand
    evaluate
 
    native-fn
    numeric-binop
 
+   ns-registry
    centring.core)
 
   (import scheme chicken
@@ -21,6 +23,7 @@
   (use coops coops-primitive-objects
        (only miscmacros let/cc define-syntax-rule)
        (only anaphora acond)
+       (only (srfi 13) string-index)
        (srfi 69))
 
   ;;;;
@@ -61,6 +64,7 @@
   (defmethod (rest ls :Value/Pair) (slot-value ls 'cdr))
 
   (defmethod (name sym :Value/Symbol) (slot-value sym 'name))
+  (def (namespace sym) (slot-value sym 'ns))
 
   (def (Pair->list p)
     (if (empty? p)
@@ -80,11 +84,19 @@
 
   ;;;;
 
+  (def (analyze-symbol sym)
+    (let* ((sstr (symbol->string sym))
+           (sepi (string-index sstr #\/)))
+      (if (or (not sepi) (zero? sepi) (= sepi (string-length sstr)))
+        (Value/Symbol nil sym)
+        (Value/Symbol (string->symbol (substring sstr 0 sepi))
+                      (string->symbol (substring sstr (inc sepi)))))))
+
   (def (analyze sexpr)
     (match sexpr
-      (? fixnum?) (Value/Int sexpr)
+      (? fixnum?)  (Value/Int sexpr)
       (? boolean?) (Value/Bool sexpr)
-      (? symbol?)  (Value/Symbol nil sexpr)
+      (? symbol?)  (analyze-symbol sexpr)
       (v . vs)     (Value/Pair (analyze v) (analyze vs))
       '()          empty-list))
 
@@ -94,7 +106,7 @@
       (? Value/Bool?)      (slot-value ast 'val)
       (? Value/EmptyList?) '()
       (? Value/Nil?)       ast
-      (? Value/Symbol?)    (if (slot-value ast 'ns)
+      (? Value/Symbol?)    (if (not (eq? (slot-value ast 'ns) nil))
                              (symbol (name (slot-value ast 'ns))
                                      (name (slot-value ast 'name)))
                              (slot-value ast 'name))
@@ -151,6 +163,45 @@
 
   ;;;;
 
+  (define (map-pair f p)
+    (if (empty? p)
+      empty-list
+      (Value/Pair (f (first p)) (map-pair f (rest p)))))
+
+;;   (define-method (walk (ast #t) inner outer)
+;;     (outer ast))
+;;   (define-method (walk (ast <Value/Pair>) inner outer)
+;;     (outer (map-pair inner ast)))
+;; 
+;;   (def (postwalk f ast)
+;;     (walk (cute postwalk f <>) f ast))
+;; 
+;;   (def (prewalk f ast)
+;;     (walk (cute prewalk f <>) identity (f ast)))
+
+  (def (cexpand-1 ast)
+    (if (Value/Pair? ast)
+      (match (name (first ast))
+        'quote (Value/Pair (analyze 'centring.ct/quote) (rest ast))
+        'def   (Value/Pair (analyze 'centring.ct/def) (rest ast))
+        'do    (Value/Pair (analyze 'centring.ct/do) (rest ast))
+        'if    (Value/Pair (analyze 'centring.ct/if) (rest ast))
+        'fn    (Value/Pair (analyze 'centring.ct/fn) (rest ast))
+        _   ast)
+      ast))
+
+  (def (cexpand ast)
+    (if (Value/Pair? ast)
+      (let ((expanded (cexpand-1 ast)))
+        (if (equal? ast expanded)
+          (map-pair cexpand expanded)
+          (cexpand expanded)))
+      ast))
+
+  ;;;;
+
+  (def ns-registry (make-parameter (make-hash-table)))
+
   (def (evaluate-block ast env k)
     (cond
       ((empty? ast)
@@ -204,14 +255,19 @@
            v v))
 
       (? Value/Pair?)
-      (match (name (first ast))
-        'quote (k (second ast))
-        'def   (evaluate (third ast) env
-                         (lambda (v) (extend env (second ast) v) (k nil)))
-        'do    (evaluate-block (rest ast) env k)
-        'if    (evaluate-if ast env k)
-        'fn    (k (Value/Closure (second ast) (third ast) env))
-        _      (evaluate-call ast env k))))
+      (if (Value/Symbol? (first ast))
+        (match (namespace (first ast))
+          'centring.ct
+          (match (name (first ast))
+            'quote (k (second ast))
+            'def   (evaluate (third ast) env
+                            (lambda (v) (extend env (second ast) v) (k nil)))
+            'do    (evaluate-block (rest ast) env k)
+            'if    (evaluate-if ast env k)
+            'fn    (k (Value/Closure (second ast) (third ast) env))
+            _      (evaluate-call ast env k))
+          _            (evaluate-call ast env k))
+        (evaluate-call ast env k))))
 
   (def centring.core
     (Value/Ns 'centring.core
@@ -228,12 +284,14 @@
 
   (set! (slot-value (hash-table-ref (slot-value centring.core 'bindings) '*ns*)
                     'ref)
-        centring.core))
+        centring.core)
+
+  (hash-table-set! (ns-registry) 'centring.core centring.core))
 
 ;;;;
 
 (import centring.bootstrap
-        (only centring.interpreter evaluate analyze centring.core))
+        (only centring.interpreter evaluate analyze cexpand denotate centring.core))
 (use coops
      (only miscmacros let/cc)
      (only extras read-file)
@@ -244,6 +302,6 @@
                 `("-e" ,estr) (with-input-from-string estr read)
                 `(,filename) `(do ,@(read-file filename)))))
     (let/cc k
-      (evaluate (analyze expr) centring.core k))))
+      (evaluate (cexpand (analyze expr)) centring.core k))))
 
 (main (command-line-arguments))

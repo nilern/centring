@@ -7,7 +7,10 @@
 
    symbol
    name
-   writeln)
+   writeln
+
+   inc
+   dec)
 
   ;;; FIXME: Macros aren't fully hygienic and client code needs to `(use coops)`
 
@@ -110,4 +113,7 @@
         str
         (match (irregex-split slash-re str)
           `(,_ ,name) name
-          `(,name)     name)))))
+          `(,name)    name))))
+
+  (def (inc n) (+ n 1))
+  (def (dec n) (- n 1)))
