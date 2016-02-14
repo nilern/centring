@@ -115,8 +115,14 @@
   ;;;; Interpreter Types and Operations
 
   (define-class <Environment> ()
-    (table
+    (bindings
      parent))
+
+  (define-class <Module> ()
+    (name
+     bindings
+     aliases  ;; hash-table<string, Module>
+     refers)) ;; hash-table<string, Symbol>
 
   (define-class <Interpreter> ()
     (module-registry))
@@ -125,11 +131,34 @@
   (define-generic (lookup-module itp name))
   (define-generic (extend env name val))
 
-  (define-method (lookup (env <Environment>) name)
+  (define-method (lookup (itp <Interpreter>) (env <Environment>) (sym <Symbol>))
     (acond
-      ((hash-table-ref/default (slot-value env 'table) name #f) it)
-      ((slot-value env 'parent) (lookup it name))
-      (else (error "can't reference unbound variable" name))))
+      ((and (not (slot-value sym 'module))
+            (hash-table-ref/default (slot-value env 'bindings) 
+                                    (slot-value sym 'name)
+                                    #f))
+       it)
+      ((slot-value env 'parent) (lookup itp it sym))
+      (else (error "can't reference unbound variable" (denotate sym)))))
+
+  (define-method (lookup (itp <Interpreter>) (mod <Module>) (sym <Symbol>))
+    (let ((symname (slot-value sym 'name))
+          (symmod (slot-value sym 'module)))
+      (acond
+        ;; Not module-qualified or explicitly qualified to this Module:
+        ((or (not symmod) (equal? symmod (slot-value mod 'name)))
+         (acond
+           ;; Defined in this Module:
+           ((hash-table-ref/default (slot-value mod 'bindings) symname #f) it)
+           ;; Referred into this Module:
+           ((hash-table-ref/default (slot-value mod 'refers) symname #f)
+            (lookup itp mod it))
+           (else (error "can't reference unbound variable" (denotate sym)))))
+        ;; A Module-alias:
+        ((hash-table-ref/default (slot-value mod 'aliases) symmod #f)
+         (lookup itp it sym))
+        ;; Some module that is 'completely unrelated' to this one:
+        (else (lookup (lookup-module itp symmod) sym)))))
 
   (define-method (lookup-module (itp <Interpreter>) name)
     (aif (hash-table-ref/default (slot-value itp 'module-registry) name #f)
@@ -137,7 +166,7 @@
       (error "no such module" name)))
 
   (define-method (extend (env <Environment>) name val)
-    (hash-table-set! (slot-value env 'table) name val)
+    (hash-table-set! (slot-value env 'bindings) name val)
     env)
 
   ;;;; Interpret
@@ -150,9 +179,7 @@
     expr)
 
   (define-method (interpret (itp <Interpreter>) (expr <Symbol>) env)
-    (match (slot-value expr 'module)
-      (#f      (lookup env (slot-value expr 'name)))
-      (modname (lookup (lookup-module itp modname) (slot-value expr 'name)))))
+    (lookup itp env expr))
 
   (define (interpret-def itp expr env)
     (let* ((def-args (slot-value expr 'right))
@@ -220,13 +247,13 @@
   (define-method (bind-args (formals <Symbol>) (args #t) env)
     (extend env (slot-value formals 'name) args))
 
-  (define-method (interpret-call (itp <Interpreter>) (fn <Closure>) args)
+  (define-method (interpret-call (itp <Interpreter>) (fn <Closure>) args callenv)
     (let ((formals (slot-value fn 'formals))
           (body (slot-value fn 'body))
           (env (make <Environment>
-                  'table (make-hash-table)
+                  'bindings (make-hash-table)
                   'parent (slot-value fn 'env))))
-      (bind-args formals args env)
+      (bind-args formals (interpret-args itp args callenv) env)
       (interpret itp body env)))
 
   (define-method (interpret (itp <Interpreter>) (expr <Pair>) env)
@@ -240,8 +267,7 @@
           ("quote" (slot-value (slot-value expr 'right) 'left))
           ("fn"    (interpret-fn itp expr env))
           (_       (error "no such special form" (slot-value op 'name))))
-        (interpret-call itp (interpret itp op env)
-                            (interpret-args itp (slot-value expr 'right) env))))))
+        (interpret-call itp (interpret itp op env) (slot-value expr 'right) env)))))
 
   ;;;; Main
 
@@ -260,6 +286,6 @@
       (denotate (interpret
                   (make <Interpreter> 'module-registry (make-hash-table))
                   (analyze expr)
-                  (make <Environment> 'table (make-hash-table) 'parent #f))))))
+                  (make <Environment> 'bindings (make-hash-table) 'parent #f))))))
 
 (main (command-line-arguments))
