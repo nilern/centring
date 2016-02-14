@@ -15,7 +15,7 @@
        (only anaphora aif acond)
        (only extras sprintf)
        (only (srfi 13) string-index)
-       (only (srfi 69) hash-table-set! hash-table-ref/default))
+       (only (srfi 69) make-hash-table hash-table-set! hash-table-ref/default))
 
   ;;;; Constants
 
@@ -137,11 +137,14 @@
       (error "no such module" name)))
 
   (define-method (extend (env <Environment>) name val)
-    (hash-table-set! (slot-value env 'table) name val))
+    (hash-table-set! (slot-value env 'table) name val)
+    env)
 
   ;;;; Interpret
 
   (define-generic (interpret itp expr env))
+  (define-generic (interpret-args itp args env))
+  (define-generic (interpret-call itp callee args))
 
   (define-method (interpret (itp <Interpreter>) (expr #t) env)
     expr)
@@ -187,8 +190,44 @@
       (make-closure formals body env)))
 
   (define (make-closure formals body env)
-    (let ((formals (denotate formals)))
-      (make <Closure> 'formals formals 'body body 'env env)))
+      (make <Closure> 'formals formals 'body body 'env env))
+
+  (define-method (interpret-args (itp <Interpreter>) (args <EmptyList>) env)
+    args)
+
+  (define-method (interpret-args (itp <Interpreter>) (args <Pair>) env)
+    (make <Pair>
+      'left (interpret itp (slot-value args 'left) env)
+      'right (interpret-args itp (slot-value args 'right) env)))
+
+  ;; Args should already be evaluated and env built:
+  (define-generic (bind-args formals args env))
+
+  (define-method (bind-args (formals <EmptyList>) (args <EmptyList>) env)
+    env)
+
+  (define-method (bind-args (formals <Pair>) (args <Pair>) env)
+    (extend env (slot-value (slot-value formals 'left) 'name)
+                (slot-value args 'left))
+    (bind-args (slot-value formals 'right) (slot-value args 'right) env))
+
+  (define-method (bind-args (formals <Pair>) (args <EmptyList>) env)
+    (error "too few arguments!"))
+
+  (define-method (bind-args (formals <EmptyList>) (args #t) env)
+    (error "too many arguments!"))
+
+  (define-method (bind-args (formals <Symbol>) (args #t) env)
+    (extend env (slot-value formals 'name) args))
+
+  (define-method (interpret-call (itp <Interpreter>) (fn <Closure>) args)
+    (let ((formals (slot-value fn 'formals))
+          (body (slot-value fn 'body))
+          (env (make <Environment>
+                  'table (make-hash-table)
+                  'parent (slot-value fn 'env))))
+      (bind-args formals args env)
+      (interpret itp body env)))
 
   (define-method (interpret (itp <Interpreter>) (expr <Pair>) env)
     (let ((op (slot-value expr 'left)))
@@ -201,7 +240,8 @@
           ("quote" (slot-value (slot-value expr 'right) 'left))
           ("fn"    (interpret-fn itp expr env))
           (_       (error "no such special form" (slot-value op 'name))))
-        (error "no calling yet!")))))
+        (interpret-call itp (interpret itp op env)
+                            (interpret-args itp (slot-value expr 'right) env))))))
 
   ;;;; Main
 
