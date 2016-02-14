@@ -1,4 +1,29 @@
 
+(centring.ct/def list
+  (centring.ct/fn vs vs))
+
+(centring.ct/def def
+  (centring.ct/macro (name val)
+    (list (centring.ct/quote centring.ct/def) name val)))
+
+(def macro
+  (centring.ct/macro (formals expr)
+    (list (centring.ct/quote centring.ct/macro) formals expr)))
+
+(def quote
+  (macro (v)
+    (list (centring.ct/quote centring.ct/quote) v)))
+
+(def fn
+  (macro (formals expr)
+    (list (quote centring.ct/fn) formals expr)))
+
+(def if
+  (macro (cond then else)
+    (list (quote centring.ct/if) cond then else)))
+
+;;;;
+
 (def dec
   (fn (n) (- n 1)))
 

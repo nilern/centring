@@ -27,11 +27,13 @@
   ;; (defenum Value
   ;;   (Int val)
   ;;   (Bool val)
-  ;;   EmptyList
-  ;;   Nothing
+  ;;   (EmptyList)
+  ;;   (Nothing)
   ;;   (Symbol module name)
   ;;   (Pair left right)
-  ;;   (Closure formals body env))
+  ;;   (Macro expander)
+  ;;   (Closure formals body env)
+  ;;   (Module name bindings aliases refers))
 
   (define-class <Value>)
 
@@ -58,6 +60,15 @@
     (formals
      body
      env))
+
+  (define-class <Macro> (<Value>)
+    (expander)) ;; Closure
+
+  (define-class <Module> (<Value>)
+    (name
+     bindings
+     aliases  ;; hash-table<string, Module>
+     refers)) ;; hash-table<string, Symbol>
 
   ;;;; Analyze
 
@@ -117,12 +128,6 @@
   (define-class <Environment> ()
     (bindings
      parent))
-
-  (define-class <Module> ()
-    (name
-     bindings
-     aliases  ;; hash-table<string, Module>
-     refers)) ;; hash-table<string, Symbol>
 
   (define-class <Interpreter> ()
     (module-registry))
@@ -214,10 +219,7 @@
     (let* ((fn-args (slot-value expr 'right))
            (formals (slot-value fn-args 'left))
            (body (slot-value (slot-value fn-args 'right) 'left)))
-      (make-closure formals body env)))
-
-  (define (make-closure formals body env)
-      (make <Closure> 'formals formals 'body body 'env env))
+      (make <Closure> 'formals formals 'body body 'env env)))
 
   (define-method (interpret-args (itp <Interpreter>) (args <EmptyList>) env)
     args)
@@ -256,6 +258,17 @@
       (bind-args formals (interpret-args itp args callenv) env)
       (interpret itp body env)))
 
+  ;; TODO: hygiene, separate macroexpansion phase (not intertwined with interpret)
+  (define-method (interpret-call (itp <Interpreter>) (mac <Macro>) args callenv)
+    (let* ((expander (slot-value mac 'expander))
+           (formals (slot-value expander 'formals))
+           (body (slot-value expander 'body))
+           (env (make <Environment>
+                  'bindings (make-hash-table)
+                  'parent (slot-value expander 'env))))
+      (bind-args formals args env)
+      (interpret itp (interpret itp body env) callenv)))
+
   (define-method (interpret (itp <Interpreter>) (expr <Pair>) env)
     (let ((op (slot-value expr 'left)))
       (if (and (eq? (class-of op) <Symbol>)
@@ -266,6 +279,14 @@
           ("if"    (interpret-conditional itp expr env))
           ("quote" (slot-value (slot-value expr 'right) 'left))
           ("fn"    (interpret-fn itp expr env))
+          ("macro" (make <Macro>
+                      'expander
+                      (interpret-fn
+                        itp
+                        (make <Pair>
+                          'left (make <Symbol> 'module "centring.ct" 'name "fn")
+                          'right (slot-value expr 'right))
+                        env)))
           (_       (error "no such special form" (slot-value op 'name))))
         (interpret-call itp (interpret itp op env) (slot-value expr 'right) env)))))
 
@@ -281,7 +302,7 @@
 (define (main arglist)
   (let ((expr (match arglist
                 (`("-e" ,estr) (with-input-from-string estr read))
-                (`(,filename) `(do ,@(read-file filename))))))
+                (`(,filename) `(centring.ct/do ,@(read-file filename))))))
     (printf "~S~N"
       (denotate (interpret
                   (make <Interpreter> 'module-registry (make-hash-table))
