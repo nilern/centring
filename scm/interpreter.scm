@@ -165,6 +165,7 @@
 
   (define-generic (lookup itp env name))
   (define-generic (lookup-module itp name))
+  (define-generic (lookup/create-module itp name))
   (define-generic (extend env name val))
 
   (define-method (lookup (itp <Interpreter>) (env <Environment>) (sym <Symbol>))
@@ -200,6 +201,18 @@
     (aif (hash-table-ref/default (slot-value itp 'module-registry) name #f)
       it
       (error "no such module" name)))
+
+  (define-method (lookup/create-module (itp <Interpreter>) name)
+    (let ((registry (slot-value itp 'module-registry)))
+      (aif (hash-table-ref/default registry name #f)
+        it
+        (let ((mod (make <Module>
+                     'name name
+                     'bindings (make-hash-table)
+                     'aliases (make-hash-table)
+                     'refers (make-hash-table))))
+          (hash-table-set! registry name mod)
+          mod))))
 
   (define-method (extend (env <Environment>) name val)
     (hash-table-set! (slot-value env 'bindings) name val)
@@ -257,6 +270,16 @@
            (formals (slot-value fn-args 'left))
            (body (slot-value (slot-value fn-args 'right) 'left)))
       (make <Closure> 'formals formals 'body body 'env env)))
+
+  (define (interpret-set-module! itp expr)
+    (set! (slot-value itp 'envstack)
+          (list
+            (lookup/create-module
+              itp
+              (slot-value
+                (interpret itp (slot-value (slot-value expr 'right) 'left))
+                'name))))
+    nothing)
 
   (define-method (interpret-args (itp <Interpreter>) (args <EmptyList>))
     args)
@@ -335,6 +358,7 @@
                         (make <Pair>
                           'left (make <Symbol> 'module "centring.ct" 'name "fn")
                           'right (slot-value expr 'right)))))
+          ("set-module!" (interpret-set-module! itp expr))
           (_       (error "no such special form" (slot-value op 'name))))
         (interpret-call itp (interpret itp op) (slot-value expr 'right))))))
 

@@ -1,3 +1,4 @@
+(centring.ct/set-module! (centring.ct/quote centring.core))
 
 (centring.ct/def list
   (centring.ct/fn vs vs))
@@ -22,15 +23,21 @@
   (macro (cond then else)
     (list (quote centring.ct/if) cond then else)))
 
+(def module
+  (macro (name)
+    (list (quote centring.ct/set-module!) (list (quote quote) name))))
+
 ;;;;
 
-(def dec
-  (fn (n) (- n 1)))
+(module factorial)
 
-(def fact
-  (fn (n)
-    (if (< n 1)
+(centring.core/def dec
+  (centring.core/fn (n) (centring.core/- n 1)))
+
+(centring.core/def fact
+  (centring.core/fn (n)
+    (centring.core/if (centring.core/< n 1)
       1
-      (* n (fact (dec n))))))
+      (centring.core/* n (fact (dec n))))))
 
-(writeln (fact 5))
+(centring.core/writeln (fact 5))
