@@ -1,307 +1,377 @@
-(include "bootstrap.scm")
+(module centring:interpreter
+  (analyze
 
-(module centring.interpreter
-  (Value/Int
-   Value/Bool
-   Value/NativeFn
-   Env
-   nil
-
-   analyze
    denotate
-   cexpand
-   evaluate
 
+   <Int>
+   <Bool>
+   nothing
+   <NativeFn>
    native-fn
-   numeric-binop
 
-   ns-registry
-   centring.core)
+   <Module>
+   <Interpreter>
+   interpret)
 
-  (import scheme chicken
-          centring.bootstrap)
-  (use coops coops-primitive-objects
-       (only miscmacros let/cc define-syntax-rule)
-       (only anaphora acond)
+  (import scheme chicken)
+
+  (use coops
+       coops-primitive-objects
+       (only matchable match)
+       (only anaphora aif acond)
+       (only miscmacros define-syntax-rule)
+       (only extras printf sprintf)
        (only (srfi 13) string-index)
-       (srfi 69))
+       (only (srfi 69) make-hash-table hash-table-set! hash-table-ref/default))
 
-  ;;;;
+  ;;;; Constants
 
-  (define-generic (first coll))
-  (define-generic (rest coll))
+  (define module-separator #\/)
 
-  (def (second coll) (first (rest coll)))
-  (def (third coll) (first (rest (rest coll))))
-  (def (fourth coll) (first (rest (rest (rest coll)))))
+  ;;;; Value
 
-  ;;;;
+  ;; ;; Metacircular version would be:
+  ;; (defenum Value
+  ;;   (Int val)
+  ;;   (Bool val)
+  ;;   (EmptyList)
+  ;;   (Nothing)
+  ;;   (Symbol module name)
+  ;;   (Pair left right)
+  ;;   (Macro expander)
+  ;;   (Closure formals body env)
+  ;;   (NativeFn fn)
+  ;;   (Module name bindings aliases refers))
 
-  (defenum Value
-    (Int val)
-    (Bool val)
-    (EmptyList)
-    (Nil)
-    (Symbol ns name)
-    (Pair car cdr)
-    (Closure formals code env)
-    (NativeFn fn)
-    (Ns name bindings refers aliases)
-    (Box ref))
+  (define-class <Value>)
 
-  (define-class Env ()
-    (table
-     parent))
+  (define-class <Int> (<Value>)
+    (val))
 
-  ;;;;
+  (define-class <Bool> (<Value>)
+    (val))
 
-  (def empty-list (Value/EmptyList))
-  (def nil (Value/Nil))
+  (define-class <EmptyList> (<Value>))
+  (define empty-list (make <EmptyList>))
 
-  ;;;;
+  (define-class <Nothing> (<Value>))
+  (define nothing (make <Nothing>))
 
-  (defmethod (first ls :Value/Pair) (slot-value ls 'car))
-  (defmethod (rest ls :Value/Pair) (slot-value ls 'cdr))
+  (define-class <Symbol> (<Value>)
+    (module name))
 
-  (defmethod (name sym :Value/Symbol) (slot-value sym 'name))
-  (def (namespace sym) (slot-value sym 'ns))
+  (define-class <Pair> (<Value>)
+    (left
+     right))
 
-  (def (Pair->list p)
-    (if (empty? p)
-      '()
-      (cons (first p) (Pair->list (rest p)))))
+  (define-class <Closure> (<Value>)
+    (formals
+     body
+     env))
+
+  (define-class <NativeFn> (<Value>)
+    (fn))
+
+  (define-class <Macro> (<Value>)
+    (expander)) ;; Closure
+
+  (define-class <Module> (<Value>)
+    (name
+     bindings
+     aliases  ;; hash-table<string, Module>
+     refers)) ;; hash-table<string, Symbol>
+
+  ;;;; Sugar
 
   (define-syntax-rule (native-fn formals body ...)
-    (Value/NativeFn
-      (lambda formals
-        body ...)))
+    (make <NativeFn>
+      'fn (lambda formals
+            body ...)))
 
-  (def (numeric-binop res-type f)
-    (native-fn (a b)
-      (res-type
-        (f (slot-value a 'val)
-           (slot-value b 'val)))))
+  ;;;; Analyze
 
-  ;;;;
+  (define-generic (analyze sexpr))
 
-  (def (analyze-symbol sym)
+  (define-method (analyze (n <fixnum>))
+    (make <Int> 'val n))
+
+  (define-method (analyze (b <boolean>))
+    (make <Bool> 'val b))
+
+  (define-method (analyze (sym <symbol>))
     (let* ((sstr (symbol->string sym))
-           (sepi (string-index sstr #\/)))
-      (if (or (not sepi) (zero? sepi) (= sepi (string-length sstr)))
-        (Value/Symbol nil sym)
-        (Value/Symbol (string->symbol (substring sstr 0 sepi))
-                      (string->symbol (substring sstr (inc sepi)))))))
+           (sepi (string-index sstr module-separator)))
+      (if (or (not sepi)                     ; just a name
+              (zero? sepi)                   ; starts with modsep
+              (= sepi (string-length sstr))) ; ends with modsep
+        (make <Symbol> 'module #f 'name (symbol->string sym))
+        (make <Symbol>
+          'module (substring sstr 0 sepi)
+          'name   (substring sstr (add1 sepi))))))
 
-  (def (analyze sexpr)
-    (match sexpr
-      (? fixnum?)  (Value/Int sexpr)
-      (? boolean?) (Value/Bool sexpr)
-      (? symbol?)  (analyze-symbol sexpr)
-      (v . vs)     (Value/Pair (analyze v) (analyze vs))
-      '()          empty-list))
+  (define-method (analyze (b <null>))
+    empty-list)
 
-  (def (denotate ast)
-    (match ast
-      (? Value/Int?)       (slot-value ast 'val)
-      (? Value/Bool?)      (slot-value ast 'val)
-      (? Value/EmptyList?) '()
-      (? Value/Nil?)       ast
-      (? Value/Symbol?)    (if (not (eq? (slot-value ast 'ns) nil))
-                             (symbol (name (slot-value ast 'ns))
-                                     (name (slot-value ast 'name)))
-                             (slot-value ast 'name))
-      (? Value/Pair?)      (cons (denotate (first ast)) (denotate (rest ast)))
-      (? Value/Closure?)   ast
-      (? Value/NativeFn?)  (slot-value ast 'fn)
-      (? Value/Ns?)        ast
-      (? Value/Box?)       ast))
+  (define-method (analyze (p <pair>))
+    (make <Pair> 'left (analyze (car p)) 'right (analyze (cdr p))))
 
-  ;;;;
+  ;;;; Denotate
 
-  (define-method (lookup (env Env) sym)
-    (let ((name (name sym)))
+  (define-generic (denotate val))
+  (define-generic (denotate-list val))
+
+  (define-method (denotate (val #t))
+    val)
+
+  (define-method (denotate (n <Int>))
+    (slot-value n 'val))
+
+  (define-method (denotate (b <Bool>))
+    (slot-value b 'val))
+
+  (define-method (denotate (sym <Symbol>))
+    (let ((modname (slot-value sym 'module)))
+      (if modname
+        (string->symbol
+          (sprintf "~A/~A" (slot-value sym 'module) (slot-value sym 'name)))
+        (string->symbol (slot-value sym 'name)))))
+
+  (define-method (denotate (b <EmptyList>))
+    '())
+
+  (define-method (denotate (p <Pair>))
+    `(,(denotate (slot-value p 'left)) . ,(denotate (slot-value p 'right))))
+
+  (define-method (denotate-list (p <Pair>))
+    `(,(slot-value p 'left) . ,(denotate-list (slot-value p 'right))))
+
+  (define-method (denotate-list (p <EmptyList>))
+    '())
+
+  ;;;; Interpreter Types and Operations
+
+  (define-class <Environment> ()
+    (bindings
+     parent))
+
+  (define-class <Interpreter> ()
+    (module-registry))
+
+  (define-generic (lookup itp env name))
+  (define-generic (lookup-module itp name))
+  (define-generic (extend env name val))
+
+  (define-method (lookup (itp <Interpreter>) (env <Environment>) (sym <Symbol>))
+    (acond
+      ((and (not (slot-value sym 'module))
+            (hash-table-ref/default (slot-value env 'bindings) 
+                                    (slot-value sym 'name)
+                                    #f))
+       it)
+      ((slot-value env 'parent) (lookup itp it sym))
+      (else (error "can't reference unbound variable" (denotate sym)))))
+
+  (define-method (lookup (itp <Interpreter>) (mod <Module>) (sym <Symbol>))
+    (let ((symname (slot-value sym 'name))
+          (symmod (slot-value sym 'module)))
       (acond
-        ((hash-table-ref/default (slot-value env 'table) name #f) it)
-        ((slot-value env 'parent) (lookup it sym))
-        (else (error "can't reference unbound variable" name)))))
-
-  (define-method (extend (env Env) sym value)
-    (let ((name (name sym)))
-      (hash-table-set! (slot-value env 'table) name value)))
-
-  (defmethod (lookup ns :Value/Ns sym)
-    (let ((sym-ns (slot-value sym 'ns))
-          (name (name sym)))
-      (cond
-        ((eq? sym-ns nil)
-         (or
-           (hash-table-ref/default (slot-value ns 'bindings) name #f)
-           (hash-table-ref/default (slot-value ns 'refers) name #f)
-           (error "can't reference unbound variable" name)))
-        ((eq? sym-ns (slot-value ns 'name))
-         (or
-           (hash-table-ref/default (slot-value ns 'bindings) name #f)
-           (error "can't reference unbound variable" name)))
-        (else
+        ;; Not module-qualified or explicitly qualified to this Module:
+        ((or (not symmod) (equal? symmod (slot-value mod 'name)))
          (acond
-           ((hash-table-ref/default (slot-value ns 'aliases) sym-ns #f)
-            (lookup it sym))
-           (else (error "can't reference unbound variable" name)))))))
+           ;; Defined in this Module:
+           ((hash-table-ref/default (slot-value mod 'bindings) symname #f) it)
+           ;; Referred into this Module:
+           ((hash-table-ref/default (slot-value mod 'refers) symname #f)
+            (lookup itp mod it))
+           (else (error "can't reference unbound variable" (denotate sym)))))
+        ;; A Module-alias:
+        ((hash-table-ref/default (slot-value mod 'aliases) symmod #f)
+         (lookup itp it sym))
+        ;; Some module that is 'completely unrelated' to this one:
+        (else (lookup itp (lookup-module itp symmod) sym)))))
 
-  (defmethod (extend ns :Value/Ns sym value)
-    (let ((name (name sym)))
-      (hash-table-set! (slot-value ns 'bindings) name value)))
+  (define-method (lookup-module (itp <Interpreter>) name)
+    (aif (hash-table-ref/default (slot-value itp 'module-registry) name #f)
+      it
+      (error "no such module" name)))
 
-  (def (empty? ast)
-    (eq? ast empty-list))
+  (define-method (extend (env <Environment>) name val)
+    (hash-table-set! (slot-value env 'bindings) name val)
+    env)
 
-  (def (truthy? ast)
-    (not
-      (or (eq? ast nil)
-          (and (Value/Bool? ast)
-              (not (slot-value ast 'val))))))
+  (define-method (extend (mod <Module>) name val)
+    (hash-table-set! (slot-value mod 'bindings) name val)
+    mod)
 
-  ;;;;
+  ;;;; Interpret
 
-  (define (map-pair f p)
-    (if (empty? p)
-      empty-list
-      (Value/Pair (f (first p)) (map-pair f (rest p)))))
+  (define-generic (interpret itp expr env))
+  (define-generic (interpret-args itp args env))
+  (define-generic (interpret-call itp callee args))
 
-;;   (define-method (walk (ast #t) inner outer)
-;;     (outer ast))
-;;   (define-method (walk (ast <Value/Pair>) inner outer)
-;;     (outer (map-pair inner ast)))
-;; 
-;;   (def (postwalk f ast)
-;;     (walk (cute postwalk f <>) f ast))
-;; 
-;;   (def (prewalk f ast)
-;;     (walk (cute prewalk f <>) identity (f ast)))
+  (define-method (interpret (itp <Interpreter>) (expr #t) env)
+    expr)
 
-  (def (cexpand-1 ast)
-    (if (Value/Pair? ast)
-      (match (name (first ast))
-        'quote (Value/Pair (analyze 'centring.ct/quote) (rest ast))
-        'def   (Value/Pair (analyze 'centring.ct/def) (rest ast))
-        'do    (Value/Pair (analyze 'centring.ct/do) (rest ast))
-        'if    (Value/Pair (analyze 'centring.ct/if) (rest ast))
-        'fn    (Value/Pair (analyze 'centring.ct/fn) (rest ast))
-        _   ast)
-      ast))
+  (define-method (interpret (itp <Interpreter>) (expr <Symbol>) env)
+    (lookup itp env expr))
 
-  (def (cexpand ast)
-    (if (Value/Pair? ast)
-      (let ((expanded (cexpand-1 ast)))
-        (if (equal? ast expanded)
-          (map-pair cexpand expanded)
-          (cexpand expanded)))
-      ast))
+  (define (interpret-def itp expr env)
+    (let* ((def-args (slot-value expr 'right))
+           (name (slot-value (slot-value def-args 'left) 'name))
+           (val (slot-value (slot-value def-args 'right) 'left)))
+      (extend env name (interpret itp val env))))
 
-  ;;;;
-
-  (def ns-registry (make-parameter (make-hash-table)))
-
-  (def (evaluate-block ast env k)
+  (define (interpret-stmts itp stmts env)
     (cond
-      ((empty? ast)
-      (k nil))
-      ((empty? (rest ast))
-      (evaluate (first ast) env k))
-      (else
-      (evaluate (first ast) env
-                (lambda (_) (evaluate-block (rest ast) env k))))))
+      ((eq? stmts empty-list) nothing)
+      ((eq? (slot-value stmts 'right) empty-list)
+       (interpret itp (slot-value stmts 'left) env))
+      (else (begin
+              (interpret itp (slot-value stmts 'left) env)
+              (interpret-stmts itp (slot-value stmts 'right) env)))))
 
-  (def (evaluate-if ast env k)
-    (evaluate (second ast) env
-              (lambda (cv)
-                (if (truthy? cv)
-                  (evaluate (third ast) env k)
-                  (evaluate (fourth ast) env k)))))
+  (define (interpret-conditional itp expr env)
+    (let* ((args (slot-value expr 'right))
+           (condition (slot-value args 'left))
+           (then (slot-value (slot-value args 'right) 'left))
+           (else (slot-value
+                   (slot-value (slot-value args 'right) 'right)
+                   'left))
+           (cond-val (interpret itp condition env)))
+      (if (not (eq? (class-of cond-val) <Bool>))
+        (error "not a boolean" cond-val)
+        (if (slot-value cond-val 'val)
+          (interpret itp then env)
+          (interpret itp else env)))))
 
-  (def (evaluate-args args evargs env k)
-    (evaluate (first args) env
-              (lambda (v)
-                (let ((evargs (cons v evargs)))
-                  (if (empty? (rest args))
-                    (k (reverse evargs))
-                    (evaluate-args (rest args) evargs env k))))))
+  (define (interpret-fn itp expr env)
+    (let* ((fn-args (slot-value expr 'right))
+           (formals (slot-value fn-args 'left))
+           (body (slot-value (slot-value fn-args 'right) 'left)))
+      (make <Closure> 'formals formals 'body body 'env env)))
 
-  (def (evaluate-call ast env k)
-    (evaluate (first ast) env
-              (lambda (f)
-                (evaluate-args
-                  (rest ast) '() env
-                  (lambda (evargs)
-                    (if (Value/NativeFn? f)
-                      (k (apply (slot-value f 'fn) evargs))
-                      (evaluate (slot-value f 'code)
-                                (make Env
-                                  'table (alist->hash-table
-                                           (map (lambda (k v) `(,(name k) . ,v))
-                                                (Pair->list (slot-value f 'formals))
-                                                evargs))
-                                  'parent (slot-value f 'env))
-                                k)))))))
+  (define-method (interpret-args (itp <Interpreter>) (args <EmptyList>) env)
+    args)
 
-  (def (evaluate ast env k)
-    (match ast
-      (or (? Value/Int?) (? Value/Bool?) (? Value/EmptyList?) (? Value/Nil?))
-      (k ast)
+  (define-method (interpret-args (itp <Interpreter>) (args <Pair>) env)
+    (make <Pair>
+      'left (interpret itp (slot-value args 'left) env)
+      'right (interpret-args itp (slot-value args 'right) env)))
 
-      (? Value/Symbol?)
-      (k (match (lookup env ast)
-           (and (? Value/Box?) box) (slot-value box 'ref)
-           v v))
+  ;; Args should already be evaluated and env built:
+  (define-generic (bind-args formals args env))
 
-      (? Value/Pair?)
-      (if (Value/Symbol? (first ast))
-        (match (namespace (first ast))
-          'centring.ct
-          (match (name (first ast))
-            'quote (k (second ast))
-            'def   (evaluate (third ast) env
-                            (lambda (v) (extend env (second ast) v) (k nil)))
-            'do    (evaluate-block (rest ast) env k)
-            'if    (evaluate-if ast env k)
-            'fn    (k (Value/Closure (second ast) (third ast) env))
-            _      (evaluate-call ast env k))
-          _            (evaluate-call ast env k))
-        (evaluate-call ast env k))))
+  (define-method (bind-args (formals <EmptyList>) (args <EmptyList>) env)
+    env)
 
-  (def centring.core
-    (Value/Ns 'centring.core
-      (alist->hash-table
-        `((< . ,(numeric-binop Value/Bool <))
-          (* . ,(numeric-binop Value/Int *))
-          (- . ,(numeric-binop Value/Int -))
-          (writeln . ,(native-fn (v)
-                        (writeln (denotate v))
-                        nil))
-          (*ns* . ,(Value/Box nil))))
-      (make-hash-table)
-      (make-hash-table)))
+  (define-method (bind-args (formals <Pair>) (args <Pair>) env)
+    (extend env (slot-value (slot-value formals 'left) 'name)
+                (slot-value args 'left))
+    (bind-args (slot-value formals 'right) (slot-value args 'right) env))
 
-  (set! (slot-value (hash-table-ref (slot-value centring.core 'bindings) '*ns*)
-                    'ref)
-        centring.core)
+  (define-method (bind-args (formals <Pair>) (args <EmptyList>) env)
+    (error "too few arguments!"))
 
-  (hash-table-set! (ns-registry) 'centring.core centring.core))
+  (define-method (bind-args (formals <EmptyList>) (args #t) env)
+    (error "too many arguments!"))
 
-;;;;
+  (define-method (bind-args (formals <Symbol>) (args #t) env)
+    (extend env (slot-value formals 'name) args))
 
-(import centring.bootstrap
-        (only centring.interpreter evaluate analyze cexpand denotate centring.core))
-(use coops
-     (only miscmacros let/cc)
-     (only extras read-file)
-     (only ports with-input-from-string))
+  (define-method (interpret-call (itp <Interpreter>) (fn <NativeFn>) args callenv)
+    (let ((f (slot-value fn 'fn)))
+      (apply f (denotate-list (interpret-args itp args callenv)))))
 
-(def (main args)
-  (let ((expr (match args
-                `("-e" ,estr) (with-input-from-string estr read)
-                `(,filename) `(do ,@(read-file filename)))))
-    (let/cc k
-      (evaluate (cexpand (analyze expr)) centring.core k))))
+  (define-method (interpret-call (itp <Interpreter>) (fn <Closure>) args callenv)
+    (let ((formals (slot-value fn 'formals))
+          (body (slot-value fn 'body))
+          (env (make <Environment>
+                  'bindings (make-hash-table)
+                  'parent (slot-value fn 'env))))
+      (bind-args formals (interpret-args itp args callenv) env)
+      (interpret itp body env)))
+
+  ;; TODO: hygiene, separate macroexpansion phase (not intertwined with interpret)
+  (define-method (interpret-call (itp <Interpreter>) (mac <Macro>) args callenv)
+    (let* ((expander (slot-value mac 'expander))
+           (formals (slot-value expander 'formals))
+           (body (slot-value expander 'body))
+           (env (make <Environment>
+                  'bindings (make-hash-table)
+                  'parent (slot-value expander 'env))))
+      (bind-args formals args env)
+      (interpret itp (interpret itp body env) callenv)))
+
+  (define-method (interpret (itp <Interpreter>) (expr <Pair>) env)
+    (let ((op (slot-value expr 'left)))
+      (if (and (eq? (class-of op) <Symbol>)
+               (equal? (slot-value op 'module) "centring.ct"))
+        (match (slot-value op 'name)
+          ("def"   (interpret-def itp expr env))
+          ("do"    (interpret-stmts itp (slot-value expr 'right) env))
+          ("if"    (interpret-conditional itp expr env))
+          ("quote" (slot-value (slot-value expr 'right) 'left))
+          ("fn"    (interpret-fn itp expr env))
+          ("macro" (make <Macro>
+                      'expander
+                      (interpret-fn
+                        itp
+                        (make <Pair>
+                          'left (make <Symbol> 'module "centring.ct" 'name "fn")
+                          'right (slot-value expr 'right))
+                        env)))
+          (_       (error "no such special form" (slot-value op 'name))))
+        (interpret-call itp (interpret itp op env) (slot-value expr 'right) env)))))
+
+  ;;;; Main
+
+(import centring:interpreter)
+(use (only coops make slot-value)
+     (only matchable match)
+     (only extras read-file printf)
+     (only ports with-input-from-string)
+     (only (srfi 69) make-hash-table alist->hash-table))
+
+(define (main arglist)
+  (let ((expr (match arglist
+                (`("-e" ,estr) (with-input-from-string estr read))
+                (`(,filename) `(centring.ct/do ,@(read-file filename))))))
+    (denotate (interpret
+                (make <Interpreter>
+                  'module-registry
+                  (alist->hash-table
+                    `(("centring.core" .
+                       ,(make <Module>
+                          'name "centring.core"
+                          'bindings
+                          (alist->hash-table
+                            `(("writeln" . ,(native-fn (v)
+                                              (printf "~S~N" (denotate v))
+                                              nothing))
+                              ("<" . ,(native-fn (a b)
+                                        (make <Bool>
+                                          'val (< (slot-value a 'val)
+                                                  (slot-value b 'val)))))
+                              ("*" . ,(native-fn (a b)
+                                        (make <Int>
+                                          'val (* (slot-value a 'val)
+                                                  (slot-value b 'val)))))
+                              ("-" . ,(native-fn (a b)
+                                        (make <Int>
+                                          'val (- (slot-value a 'val)
+                                                  (slot-value b 'val)))))))
+                          'aliases (make-hash-table)
+                          'refers (make-hash-table))))))
+                (analyze expr)
+                (make <Module>
+                  'name "centring.user"
+                  'bindings (make-hash-table)
+                  'aliases (make-hash-table)
+                  'refers
+                  (alist->hash-table
+                    `(("writeln" . ,(analyze 'centring.core/writeln))
+                      ("<" . ,(analyze 'centring.core/<))
+                      ("*" . ,(analyze 'centring.core/*))
+                      ("-" . ,(analyze 'centring.core/-)))))))))
 
 (main (command-line-arguments))
