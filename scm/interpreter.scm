@@ -24,6 +24,11 @@
        (only (srfi 13) string-index)
        (only (srfi 69) make-hash-table hash-table-set! hash-table-ref/default))
 
+  ;;;; Utils
+
+  (define push cons)
+  (define peek car)
+
   ;;;; Constants
 
   (define module-separator #\/)
@@ -155,7 +160,8 @@
      parent))
 
   (define-class <Interpreter> ()
-    (module-registry))
+    (envstack
+     module-registry))
 
   (define-generic (lookup itp env name))
   (define-generic (lookup-module itp name))
@@ -205,58 +211,60 @@
 
   ;;;; Interpret
 
-  (define-generic (interpret itp expr env))
-  (define-generic (interpret-args itp args env))
+  (define-generic (interpret itp expr))
+  (define-generic (interpret-args itp args))
   (define-generic (interpret-call itp callee args))
 
-  (define-method (interpret (itp <Interpreter>) (expr #t) env)
+  (define-method (interpret (itp <Interpreter>) (expr #t))
     expr)
 
-  (define-method (interpret (itp <Interpreter>) (expr <Symbol>) env)
-    (lookup itp env expr))
+  (define-method (interpret (itp <Interpreter>) (expr <Symbol>))
+    (lookup itp (peek (slot-value itp 'envstack)) expr))
 
-  (define (interpret-def itp expr env)
-    (let* ((def-args (slot-value expr 'right))
+  (define (interpret-def itp expr)
+    (let* ((env (peek (slot-value itp 'envstack)))
+           (def-args (slot-value expr 'right))
            (name (slot-value (slot-value def-args 'left) 'name))
            (val (slot-value (slot-value def-args 'right) 'left)))
-      (extend env name (interpret itp val env))))
+      (extend env name (interpret itp val))))
 
-  (define (interpret-stmts itp stmts env)
+  (define (interpret-stmts itp stmts)
     (cond
       ((eq? stmts empty-list) nothing)
       ((eq? (slot-value stmts 'right) empty-list)
-       (interpret itp (slot-value stmts 'left) env))
+       (interpret itp (slot-value stmts 'left)))
       (else (begin
-              (interpret itp (slot-value stmts 'left) env)
-              (interpret-stmts itp (slot-value stmts 'right) env)))))
+              (interpret itp (slot-value stmts 'left))
+              (interpret-stmts itp (slot-value stmts 'right))))))
 
-  (define (interpret-conditional itp expr env)
+  (define (interpret-conditional itp expr)
     (let* ((args (slot-value expr 'right))
            (condition (slot-value args 'left))
            (then (slot-value (slot-value args 'right) 'left))
            (else (slot-value
                    (slot-value (slot-value args 'right) 'right)
                    'left))
-           (cond-val (interpret itp condition env)))
+           (cond-val (interpret itp condition)))
       (if (not (eq? (class-of cond-val) <Bool>))
         (error "not a boolean" cond-val)
         (if (slot-value cond-val 'val)
-          (interpret itp then env)
-          (interpret itp else env)))))
+          (interpret itp then)
+          (interpret itp else)))))
 
-  (define (interpret-fn itp expr env)
-    (let* ((fn-args (slot-value expr 'right))
+  (define (interpret-fn itp expr)
+    (let* ((env (peek (slot-value itp 'envstack)))
+           (fn-args (slot-value expr 'right))
            (formals (slot-value fn-args 'left))
            (body (slot-value (slot-value fn-args 'right) 'left)))
       (make <Closure> 'formals formals 'body body 'env env)))
 
-  (define-method (interpret-args (itp <Interpreter>) (args <EmptyList>) env)
+  (define-method (interpret-args (itp <Interpreter>) (args <EmptyList>))
     args)
 
-  (define-method (interpret-args (itp <Interpreter>) (args <Pair>) env)
+  (define-method (interpret-args (itp <Interpreter>) (args <Pair>))
     (make <Pair>
-      'left (interpret itp (slot-value args 'left) env)
-      'right (interpret-args itp (slot-value args 'right) env)))
+      'left (interpret itp (slot-value args 'left))
+      'right (interpret-args itp (slot-value args 'right))))
 
   ;; Args should already be evaluated and env built:
   (define-generic (bind-args formals args env))
@@ -278,21 +286,24 @@
   (define-method (bind-args (formals <Symbol>) (args #t) env)
     (extend env (slot-value formals 'name) args))
 
-  (define-method (interpret-call (itp <Interpreter>) (fn <NativeFn>) args callenv)
+  (define-method (interpret-call (itp <Interpreter>) (fn <NativeFn>) args)
     (let ((f (slot-value fn 'fn)))
-      (apply f (denotate-list (interpret-args itp args callenv)))))
+      (apply f (denotate-list (interpret-args itp args)))))
 
-  (define-method (interpret-call (itp <Interpreter>) (fn <Closure>) args callenv)
+  (define-method (interpret-call (itp <Interpreter>) (fn <Closure>) args)
     (let ((formals (slot-value fn 'formals))
           (body (slot-value fn 'body))
           (env (make <Environment>
                   'bindings (make-hash-table)
                   'parent (slot-value fn 'env))))
-      (bind-args formals (interpret-args itp args callenv) env)
-      (interpret itp body env)))
+      (bind-args formals (interpret-args itp args) env)
+      (interpret (make <Interpreter>
+                   'envstack (push env (slot-value itp 'envstack))
+                   'module-registry (slot-value itp 'module-registry))
+                 body)))
 
   ;; TODO: hygiene, separate macroexpansion phase (not intertwined with interpret)
-  (define-method (interpret-call (itp <Interpreter>) (mac <Macro>) args callenv)
+  (define-method (interpret-call (itp <Interpreter>) (mac <Macro>) args)
     (let* ((expander (slot-value mac 'expander))
            (formals (slot-value expander 'formals))
            (body (slot-value expander 'body))
@@ -300,30 +311,34 @@
                   'bindings (make-hash-table)
                   'parent (slot-value expander 'env))))
       (bind-args formals args env)
-      (interpret itp (interpret itp body env) callenv)))
+      (interpret itp
+                 (interpret
+                   (make <Interpreter>
+                     'envstack (push env (slot-value itp 'envstack))
+                     'module-registry (slot-value itp 'module-registry))
+                   body))))
 
-  (define-method (interpret (itp <Interpreter>) (expr <Pair>) env)
+  (define-method (interpret (itp <Interpreter>) (expr <Pair>))
     (let ((op (slot-value expr 'left)))
       (if (and (eq? (class-of op) <Symbol>)
                (equal? (slot-value op 'module) "centring.ct"))
         (match (slot-value op 'name)
-          ("def"   (interpret-def itp expr env))
-          ("do"    (interpret-stmts itp (slot-value expr 'right) env))
-          ("if"    (interpret-conditional itp expr env))
+          ("def"   (interpret-def itp expr))
+          ("do"    (interpret-stmts itp (slot-value expr 'right)))
+          ("if"    (interpret-conditional itp expr))
           ("quote" (slot-value (slot-value expr 'right) 'left))
-          ("fn"    (interpret-fn itp expr env))
+          ("fn"    (interpret-fn itp expr))
           ("macro" (make <Macro>
                       'expander
                       (interpret-fn
                         itp
                         (make <Pair>
                           'left (make <Symbol> 'module "centring.ct" 'name "fn")
-                          'right (slot-value expr 'right))
-                        env)))
+                          'right (slot-value expr 'right)))))
           (_       (error "no such special form" (slot-value op 'name))))
-        (interpret-call itp (interpret itp op env) (slot-value expr 'right) env)))))
+        (interpret-call itp (interpret itp op) (slot-value expr 'right))))))
 
-  ;;;; Main
+;;;; Main
 
 (import centring:interpreter)
 (use (only coops make slot-value)
@@ -338,6 +353,18 @@
                 (`(,filename) `(centring.ct/do ,@(read-file filename))))))
     (denotate (interpret
                 (make <Interpreter>
+                  'envstack
+                  (list
+                    (make <Module>
+                      'name "centring.user"
+                      'bindings (make-hash-table)
+                      'aliases (make-hash-table)
+                      'refers
+                      (alist->hash-table
+                        `(("writeln" . ,(analyze 'centring.core/writeln))
+                          ("<" . ,(analyze 'centring.core/<))
+                          ("*" . ,(analyze 'centring.core/*))
+                          ("-" . ,(analyze 'centring.core/-))))))
                   'module-registry
                   (alist->hash-table
                     `(("centring.core" .
@@ -362,16 +389,6 @@
                                                   (slot-value b 'val)))))))
                           'aliases (make-hash-table)
                           'refers (make-hash-table))))))
-                (analyze expr)
-                (make <Module>
-                  'name "centring.user"
-                  'bindings (make-hash-table)
-                  'aliases (make-hash-table)
-                  'refers
-                  (alist->hash-table
-                    `(("writeln" . ,(analyze 'centring.core/writeln))
-                      ("<" . ,(analyze 'centring.core/<))
-                      ("*" . ,(analyze 'centring.core/*))
-                      ("-" . ,(analyze 'centring.core/-)))))))))
+                (analyze expr)))))
 
 (main (command-line-arguments))
