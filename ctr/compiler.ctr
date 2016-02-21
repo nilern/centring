@@ -1,0 +1,70 @@
+(module centring.compiler)
+
+;;;; Parser
+
+(defrecord (Parser pf))
+
+(def (parse p :Parser cs)
+  ((.pf p) cs))
+
+;;; Sequencing
+
+(def (mbind p :Parser f)
+  (Parser
+    (fn (cs)
+      (let (pres (parse p cs))
+        (match pres
+          [(Ok v) cs] (parse (f v) cs)
+          _           pres)))))
+
+(def (mreturn (= Parser) v)
+  (Parser (fn (cs) (list (Ok v)))))
+
+;;; Alternatives
+
+(def (mappend p :Parser q :Parser)
+  (Parser
+    (fn (cs)
+      (let (pres (parse p cs))
+        (match pres
+          [(Ok _) _] pres
+          _          (parse q cs))))))
+
+(def (mzero (= Parser))
+  (Parser (fn (cs) [(Err "out of options") cs])))
+
+;;;; Readtable
+
+(defenum ReadEntry
+  (Constituent)
+  (Macro parser)
+  (Whitespace))
+
+(def (constituent? rte :ReadEntry.Constituent) #t)
+(def (constituent? rte :ReadEntry.Macro) #f)
+(def (constituent? rte :ReadEntry.Whitespace) #f)
+
+(def (parse rem :ReadEntry.Macro cs)
+  (parse (.parser rem) cs))
+
+;;;; Read
+
+(def (read rt cs)
+  (let (c (peek cs))
+    (if (constituent? (rt c))
+      (read-token cs)
+      (parse (rt c) (rest cs)))))
+
+(def (read cs)
+  (read default-readtable cs))
+
+(def (read-token rt cs)
+  (loop (cs cs tcs '())
+    (let (c (peek cs))
+      (if (constituent? (rt c))
+        (recur (rest cs) (push tcs c))
+        (string (reverse tcs))))))
+
+(def (default-readtable c)
+  (match c
+    \( (ReadEntry.Macro (until \) read))))
