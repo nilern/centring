@@ -3,7 +3,7 @@
      (only matchable match match-let match-lambda*)
      (only anaphora aif acond)
      (only miscmacros define-syntax-rule)
-     (only extras sprintf))
+     (only extras fprintf sprintf))
 
 ;;;; Utils
 ;;;; ===========================================================================
@@ -326,6 +326,22 @@
 (define-method (extend (env <Environment>) name val)
   (hash-table-set! (slot-value env 'bindings) name val)
   env)
+
+;;;; Printing
+;;;; ===========================================================================
+
+(define-method (print-object (rec <Record>) port)
+  (fprintf port "#.~S" (cons (slot-value (slot-value rec 'type) 'name)
+                             (slot-value rec 'field-vals))))
+
+(define-method (print-object (s <Singleton>) port)
+  (fprintf port "#.(~S)" (slot-value (slot-value s 'type) 'name)))
+
+(define-method (print-object (n <Int>) port)
+  (write (slot-value n 'val) port))
+
+(define-method (print-object (b <Bool>) port)
+  (write (slot-value b 'val) port))
 
 ;;;; Core
 ;;;; ===========================================================================
