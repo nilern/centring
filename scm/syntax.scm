@@ -1,9 +1,10 @@
 (use coops coops-primitive-objects
      (srfi 69)
      (only matchable match match-let match-lambda*)
-     (only anaphora aif acond)
+     (only anaphora aif acond awhen)
      (only miscmacros define-syntax-rule)
-     (only extras fprintf sprintf))
+     (only extras fprintf sprintf read-file)
+     (only readline readline))
 
 ;;;; Utils
 ;;;; ===========================================================================
@@ -358,9 +359,22 @@
 ;;;; Main
 ;;;; ===========================================================================
 
-(define (main _)
-  (write (get-field (make-value List.Pair "foo" (make-value List.Empty))
-                    'left)))
+(define (main arglist)
+  (if (null? arglist)
+    (let ((itp (make <Interpreter> 'envstack (list centring.core))))
+      (let recur ()
+        (awhen (readline ";ctr> " "")
+          (printf "~S~N" (interpret itp (with-input-from-string it read)))
+          (recur))))
+    (let ((expr (match arglist
+                  (`("-e" ,estr) (with-input-from-string estr read))
+                  (`(,filename) `(do ,@(read-file filename))))))
+      (printf "~S~N"
+              (interpret
+                (make <Interpreter>
+                  'envstack (list centring.core))
+                expr))))
+  (exit 0))
 
 
 ;; (include "bootstrap.scm")
