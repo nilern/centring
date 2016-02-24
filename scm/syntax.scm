@@ -111,6 +111,17 @@
         ((eq? (car names) fieldname) (car vals))
         (else (recur (cdr names) (cdr vals)))))))
 
+(define-generic (ctr-type val))
+(define-generic (supertype val))
+;; TODO: Methods for the rest of <Value>
+
+(define-method (ctr-type (rec <Record>)) (slot-value rec 'type))
+(define-method (ctr-type (s <Singleton>)) (slot-value s 'type))
+
+(define-method (supertype (rt <AbstractType>)) (slot-value rt 'supertype))
+(define-method (supertype (rt <RecordType>)) (slot-value rt 'supertype))
+(define-method (supertype (st <SingletonType>)) (slot-value st 'supertype))
+  
 (define-syntax-rule (native-fn formals body ...)
     (make <NativeFn>
       'code (lambda formals
@@ -307,6 +318,22 @@
     (`(fn ,(and (? list?) formals) . ,body)
      `(fn ,formals (do ,@body)))
     (_ expr)))
+
+;;;; Dispatch
+;;;; ===========================================================================
+
+(define (type-distance F T)
+  (define (tdist F T acc)
+    (cond
+     ((eq? T F) acc)
+     ((eq? T Any) -1)
+     (else (tdist F (supertype T) (add1 acc)))))
+  (tdist F T 0))
+
+(define (arg-distance ft arg)
+  (match ft
+    (`(= ,F) (if (eq? arg F) 0 -1))
+    (F (type-distance F (ctr-type arg)))))
 
 ;;;; Environments
 ;;;; ===========================================================================
