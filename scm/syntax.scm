@@ -296,6 +296,16 @@
 (define-method (interpret-call (itp <Interpreter>) (fn <NativeFn>) args)
   ((slot-value fn 'code) itp args))
 
+(define-method (interpret-call (itp <Interpreter>) (fn <MultiFn>) args)
+  (let ((methvecs (map (lambda (meth)
+                         (receive (dd va?) (dispatch-distance
+                                            (slot-value meth 'formal-types)
+                                            args
+                                            #t)
+                           (vector dd va? meth)))
+                       (hash-table-values (slot-value fn 'methods)))))
+    methvecs))
+
 ;; Args should already be evaluated and env built:
 (define-generic (bind-args formals args env))
 
@@ -382,6 +392,13 @@
      (else ; Vararg. Expand it and remember there was one:
       (ddist (repeat (length args) ftps) args pdd #t))))
   (ddist ftps args 0 #f))
+
+(define (prefer-methvec mv1 mv2)
+  (match-let ((#(dd1 va1? _) mv1)
+              (#(dd2 va2? _) mv2))
+    (if (= dd1 dd2)
+      (and (not va1?) va2?)
+      (< dd1 dd2))))
       
 ;;;; Environments
 ;;;; ===========================================================================
@@ -430,7 +447,11 @@
       `((nth-field . ,(native-fn (itp args)
                         (match-let (((rec n) args))
                           (list-ref (slot-value rec 'field-vals)
-                                    (slot-value n 'val)))))))))
+                                    (slot-value n 'val)))))
+        (Any . ,Any)
+        (List . ,List)
+        (List.Pair . ,List.Pair)
+        (List.Empty . ,List.Empty)))))
 
 ;;;; Main
 ;;;; ===========================================================================
