@@ -4,7 +4,10 @@
      (only anaphora aif acond awhen)
      (only miscmacros define-syntax-rule)
      (only extras fprintf sprintf read-file)
-     (only readline readline))
+     (only linenoise linenoise history-add))
+
+(declare (block) (local)
+         (inline) (specialize))
 
 ;;;; Utils
 ;;;; ===========================================================================
@@ -391,12 +394,14 @@
   (if (null? arglist)
     (let ((itp (make <Interpreter> 'envstack (list centring.core))))
       (let recur ()
-        (awhen (readline ";ctr> " "")
+        (awhen (linenoise "ctr> ")
+          (history-add it)
           (printf "~S~N" (interpret itp (with-input-from-string it read)))
           (recur))))
     (let ((expr (match arglist
                   (`("-e" ,estr) (with-input-from-string estr read))
-                  (`(,filename) `(do ,@(read-file filename))))))
+                  (`(,filename) `(do ,@(read-file filename)))
+                  (_ (error "invalid arguments" arglist) (exit 1)))))
       (printf "~S~N"
               (interpret
                 (make <Interpreter>
@@ -404,6 +409,7 @@
                 expr))))
   (exit 0))
 
+(main (command-line-arguments))
 
 ;; (include "bootstrap.scm")
 ;; 
