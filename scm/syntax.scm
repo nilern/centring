@@ -1,5 +1,6 @@
 (use coops coops-primitive-objects
      (srfi 69)
+     (only (srfi 1) proper-list?)
      (only matchable match match-let match-lambda*)
      (only anaphora aif acond awhen)
      (only miscmacros define-syntax-rule)
@@ -24,6 +25,19 @@
       ('() '())
       (`(,v . ,vs) (cons (f i v) (mixed vs (+ i 1))))))
   (mixed ls 0))
+
+(define (repeat n v)
+  (if (zero? n)
+    '()
+    (cons v (repeat (sub1 n) v))))
+
+;; The length of a list ignoring the '()/anything else at the end:
+(define (proper-length ls)
+  (define (plen ls l)
+    (if (pair? ls)
+      (plen (cdr ls) (add1 l))
+      l))
+  (plen ls 0))
 
 ;;;; Data Representation
 ;;;; ===========================================================================
@@ -333,11 +347,42 @@
      (else (tdist F (supertype T) (add1 acc)))))
   (tdist F T 0))
 
-(define (arg-distance ft arg)
-  (match ft
+(define (arg-distance ftp arg)
+  (match ftp
     (`(= ,F) (if (eq? arg F) 0 -1))
     (F (type-distance F (ctr-type arg)))))
 
+(define (combine-distances pdd sdd)
+  (if (eq? (negative? pdd) (negative? sdd))
+    (+ pdd sdd)
+    (min pdd sdd))) ; gets the negative one
+
+;; This should be correct and fast. Maybe it is.
+(define (dispatch-distance ftps args short-circuit?)
+  (define (ddist ftps args pdd vararg?)
+    (cond
+     ((null? args) ; Out of args, let's see about ftps:
+      (cond
+       ((null? ftps) ; Lengths matched, we are done:
+        (values pdd vararg?))
+       ((pair? ftps) ; Too few args:
+        (if short-circuit?
+          (values (combine-distances pdd -1) vararg?)
+          (values (combine-distances pdd (- (proper-length ftps)))
+                  (or vararg? (not (proper-list? ftps))))))
+       (else ; Vararg. Remember that and we are done:
+        (values pdd #t))))
+     ((null? ftps) ; Too many args.
+      (values (combine-distances pdd (- (length args))) vararg?))
+     ((pair? ftps) ; Both ftps and args left. recurse:
+      (if (and short-circuit? (negative? pdd))
+        (values pdd vararg?)
+        (let ((adist (arg-distance (car ftps) (car args))))
+          (ddist (cdr ftps) (cdr args) (combine-distances pdd adist) vararg?))))
+     (else ; Vararg. Expand it and remember there was one:
+      (ddist (repeat (length args) ftps) args pdd #t))))
+  (ddist ftps args 0 #f))
+      
 ;;;; Environments
 ;;;; ===========================================================================
 
