@@ -269,6 +269,8 @@
      (values name (interpret itp (keyword->symbol type))))
     (`(& ,(and (? symbol?) name))
      (values name Any))
+    (`(& (= ,typename)) ; What use can this ever be? Why not, though.
+     (values '_ `(= ,(interpret itp typename))))
     (`(,(and (? symbol?) name) ,(and (? keyword?) type)  . ,rfs)
      (receive (names types) (analyze-formals itp rfs)
        (values (cons name names)
@@ -276,6 +278,9 @@
     (`(,(and (? symbol?) name) . ,rfs)
      (receive (names types) (analyze-formals itp rfs)
        (values (cons name names) (cons Any types))))
+    (`((= ,typename) . ,rfs)
+     (receive (names types) (analyze-formals itp rfs)
+       (values (cons '_ names) (cons `(= ,(interpret itp typename)) types))))
     (_ (error "invalid formals" formals))))
 
 (define (interpret-fn itp name formals body)
