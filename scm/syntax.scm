@@ -363,6 +363,28 @@
 (define (prepend-dot sym)
   (string->symbol (sprintf ".~S" sym)))
 
+(define (match-test matchee-name pattern)
+  (match pattern
+    ((? symbol?) #t)
+    (`(,(and type (or 'List 'Vector 'HashMap 'Tuple 'Array 'Set)) . ,args)
+     `(and (isa? ,type ,matchee-name) (= (count ,matchee-name) ,(length args))))
+    (`(,type . ,_)
+     `(isa? ,type ,matchee-name))))
+
+(define (match-bind matchee-name pattern expr)
+  (match pattern
+    ('_  expr)
+    (`(,_) expr)     
+    (_ `(let ((,pattern ,matchee-name)) ,expr))))
+
+(define (match-body matchee-name mlines)
+  (match mlines
+    (`((,pattern ,expr) . ,mlines)
+     `(if ,(match-test matchee-name pattern)
+        ,(match-bind matchee-name pattern expr)
+        ,(match-body matchee-name mlines)))
+    ('() '(None))))
+
 (define (ctr-expand expr)
   (match expr
     (`(def (,name . ,formals) . ,body)
@@ -379,6 +401,10 @@
      `(fn ,name ,formals (do ,@body)))
     (`(fn ,(and (? list?) formals) . ,body)
      `(fn ,formals (do ,@body)))
+    (`(match ,matchee . ,mlines)
+     (let ((matchee-name (gensym 'matchee)))
+       `(let ((,matchee-name ,matchee))
+          ,(match-body matchee-name mlines))))
     (_ expr)))
 
 ;;;; Dispatch
@@ -508,6 +534,37 @@
         (List . ,List)
         (List.Pair . ,List.Pair)
         (List.Empty . ,List.Empty)))))
+
+;;;; Reader Modifications
+;;;; ===========================================================================
+
+(define ((read-ctor ctor-sym end-char) port)
+  (let loop ((c (peek-char port)) (exprs '()))
+    (cond
+     ((eof-object? c) (error "EOF reached while parsing #(...)!"))
+     ((char=? c end-char)
+      (read-char port)
+      `(,ctor-sym ,@(reverse exprs)))
+     ((char-whitespace? c)
+      (read-char port)
+      (loop (peek-char port) exprs))
+     (else
+      (let ((expr (read port)))
+        (loop (peek-char port) (cons expr exprs)))))))
+
+(set-read-syntax! #\[ (read-ctor 'Vector #\]))
+(set-read-syntax! #\{ (read-ctor 'HashMap #\}))
+
+(set-sharp-read-syntax! #\( (read-ctor 'Tuple #\)))
+(set-sharp-read-syntax! #\[ (read-ctor 'Array #\]))
+(set-sharp-read-syntax! #\{ (read-ctor 'Set #\}))
+
+(set-read-syntax! #\\
+  (lambda (port)
+    (let ((c (read-char port)))
+      (if (eof-object? c)
+        (error "expected character, got EOF.")
+        c))))
 
 ;;;; Main
 ;;;; ===========================================================================

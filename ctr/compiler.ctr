@@ -12,26 +12,24 @@
 (def (mbind p :Parser f)
   (Parser
     (fn (cs)
-      (let (pres (parse p cs))
-        (match pres
-          [(Ok v) cs] (parse (f v) cs)
-          _           pres)))))
+      (match (parse p cs)
+        (#((Ok v) cs) (parse (f v) cs))
+        (failres      failres)))))
 
 (def (mreturn (= Parser) v)
-  (Parser (fn (cs) (list (Ok v)))))
+  (Parser (fn (cs) #((Ok v) cs))))
 
 ;;; Alternatives
 
 (def (mappend p :Parser q :Parser)
   (Parser
     (fn (cs)
-      (let (pres (parse p cs))
-        (match pres
-          [(Ok _) _] pres
-          _          (parse q cs))))))
+        (match (parse p cs)
+          ((and #((Ok _) _) res) res)
+          (_                     (parse q cs))))))
 
 (def (mzero (= Parser))
-  (Parser (fn (cs) [(Err "out of options") cs])))
+  (Parser (fn (cs) #((Err "out of options") cs))))
 
 ;;;; Readtable
 
