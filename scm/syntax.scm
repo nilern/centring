@@ -78,10 +78,24 @@
 
 ;;; Immediate Types
 
+(define-class <Bool> (<Value>)
+  (val))
+
 (define-class <Int> (<Value>)
   (val))
 
-(define-class <Bool> (<Value>)
+(define-class <Char> (<Value>)
+  (val))
+
+;;; Builtin Non-immediates
+
+(define-class <Tuple> (<Value>)
+  (val))
+
+(define-class <Array> (<Value>)
+  (val))
+
+(define-class <String> (<Value>)
   (val))
 
 ;;; Callables
@@ -146,11 +160,19 @@
 (define-method (supertype (rt <AbstractType>)) (slot-value rt 'supertype))
 (define-method (supertype (rt <RecordType>)) (slot-value rt 'supertype))
 (define-method (supertype (st <SingletonType>)) (slot-value st 'supertype))
-  
-(define-syntax-rule (native-fn formals body ...)
-    (make <NativeFn>
-      'code (lambda formals
-              body ...)))
+
+(use-for-syntax (only matchable match-let))
+
+(define-syntax native-fn
+  (ir-macro-transformer
+   (lambda (expr inject compare)
+     (match-let (((_ (name itp formals formal-types) . body) expr))
+       `(make <NativeFn>
+          'name (quote ,name)
+          'formal-types (list ,@formal-types)
+          'code (lambda (,itp args)
+                  (match-let ((,formals args))
+                    ,@body)))))))
 
 (define (add-method! fn meth)
   (hash-table-set! (slot-value fn 'methods)
@@ -162,11 +184,6 @@
 (define Any (make <AbstractType>
               'name 'Any))
 (set! (slot-value Any 'supertype) Any)
-
-(define Symbol (make <RecordType>
-                 'name 'Symbol
-                 'supertype Any
-                 'field-names '(module name)))
 
 (define List (make <AbstractType>
                'name 'List
@@ -190,11 +207,17 @@
 
 (define-generic (analyze expr))
 
+(define-method (analyze (expr <boolean>))
+  (make <Bool> 'val expr))
+
 (define-method (analyze (expr <fixnum>))
   (make <Int> 'val expr))
 
-(define-method (analyze (expr <boolean>))
-  (make <Bool> 'val expr))
+(define-method (analyze (expr <char>))
+  (make <Char> 'val expr))
+
+(define-method (analyze (expr <string>))
+  (make <String> 'val expr))
 
 (define-method (analyze (expr <null>))
   (make-value List.Empty))
@@ -221,10 +244,16 @@
 (define-generic (interpret-stmts itp stmts))
 (define-generic (interpret-call itp callee args)) ; TODO: check args
 
+(define-method (interpret (itp <Interpreter>) (expr <boolean>))
+  (analyze expr))
+
 (define-method (interpret (itp <Interpreter>) (expr <fixnum>))
   (analyze expr))
 
-(define-method (interpret (itp <Interpreter>) (expr <boolean>))
+(define-method (interpret (itp <Interpreter>) (expr <char>))
+  (analyze expr))
+
+(define-method (interpret (itp <Interpreter>) (expr <string>))
   (analyze expr))
 
 (define-method (interpret (itp <Interpreter>) (expr <symbol>))
@@ -526,10 +555,9 @@
   (make <Environment>
     'bindings
     (alist->hash-table
-      `((nth-field . ,(native-fn (itp args)
-                        (match-let (((rec n) args))
-                          (list-ref (slot-value rec 'field-vals)
-                                    (slot-value n 'val)))))
+      `((nth-field . ,(native-fn (nth-field itp (rec n) (Any Any))
+                        (list-ref (slot-value rec 'field-vals)
+                                  (slot-value n 'val))))
         (Any . ,Any)
         (List . ,List)
         (List.Pair . ,List.Pair)
