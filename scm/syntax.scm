@@ -1,6 +1,6 @@
 (use coops coops-primitive-objects
      (srfi 69)
-     (only (srfi 1) proper-list?)
+     (only (srfi 1) proper-list? count)
      (only data-structures sort)
      (only matchable match match-let match-lambda*)
      (only anaphora aif acond awhen)
@@ -155,6 +155,7 @@
 
 (define-generic (ctr-type val))
 (define-generic (supertype val))
+(define-generic (isa? parent descendant))
 ;; TODO: Methods for the rest of <Value>
 
 (define-method (ctr-type (rec <Record>)) (slot-value rec 'type))
@@ -163,6 +164,18 @@
 (define-method (supertype (rt <AbstractType>)) (slot-value rt 'supertype))
 (define-method (supertype (rt <RecordType>)) (slot-value rt 'supertype))
 (define-method (supertype (st <SingletonType>)) (slot-value st 'supertype))
+
+(define-method (isa? (st1 <SingletonType>) (st2 <SingletonType>))
+  (eq? st1 st2))
+
+(define-method (isa? (st <SingletonType>) (rt <RecordType>))
+  #f)
+
+(define-method (isa? (rt <RecordType>) (st <SingletonType>))
+  #f)
+
+(define-method (isa? (rt1 <RecordType>) (rt2 <RecordType>))
+  (eq? rt1 rt2))
 
 (use-for-syntax (only matchable match-let))
 
@@ -276,6 +289,8 @@
                                     'name name
                                     'supertype Any
                                     'field-names fields))
+    (`(matches? ,pattern ,expr)
+     (analyze (matches? itp pattern (interpret itp expr))))
 
     (`(fn ,name ,formals ,body) (interpret-fn itp name formals body))
     (`(fn ,formals ,body) (interpret-fn itp (gensym 'fn) formals body))
@@ -308,6 +323,32 @@
 
 (define-method (interpret-branch (itp <Interpreter>) (cond #t) then else)
   (interpret itp then))
+(define-method (interpret-stmts (itp <Interpreter>) (stmts <null>))
+  (make-value None))
+
+(define-method (interpret-stmts (itp <Interpreter>) (stmts <pair>))
+  (match stmts
+    (`(,e) (interpret itp e))
+    (`(,e . ,es) (interpret itp e) (interpret-stmts itp es))))
+
+(define-method (interpret-branch (itp <Interpreter>) (cond <Bool>) then else)
+  (if (slot-value cond 'val)
+    (interpret itp then)
+    (interpret itp else)))
+
+(define-method (interpret-branch (itp <Interpreter>) (cond #t) then else)
+  (interpret itp then))
+
+(define (matches? itp pattern v)
+  (match pattern
+    ((? symbol?) #t)
+    (`(,stype) (isa? (interpret itp stype) (ctr-type v)))
+    (`(,type . ,arg-pats)
+     (and
+       (isa? (interpret itp type) (ctr-type v))
+       (= (count (cute matches? itp <> <>)
+                 arg-pats (slot-value v 'field-vals))
+          (length arg-pats))))))
 
 (define (analyze-formals itp formals)
   (match formals
@@ -415,20 +456,6 @@
 
 (define (prepend-dot sym)
   (string->symbol (sprintf ".~S" sym)))
-
-(define (match-test matchee-name pattern)
-  (match pattern
-    ((? symbol?) #t)
-    (`(,(and type (or 'List 'Vector 'HashMap 'Tuple 'Array 'Set)) . ,args)
-     `(and (isa? ,type ,matchee-name) (= (count ,matchee-name) ,(length args))))
-    (`(,type . ,_)
-     `(isa? ,type ,matchee-name))))
-
-(define (match-bind matchee-name pattern expr)
-  (match pattern
-    ('_  expr)
-    (`(,_) expr)     
-    (_ `(let ((,pattern ,matchee-name)) ,expr))))
 
 (define (match-body matchee-name succeed mlines)
   (match mlines
