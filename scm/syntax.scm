@@ -116,6 +116,9 @@
   (name
    (methods (make-hash-table))))
 
+(define-class <Continuation> (<Value>)
+  (cont))
+
 ;;;; Tools for Working with Centring Data
 ;;;; ===========================================================================
 
@@ -242,6 +245,7 @@
 
 (define-generic (interpret itp expr))
 (define-generic (interpret-stmts itp stmts))
+(define-generic (interpret-branch itp cond then else))
 (define-generic (interpret-call itp callee args)) ; TODO: check args
 
 (define-method (interpret (itp <Interpreter>) (expr <boolean>))
@@ -264,6 +268,8 @@
     (`(quote ,e) (analyze e))
     (`(def ,name ,value) (interpret-def itp name value))
     (`(do . ,stmts) (interpret-stmts itp stmts))
+    (`(if ,cond ,then ,else) (interpret-branch
+                              itp (interpret itp cond) then else))
 
     (`(|.| ,rec ,fieldname) (get-field (interpret itp rec) fieldname))
     (`(record-type ,name ,fields) (make <RecordType>
@@ -273,6 +279,11 @@
 
     (`(fn ,name ,formals ,body) (interpret-fn itp name formals body))
     (`(fn ,formals ,body) (interpret-fn itp (gensym 'fn) formals body))
+
+    (`(callcc ,callee) (let/cc ki
+                         (let ((k (make <Continuation> 'cont ki)))
+                           (interpret-call itp (interpret itp callee) `(,k)))))
+    
     (`(,callee . ,args) (interpret-call itp
                           (interpret itp callee)
                           (map (cute interpret itp <>) args)))))
@@ -289,6 +300,14 @@
   (match stmts
     (`(,e) (interpret itp e))
     (`(,e . ,es) (interpret itp e) (interpret-stmts itp es))))
+
+(define-method (interpret-branch (itp <Interpreter>) (cond <Bool>) then else)
+  (if (slot-value cond 'val)
+    (interpret itp then)
+    (interpret itp else)))
+
+(define-method (interpret-branch (itp <Interpreter>) (cond #t) then else)
+  (interpret itp then))
 
 (define (analyze-formals itp formals)
   (match formals
@@ -341,6 +360,11 @@
 
 (define-method (interpret-call (itp <Interpreter>) (fn <NativeFn>) args)
   ((slot-value fn 'code) itp args))
+
+(define-method (interpret-call (itp <Interpreter>) (k <Continuation>) args)
+  (match args
+    ('() ((slot-value k 'cont) (make-value None)))
+    (`(,v) ((slot-value k 'cont) v))))
 
 (define-method (interpret-call (itp <Interpreter>) (fn <MultiFn>) args)
   (let* ((methods (slot-value fn 'methods))
@@ -406,15 +430,18 @@
     (`(,_) expr)     
     (_ `(let ((,pattern ,matchee-name)) ,expr))))
 
-(define (match-body matchee-name mlines)
+(define (match-body matchee-name succeed mlines)
   (match mlines
     (`((,pattern ,expr) . ,mlines)
-     `(if ,(match-test matchee-name pattern)
-        ,(match-bind matchee-name pattern expr)
-        ,(match-body matchee-name mlines)))
-    ('() '(None))))
+     (let ((fail (gensym 'fail)))
+       `((letcc ,fail
+           (if-let (,pattern matchee-name)
+             (,succeed ,expr)
+             (,fail)))
+         ,@(match-body matchee-name succeed mlines))))
+    ('() '((None)))))
 
-(define (ctr-expand expr)
+(define (ctr-expand-1 expr)
   (match expr
     (`(def (,name . ,formals) . ,body)
      `(def ,name (fn ,name ,formals ,@body)))
@@ -426,15 +453,40 @@
               `(def (,(prepend-dot fieldname) rec ,(symbol->keyword name))
                  (nth-field rec ,i)))
             fields)))
+    (`(fn ,(and (? symbol?) name) ,formals ,body)
+     expr)
     (`(fn ,(and (? symbol?) name) ,formals . ,body)
      `(fn ,name ,formals (do ,@body)))
+    (`(fn ,(and (? list?) formals) ,body)
+     expr)
     (`(fn ,(and (? list?) formals) . ,body)
      `(fn ,formals (do ,@body)))
+    (`(let ,bindings . ,body)
+     `((fn ,(map car bindings) ,@body)
+       ,@(map cadr bindings)))
+    (`(letcc ,k . ,body)
+     `(callcc (fn (,k) ,@body)))
+    (`(if-let (,pattern ,cexpr) ,then ,else)
+     (let ((matchee (gensym 'matchee)))
+       `(let ((,matchee ,cexpr))
+          (if (matches? ,pattern ,matchee)
+            (let ((,pattern ,matchee))
+              ,then)
+            ,else))))
     (`(match ,matchee . ,mlines)
-     (let ((matchee-name (gensym 'matchee)))
+     (let ((matchee-name (gensym 'matchee))
+           (succeed (gensym 'succeed)))
        `(let ((,matchee-name ,matchee))
-          ,(match-body matchee-name mlines))))
+          (letcc ,succeed
+            (do 
+              ,@(match-body matchee-name succeed mlines))))))
     (_ expr)))
+
+(define (ctr-expand expr)
+  (let ((expansion (ctr-expand-1 expr)))
+    (if (eq? expansion expr)
+      expr
+      (ctr-expand expansion))))
 
 ;;;; Dispatch
 ;;;; ===========================================================================
