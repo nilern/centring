@@ -183,10 +183,6 @@
                      'name 'List.Empty
                      'supertype List))
 
-(define None (make <SingletonType>
-               'name 'None
-               'supertype Any))
-
 ;;;; Tools for Working with Centring Data
 ;;;; ===========================================================================
 
@@ -369,10 +365,10 @@
 (define (interpret-def itp name value)
   (let ((env (current-env itp)))
     (extend env name (interpret itp value))
-    (make-value None)))
+    (make <Tuple> 'vals '())))
 
 (define-method (interpret-stmts (itp <Interpreter>) (stmts <null>))
-  (make-value None))
+  (make <Tuple> 'vals '()))
 
 (define-method (interpret-stmts (itp <Interpreter>) (stmts <pair>))
   (match stmts
@@ -386,13 +382,6 @@
 
 (define-method (interpret-branch (itp <Interpreter>) (cond #t) then else)
   (interpret itp then))
-(define-method (interpret-stmts (itp <Interpreter>) (stmts <null>))
-  (make-value None))
-
-(define-method (interpret-stmts (itp <Interpreter>) (stmts <pair>))
-  (match stmts
-    (`(,e) (interpret itp e))
-    (`(,e . ,es) (interpret itp e) (interpret-stmts itp es))))
 
 (define-method (interpret-branch (itp <Interpreter>) (cond <Bool>) then else)
   (if (slot-value cond 'val)
@@ -416,16 +405,21 @@
        (every-pair? (cute matches? itp <> <>)
                     arg-pats (slot-value v 'field-vals))))))
 
+;; TODO: Extract type from ctor-patterns (so that just #(a b) = #(a b) :Tuple)?
 (define (analyze-formals itp formals)
   (match formals
     ('()
      (values '() '()))
+    (`(& (= ,typename)) ; What use can this ever be? Why not, though.
+     (values '_ `(= ,(interpret itp typename))))
     (`(& ,(and (not (? keyword?)) name) ,(and (? keyword?) type))
      (values name (interpret itp (keyword->symbol type))))
     (`(& ,(and (not (? keyword?)) name))
      (values name Any))
-    (`(& (= ,typename)) ; What use can this ever be? Why not, though.
-     (values '_ `(= ,(interpret itp typename))))
+
+    (`((= ,typename) . ,rfs)
+     (receive (names types) (analyze-formals itp rfs)
+       (values (cons '_ names) (cons `(= ,(interpret itp typename)) types))))
     (`(,(and (not (? keyword?)) name) ,(and (? keyword?) type)  . ,rfs)
      (receive (names types) (analyze-formals itp rfs)
        (values (cons name names)
@@ -433,9 +427,7 @@
     (`(,(and (not (? keyword?)) name) . ,rfs)
      (receive (names types) (analyze-formals itp rfs)
        (values (cons name names) (cons Any types))))
-    (`((= ,typename) . ,rfs)
-     (receive (names types) (analyze-formals itp rfs)
-       (values (cons '_ names) (cons `(= ,(interpret itp typename)) types))))
+
     (_ (error "invalid formals" formals))))
 
 (define (interpret-fn itp name formals body)
@@ -475,7 +467,7 @@
 
 (define-method (interpret-call (itp <Interpreter>) (k <Continuation>) args)
   (match args
-    ('() ((slot-value k 'cont) (make-value None)))
+    ('() ((slot-value k 'cont) (make <Tuple> 'vals '())))
     (`(,v) ((slot-value k 'cont) v))))
 
 (define-method (interpret-call (itp <Interpreter>) (fn <MultiFn>) args)
@@ -540,7 +532,7 @@
      `(if-let (,pattern ,matchee-name)
         (,succeed ,expr)
         ,(match-body matchee-name succeed mlines)))
-    ('() '(None))))
+    ('() '(Tuple))))
 
 (define (ctr-expand-1 expr)
   (match expr
@@ -753,8 +745,26 @@
                         (list-ref (slot-value rec 'field-vals)
                                   (slot-value n 'val))))
         (Any . ,Any)
-        (None . ,None)
+        (Type . ,Type)
+
+        (AbstractType . ,AbstractType)
+        (RecordType . ,RecordType)
+        (SingletonType . ,SingletonType)
+        (BuiltInType . ,BuiltInType)
+
+        (Int . ,Int)
+        (Bool . ,Bool)
+        (Char . ,Char)
+
         (Tuple . ,Tuple)
+        (Array . ,Array)
+        (String . ,String)
+
+        (Closure . ,Closure)
+        (NativeFn . ,NativeFn)
+        (MultiFn . ,MultiFn)
+        (Continuation . ,Continuation)
+
         (List . ,List)
         (List.Pair . ,List.Pair)
         (List.Empty . ,List.Empty)))))
