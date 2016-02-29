@@ -5,7 +5,7 @@
      (only matchable match match-let match-lambda*)
      (only anaphora aif acond awhen)
      (only miscmacros define-syntax-rule let/cc)
-     (only extras fprintf sprintf read-file)
+     (only extras fprintf printf sprintf read-file)
      (only linenoise linenoise history-add))
 
 #+compiling
@@ -789,7 +789,10 @@
       (let recur ()
         (awhen (linenoise "ctr> ")
           (history-add it)
-          (printf "~S~N" (interpret itp (with-input-from-string it read)))
+          (handle-exceptions exn
+            (fprintf (current-error-port) "Exception: ~S~N"
+                     ((condition-property-accessor 'exn 'message) exn))
+            (printf "~S~N" (interpret itp (with-input-from-string it read))))
           (recur))))
     (let ((expr (match arglist
                   (`("-e" ,estr) (with-input-from-string estr read))
