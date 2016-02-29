@@ -8,9 +8,9 @@
      (only extras fprintf sprintf read-file)
      (only linenoise linenoise history-add))
 
+#+compiling
 (declare (block) (local)
          (inline) (specialize))
-(keyword-style #:prefix)
 
 ;;;; Utils
 ;;;; ===========================================================================
@@ -27,6 +27,24 @@
       ('() '())
       (`(,v . ,vs) (cons (f i v) (mixed vs (+ i 1))))))
   (mixed ls 0))
+
+(define (every-pair? pred? l1 l2)
+  (match (cons l1 l2)
+    (`(() . ()) #t)
+    (`(() . (,_ . ,_)) #f)
+    (`((,_ . ,_) . ()) #f)
+    (`((,v1 . ,vs1) . (,v2 . ,vs2))
+     (and (pred? v1 v2) (every-pair? pred? vs1 vs2)))))
+
+(define (every-pair-lv? pred? ls vec)
+  (let ((vlen (vector-length vec)))
+    (let loop ((ls ls) (i 0))
+      (cond
+       ((null? ls) (= i vlen))
+       ((< i vlen) (if (pred? (car ls) (vector-ref vec i))
+                     (loop (cdr ls) (add1 i))
+                     #f))
+       (else #f)))))
 
 (define (repeat n v)
   (if (zero? n)
@@ -67,6 +85,10 @@
   (name
    supertype))
 
+(define-class <BuiltInType> (<Value>)
+  (name
+   supertype))
+
 ;;; Instances of User-defined Types
 
 (define-class <Record> (<Value>)
@@ -90,13 +112,13 @@
 ;;; Builtin Non-immediates
 
 (define-class <Tuple> (<Value>)
-  (val))
+  (vals))
 
 (define-class <Array> (<Value>)
-  (val))
+  (vals))
 
 (define-class <String> (<Value>)
-  (val))
+  (vals))
 
 ;;; Callables
 
@@ -118,6 +140,52 @@
 
 (define-class <Continuation> (<Value>)
   (cont))
+
+;;;; Actual Types
+;;;; ===========================================================================
+
+(define Any (make <AbstractType>
+              'name 'Any))
+(set! (slot-value Any 'supertype) Any)
+
+(define Type (make <AbstractType>
+               'name 'Type
+               'supertype Any))
+
+(define AbstractType (make <AbstractType> 'name 'AbstractType 'supertype Type))
+(define RecordType (make <AbstractType> 'name 'RecordType 'supertype Type))
+(define SingletonType (make <AbstractType> 'name 'SingletonType 'supertype Type))
+(define BuiltInType (make <AbstractType> 'name 'BuiltInType 'supertype Type))
+
+(define Bool (make <BuiltInType> 'name 'Bool 'supertype Any))
+(define Int (make <BuiltInType> 'name 'Int 'supertype Any))
+(define Char (make <BuiltInType> 'name 'Char 'supertype Any))
+
+(define Tuple (make <BuiltInType> 'name 'Tuple 'supertype Any))
+(define Array (make <BuiltInType> 'name 'Array 'supertype Any))
+(define String (make <BuiltInType> 'name 'String 'supertype Any))
+
+(define Closure (make <BuiltInType> 'name 'Closure 'supertype Any))
+(define NativeFn (make <BuiltInType> 'name 'NativeFn 'supertype Any))
+(define MultiFn (make <BuiltInType> 'name 'MultiFn 'supertype Any))
+(define Continuation (make <BuiltInType> 'name 'Continuation 'supertype Any))
+
+(define List (make <AbstractType>
+               'name 'List
+               'supertype Any))
+
+(define List.Pair (make <RecordType>
+                    'name 'List.Pair
+                    'supertype List
+                    'field-names '(left right)))
+
+(define List.Empty (make <SingletonType>
+                     'name 'List.Empty
+                     'supertype List))
+
+(define None (make <SingletonType>
+               'name 'None
+               'supertype Any))
 
 ;;;; Tools for Working with Centring Data
 ;;;; ===========================================================================
@@ -154,28 +222,40 @@
         (else (recur (cdr names) (cdr vals)))))))
 
 (define-generic (ctr-type val))
-(define-generic (supertype val))
 (define-generic (isa? parent descendant))
 ;; TODO: Methods for the rest of <Value>
 
+(define-method (ctr-type (at <AbstractType>)) AbstractType)
+(define-method (ctr-type (rt <RecordType>)) RecordType)
+(define-method (ctr-type (st <SingletonType>)) SingletonType)
+(define-method (ctr-type (bt <BuiltInType>)) BuiltInType)
 (define-method (ctr-type (rec <Record>)) (slot-value rec 'type))
 (define-method (ctr-type (s <Singleton>)) (slot-value s 'type))
+(define-method (ctr-type (b <Bool>)) Bool)
+(define-method (ctr-type (i <Int>)) Int)
+(define-method (ctr-type (c <Char>)) Char)
+(define-method (ctr-type (tup <Tuple>)) Tuple)
+(define-method (ctr-type (arr <Array>)) Array)
+(define-method (ctr-type (str <String>)) String)
+(define-method (ctr-type (fn <Closure>)) Closure)
+(define-method (ctr-type (fn <NativeFn>)) NativeFn)
+(define-method (ctr-type (fn <MultiFn>)) MultiFn)
+(define-method (ctr-type (k <Continuation>)) Continuation)
 
-(define-method (supertype (rt <AbstractType>)) (slot-value rt 'supertype))
-(define-method (supertype (rt <RecordType>)) (slot-value rt 'supertype))
-(define-method (supertype (st <SingletonType>)) (slot-value st 'supertype))
+(define (supertype type) (slot-value type 'supertype))
 
-(define-method (isa? (st1 <SingletonType>) (st2 <SingletonType>))
-  (eq? st1 st2))
-
-(define-method (isa? (st <SingletonType>) (rt <RecordType>))
-  #f)
-
-(define-method (isa? (rt <RecordType>) (st <SingletonType>))
-  #f)
-
+(define-method (isa? (t #t) (ot #t)) #f)
 (define-method (isa? (rt1 <RecordType>) (rt2 <RecordType>))
   (eq? rt1 rt2))
+(define-method (isa? (st1 <SingletonType>) (st2 <SingletonType>))
+  (eq? st1 st2))
+(define-method (isa? (bt1 <BuiltInType>) (bt2 <BuiltInType>))
+  (eq? bt1 bt2))
+(define-method (isa? (at <AbstractType>) (t #t))
+  (cond
+   ((eq? at t) #t)
+   ((eq? t Any) #f)
+   (else (isa? at (supertype t)))))
 
 (use-for-syntax (only matchable match-let))
 
@@ -194,33 +274,6 @@
   (hash-table-set! (slot-value fn 'methods)
                    (slot-value meth 'formal-types) meth))
 
-;;;; Actual Types
-;;;; ===========================================================================
-
-(define Any (make <AbstractType>
-              'name 'Any))
-(set! (slot-value Any 'supertype) Any)
-
-(define List (make <AbstractType>
-               'name 'List
-               'supertype Any))
-
-(define List.Pair (make <RecordType>
-                    'name 'List.Pair
-                    'supertype List
-                    'field-names '(left right)))
-
-(define List.Empty (make <SingletonType>
-                     'name 'List.Empty
-                     'supertype List))
-
-(define None (make <SingletonType>
-               'name 'None
-               'supertype Any))
-
-;;;; More Data Tools
-;;;; ===========================================================================
-
 (define-generic (analyze expr))
 
 (define-method (analyze (expr <boolean>))
@@ -233,7 +286,7 @@
   (make <Char> 'val expr))
 
 (define-method (analyze (expr <string>))
-  (make <String> 'val expr))
+  (make <String> 'vals expr))
 
 (define-method (analyze (expr <null>))
   (make-value List.Empty))
@@ -285,12 +338,22 @@
                               itp (interpret itp cond) then else))
 
     (`(|.| ,rec ,fieldname) (get-field (interpret itp rec) fieldname))
-    (`(record-type ,name ,fields) (make <RecordType>
-                                    'name name
-                                    'supertype Any
-                                    'field-names fields))
     (`(matches? ,pattern ,expr)
      (analyze (matches? itp pattern (interpret itp expr))))
+    
+    (`(record-type ,name ,super-name ,fields)
+     (make <RecordType>
+       'name name
+       'supertype (interpret itp super-name)
+       'field-names fields))
+    (`(singleton-type ,name ,super-name)
+     (make <SingletonType>
+       'name name
+       'supertype (interpret itp super-name)))
+    (`(abstract-type ,name ,super-name)
+     (make <AbstractType>
+       'name name
+       'supertype (interpret itp super-name)))
 
     (`(fn ,name ,formals ,body) (interpret-fn itp name formals body))
     (`(fn ,formals ,body) (interpret-fn itp (gensym 'fn) formals body))
@@ -342,13 +405,16 @@
 (define (matches? itp pattern v)
   (match pattern
     ((? symbol?) #t)
+    (`(Tuple . ,arg-pats)
+     (and
+       (isa? Tuple (ctr-type v))
+       (every-pair? (cute matches? itp <> <>) arg-pats (slot-value v 'vals))))
     (`(,stype) (isa? (interpret itp stype) (ctr-type v)))
     (`(,type . ,arg-pats)
      (and
        (isa? (interpret itp type) (ctr-type v))
-       (= (count (cute matches? itp <> <>)
-                 arg-pats (slot-value v 'field-vals))
-          (length arg-pats))))))
+       (every-pair? (cute matches? itp <> <>)
+                    arg-pats (slot-value v 'field-vals))))))
 
 (define (analyze-formals itp formals)
   (match formals
@@ -398,6 +464,11 @@
 
 (define-method (interpret-call (itp <Interpreter>) (t <RecordType>) args)
   (apply make-record t args))
+
+(define-method (interpret-call (itp <Interpreter>) (t <BuiltInType>) args)
+  (cond
+   ((eq? t Tuple) (make <Tuple> 'vals args))
+   (else (error "calling unimplemented for" t))))
 
 (define-method (interpret-call (itp <Interpreter>) (fn <NativeFn>) args)
   ((slot-value fn 'code) itp args))
@@ -454,32 +525,64 @@
 (define-method (bind-args (formals <symbol>) (args #t) env)
   (extend env formals (list->List args)))
 
+;;;; Expansion
+;;;; ===========================================================================
+
 (define (prepend-dot sym)
   (string->symbol (sprintf ".~S" sym)))
+
+(define (interpose-dot sym1 sym2)
+  (string->symbol (sprintf "~S.~S" sym1 sym2)))
 
 (define (match-body matchee-name succeed mlines)
   (match mlines
     (`((,pattern ,expr) . ,mlines)
-     (let ((fail (gensym 'fail)))
-       `((letcc ,fail
-           (if-let (,pattern matchee-name)
-             (,succeed ,expr)
-             (,fail)))
-         ,@(match-body matchee-name succeed mlines))))
-    ('() '((None)))))
+     `(if-let (,pattern ,matchee-name)
+        (,succeed ,expr)
+        ,(match-body matchee-name succeed mlines)))
+    ('() '(None))))
 
 (define (ctr-expand-1 expr)
   (match expr
     (`(def (,name . ,formals) . ,body)
      `(def ,name (fn ,name ,formals ,@body)))
-    (`(defrecord (,name . ,fields))
+    (`(defenum ,name ,(and (? symbol?) super-name) . ,variant-specs)
      `(do
-        (def ,name (record-type ,name ,fields))
+        (defabstract ,name ,super-name)
+        ,@(map
+           (lambda (vspec)
+             (match vspec
+               (`(,type)
+                `(defsingleton ,(interpose-dot name type) ,name))
+               (`(,type . ,args)
+                `(defrecord (,(interpose-dot name type) ,@args) ,name))))
+           variant-specs)))
+    (`(defenum ,name . ,variant-specs)
+     `(defenum ,name Any ,@variant-specs))
+    (`(defrecord (,name . ,fields) ,super-name)
+     `(do
+        (def ,name (record-type ,name ,super-name ,fields))
         ,@(map-indexed
             (lambda (i fieldname)
               `(def (,(prepend-dot fieldname) rec ,(symbol->keyword name))
                  (nth-field rec ,i)))
             fields)))
+    (`(defrecord (,name . ,fields))
+     `(defrecord (,name ,@fields) Any))
+    (`(defsingleton ,name ,super-name)
+     `(def ,name (singleton-type ,name ,super-name)))
+    (`(defsingleton ,name)
+     `(def ,name (singleton-type ,name)))
+    (`(defabstract ,name ,super-name)
+     `(def ,name (abstract-type ,name ,super-name)))
+    (`(defabstract ,name)
+     `(def ,name (abstract-type ,name Any)))
+    (`(record-type ,name ,field-names)
+     `(record-type ,name Any ,field-names))
+    (`(singleton-type ,name)
+     `(singleton-type ,name Any))
+    (`(abstract-type ,name)
+     `(abstract-type ,name Any))
     (`(fn ,(and (? symbol?) name) ,formals ,body)
      expr)
     (`(fn ,(and (? symbol?) name) ,formals . ,body)
@@ -506,7 +609,7 @@
        `(let ((,matchee-name ,matchee))
           (letcc ,succeed
             (do 
-              ,@(match-body matchee-name succeed mlines))))))
+              ,(match-body matchee-name succeed mlines))))))
     (_ expr)))
 
 (define (ctr-expand expr)
@@ -638,12 +741,16 @@
                         (list-ref (slot-value rec 'field-vals)
                                   (slot-value n 'val))))
         (Any . ,Any)
+        (None . ,None)
+        (Tuple . ,Tuple)
         (List . ,List)
         (List.Pair . ,List.Pair)
         (List.Empty . ,List.Empty)))))
 
 ;;;; Reader Modifications
 ;;;; ===========================================================================
+
+(keyword-style #:prefix)
 
 (define ((read-ctor ctor-sym end-char) port)
   (let loop ((c (peek-char port)) (exprs '()))
@@ -695,4 +802,5 @@
                 expr))))
   (exit 0))
 
+#+compiling
 (main (command-line-arguments))
