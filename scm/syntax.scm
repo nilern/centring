@@ -420,17 +420,17 @@
   (match formals
     ('()
      (values '() '()))
-    (`(& ,(and (? symbol?) name) ,(and (? keyword?) type))
+    (`(& ,(and (not (? keyword?)) name) ,(and (? keyword?) type))
      (values name (interpret itp (keyword->symbol type))))
-    (`(& ,(and (? symbol?) name))
+    (`(& ,(and (not (? keyword?)) name))
      (values name Any))
     (`(& (= ,typename)) ; What use can this ever be? Why not, though.
      (values '_ `(= ,(interpret itp typename))))
-    (`(,(and (? symbol?) name) ,(and (? keyword?) type)  . ,rfs)
+    (`(,(and (not (? keyword?)) name) ,(and (? keyword?) type)  . ,rfs)
      (receive (names types) (analyze-formals itp rfs)
        (values (cons name names)
                (cons (interpret itp (keyword->symbol type)) types))))
-    (`(,(and (? symbol?) name) . ,rfs)
+    (`(,(and (not (? keyword?)) name) . ,rfs)
      (receive (names types) (analyze-formals itp rfs)
        (values (cons name names) (cons Any types))))
     (`((= ,typename) . ,rfs)
@@ -513,7 +513,7 @@
   env)
 
 (define-method (bind-args (formals <pair>) (args <pair>) env)
-  (extend env (car formals) (car args))
+  (bind env (car formals) (car args))
   (bind-args (cdr formals) (cdr args) env))
 
 (define-method (bind-args (formals <pair>) (args <null>) env)
@@ -523,7 +523,7 @@
   (error "too many arguments!"))
 
 (define-method (bind-args (formals <symbol>) (args #t) env)
-  (extend env formals (list->List args)))
+  (bind env formals (list->List args)))
 
 ;;;; Expansion
 ;;;; ===========================================================================
@@ -714,6 +714,18 @@
           val))))
   env)
 
+(define (bind env pattern val)
+  (match pattern
+    ('_)
+    ((? symbol?)
+     (extend env pattern val))
+    (`(Tuple . ,arg-pats)
+     (map (cute bind env <> <>) arg-pats (slot-value val 'vals)))
+    (`(,stype))
+    (`(,type . ,arg-pats)
+     (map (cute bind env <> <>) arg-pats (slot-value val 'field-vals))))
+  env)
+
 ;;;; Printing
 ;;;; ===========================================================================
 
@@ -790,8 +802,9 @@
         (awhen (linenoise "ctr> ")
           (history-add it)
           (handle-exceptions exn
-            (fprintf (current-error-port) "Exception: ~S~N"
-                     ((condition-property-accessor 'exn 'message) exn))
+            (fprintf (current-error-port) "Error: ~A: ~S.~N"
+                     ((condition-property-accessor 'exn 'message) exn)
+                     ((condition-property-accessor 'exn 'arguments) exn))
             (printf "~S~N" (interpret itp (with-input-from-string it read))))
           (recur))))
     (let ((expr (match arglist
