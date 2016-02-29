@@ -208,6 +208,15 @@
 (define-method (make-value (type <SingletonType>))
   (make-singleton type))
 
+(define-method (make-value (type <BuiltInType>) wrappee)
+  (cond
+   ((eq? type Bool) (make <Bool> 'val wrappee))
+   ((eq? type Int) (make <Int> 'val wrappee))
+   ((eq? type Char) (make <Char> 'val wrappee))
+   ((eq? type Tuple) (make <Tuple> 'vals wrappee))
+   ((eq? type Array) (make <Array> 'vals wrappee))
+   ((eq? type String) (make <String> 'vals wrappee))))
+
 (define (get-field rec fieldname)
   (let ((type (slot-value rec 'type)))
     (let recur ((names (slot-value type 'field-names))
@@ -265,6 +274,9 @@
           'code (lambda (,itp args)
                   (match-let ((,formals args))
                     ,@body)))))))
+
+(define ((immediate-binop f res-type) a b)
+  (make-value res-type (f (slot-value a 'val) (slot-value b 'val))))
 
 (define (add-method! fn meth)
   (hash-table-set! (slot-value fn 'methods)
@@ -744,6 +756,18 @@
       `((nth-field . ,(native-fn (nth-field itp (rec n) (Any Any))
                         (list-ref (slot-value rec 'field-vals)
                                   (slot-value n 'val))))
+        (load . ,(native-fn (load itp (filename) (String))
+                   (interpret itp
+                     `(do ,@(read-file (slot-value filename 'vals))))))
+        (+ . ,(native-fn (+ itp (n m) (Int Int))
+                ((immediate-binop + Int) n m)))
+        (- . ,(native-fn (- itp (n m) (Int Int))
+                ((immediate-binop - Int) n m)))
+        (* . ,(native-fn (* itp (n m) (Int Int))
+                ((immediate-binop * Int) n m)))
+        (/ . ,(native-fn (/ itp (n m) (Int Int))
+                ((immediate-binop / Int) n m)))
+
         (Any . ,Any)
         (Type . ,Type)
 
