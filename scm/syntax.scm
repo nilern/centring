@@ -307,6 +307,12 @@
     ('() (make-value List.Empty))
     (`(,head . ,tail) (make-value List.Pair head (list->List tail)))))
 
+(define (List->list ls)
+  (if (isa? List.Empty (ctr-type ls))
+    '()
+    (cons (car (slot-value ls 'field-vals))
+          (List->list (cadr (slot-value ls 'field-vals))))))
+
 ;;;; Interpretation
 ;;;; ===========================================================================
 
@@ -734,8 +740,10 @@
 ;;;; ===========================================================================
 
 (define-method (print-object (rec <Record>) port)
-  (fprintf port "#=~S" (cons (slot-value (slot-value rec 'type) 'name)
-                             (slot-value rec 'field-vals))))
+  (if (isa? List (ctr-type rec))
+    (write (List->list rec) port)
+    (fprintf port "#=~S" (cons (slot-value (slot-value rec 'type) 'name)
+                               (slot-value rec 'field-vals)))))
 
 (define-method (print-object (s <Singleton>) port)
   (fprintf port "#=(~S)" (slot-value (slot-value s 'type) 'name)))
@@ -818,6 +826,11 @@
                              (make-value Char
                                (string-ref (slot-value str 'vals)
                                            (slot-value i 'val)))))
+
+(extend centring.core '.left (native-fn (.left _ (ls) (List.Pair))
+                               (car (slot-value ls 'field-vals))))
+(extend centring.core '.right (native-fn (.right _ (ls) (List.Pair))
+                               (cadr (slot-value ls 'field-vals))))
 
 ;;;; Reader Modifications
 ;;;; ===========================================================================
