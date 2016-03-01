@@ -1,4 +1,5 @@
 ;; (module centring.compiler) FIXME: implement modules
+(load "../ctr/core.ctr") ; HACK
 
 ;;;; Parser
 
@@ -24,45 +25,108 @@
 (def (mappend p :Parser q :Parser)
   (Parser
     (fn (cs)
-        (if-let ((and #((Ok _) _) res) (parse p cs))
-          res
-          (parse q cs)))))
+      (if-let ((and #((Ok _) _) res) (parse p cs))
+        res
+        (parse q cs)))))
 
 (def (mzero (= Parser))
-  (Parser (fn (cs) #((Err "out of options") cs))))
+  (fail Parser "out of options"))
+
+;;; Functor
+
+(def (fmap f p :Parser)
+  (mbind p (fn (v) (mreturn Parser (f v)))))
+
+;;; Primitive Parsers
+
+(def any-char
+  (Parser
+   (fn (cs)
+     (if-let ((Some c) (peek cs))
+       #((Ok c) (pop cs))
+       #((Err "EOF reached") cs)))))
+
+;;;; Combinators
+
+(def (fail (= Parser) msg)
+  (Parser (fn (cs) #((Err msg) cs))))
+
+(def (sat? pred?)
+  (mlet ((c any-char))
+    (if (pred? c)
+      (mreturn Parser c)
+      (fail Parser "$(pred? c) was false"))))
+
+(def (char ec)
+  (sat? (fn (c) (= c ec))))
+
+(def (many1 p)
+  (mlet ((a p)
+         (as (many p)))
+    (mreturn Parser (prepend a as))))
+
+(def (many p)
+  (mappend
+    (many1 p)
+    (mreturn Parser '())))
+
+(def (sep-by1 sep p)
+  (mlet ((a p)
+         (as (many (>> sep p))))
+    (mreturn Parser (prepend a as))))
+
+(def (sep-by sep p)
+  (mappend
+    (sep-by1 sep p)
+    (mreturn Parser '())))
+
+(def (until term p)
+  (mappend
+   (fmap (constantly '()) term)
+   (mlet ((a p)
+          (as (until term p)))
+     (mreturn Parser (prepend a as)))))
+
+(def (between init term p)
+  (>> init (until term p)))
 
 ;;;; Readtable
 
 (defenum ReadEntry
+  (Whitespace)
   (Constituent)
-  (Macro parser)
-  (Whitespace))
+  (Macro terminating? rt->parser))
 
-(def (constituent? rte :ReadEntry.Constituent) #t)
-(def (constituent? rte :ReadEntry.Macro) #f)
-(def (constituent? rte :ReadEntry.Whitespace) #f)
+(def (whitespace? re :ReadEntry)
+  (isa? ReadEntry.Whitespace (type re)))
 
-(def (parse rem :ReadEntry.Macro cs)
-  (parse (.parser rem) cs))
+(def (constituent? re :ReadEntry)
+  (matches? (or (ReadEntry.Constituent) (ReadEntry.Macro #f _)) re))
 
 ;;;; Read
 
-(def (read rt cs)
-  (let (c (peek cs))
-    (if (constituent? (rt c))
-      (read-token cs)
-      (parse (rt c) (rest cs)))))
-
-(def (read cs)
-  (read default-readtable cs))
-
-(def (read-token rt cs)
-  (loop (cs cs tcs '())
-    (let (c (peek cs))
-      (if (constituent? (rt c))
-        (recur (rest cs) (push tcs c))
-        (string (reverse tcs))))))
-
-(def (default-readtable c)
+(def (default-readtable c :Char)
   (match c
-    \( (ReadEntry.Macro (until \) read))))
+    ((or \space \newline \tab \return) (ReadEntry.Whitespace))
+    (#\( (ReadEntry.Macro #t
+           (fn (rt)
+             (let ((ws (whitespace rt)))
+               (until (>> ws (char #\))) (many (>> ws (expr rt))))))))
+    (#\) (ReadEntry.Macro #t (fn (rt) (fail Parser "unexpected )"))))
+    (_ (ReadEntry.Constituent))))
+
+(def (token rt)
+  (many1 (sat? (comp constituent? rt))))
+
+(def (whitespace rt)
+  (many (sat? (comp whitespace? rt))))
+
+(def (expr rt)
+  (Parser
+    (fn (cs)
+      (if-let ((Some c) (peek cs))
+        (match (rt c)
+          ((ReadEntry.Constituent) (parse (token rt) cs))
+          ((ReadEntry.Whitespace) (parse (>> (whitespace rt) (expr rt)) cs))
+          ((ReadEntry.Macro _ f) (parse (f rt) (pop cs))))
+        #((Err "EOF reached") cs)))))

@@ -28,6 +28,16 @@
       (`(,v . ,vs) (cons (f i v) (mixed vs (+ i 1))))))
   (mixed ls 0))
 
+(define (every? pred? l)
+  (match l
+    ('() #t)
+    (`(,v . ,vs) (and (pred? v) (every? pred? vs)))))
+
+(define (some? pred? l)
+  (match l
+    ('() #f)
+    (`(,v . ,vs) (or (pred? v) (some? pred? vs)))))
+
 (define (every-pair? pred? l1 l2)
   (match (cons l1 l2)
     (`(() . ()) #t)
@@ -412,6 +422,10 @@
 (define (matches? itp pattern v)
   (match pattern
     ((? symbol?) #t)
+    (`(and . ,pats)
+     (every? (lambda (pat) (matches? itp pat v)) pats))
+    (`(or . ,pats)
+     (some? (lambda (pat) (matches? itp pat v)) pats))
     (`(Tuple . ,arg-pats)
      (and
        (isa? Tuple (ctr-type v))
@@ -421,7 +435,11 @@
      (and
        (isa? (interpret itp type) (ctr-type v))
        (every-pair? (cute matches? itp <> <>)
-                    arg-pats (slot-value v 'field-vals))))))
+                    arg-pats (slot-value v 'field-vals))))
+    ((? char?)
+     (and (isa? Char (ctr-type v)) (eq? pattern (slot-value v 'val))))
+    ((? boolean?)
+     (and (isa? Bool (ctr-type v)) (eq? pattern (slot-value v 'val))))))
 
 ;; TODO: Extract type from ctor-patterns (so that just #(a b) = #(a b) :Tuple)?
 (define (analyze-formals itp formals)
@@ -606,6 +624,11 @@
        ,@(map cadr bindings)))
     (`(letcc ,k . ,body)
      `(callcc (fn (,k) ,@body)))
+    (`(loop ,bindings . ,body)
+     `(let ()
+        (def (recur ,@(map car bindings))
+          ,@body)
+        (recur ,@(map cadr bindings))))
     (`(if-let (,pattern ,cexpr) ,then ,else)
      (let ((matchee (gensym 'matchee)))
        `(let ((,matchee ,cexpr))
@@ -620,6 +643,10 @@
           (letcc ,succeed
             (do 
               ,(match-body matchee-name succeed mlines))))))
+    (`(mlet ((,name ,mexpr) . ,bindings) . ,body)
+     `(mbind ,mexpr (fn (,name) (mlet ,bindings ,@body))))
+    (`(mlet () . ,body)
+     `(do ,@body))
     (_ expr)))
 
 (define (ctr-expand expr)
@@ -729,11 +756,15 @@
     ('_)
     ((? symbol?)
      (extend env pattern val))
+    (`(and . ,pats)
+     (map (lambda (pat) (bind env pat val)) pats))
+    (`(or . ,pats)) ; FIXME: actually bind (needs interleaving with matches?)
     (`(Tuple . ,arg-pats)
      (map (cute bind env <> <>) arg-pats (slot-value val 'vals)))
     (`(,stype))
     (`(,type . ,arg-pats)
-     (map (cute bind env <> <>) arg-pats (slot-value val 'field-vals))))
+     (map (cute bind env <> <>) arg-pats (slot-value val 'field-vals)))
+    ((or (? char?) (? boolean?))))
   env)
 
 ;;;; Printing
@@ -751,7 +782,14 @@
 (define-method (print-object (n <Int>) port) (write (slot-value n 'val) port))
 (define-method (print-object (b <Bool>) port) (write (slot-value b 'val) port))
 (define-method (print-object (c <Char>) port)
-  (fprintf port "\\~A" (slot-value c 'val)))
+  (fprintf port "\\~A" 
+    (let ((sc (slot-value c 'val)))
+      (match sc
+        (#\newline 'newline)
+        (#\space 'space)
+        (#\tab 'tab)
+        (#\return 'return)
+        (_ sc)))))
 
 (define-method (print-object (tup <Tuple>) port)
   (fprintf port "#~S" (slot-value tup 'vals)))
@@ -787,6 +825,11 @@
         (= . ,(native-fn (= _ (n m) (Int Int))
                 ((immediate-binop = Bool) n m)))
 
+        (type . , (native-fn (type _ (v) (Any))
+                    (ctr-type v)))
+        (isa? . ,(native-fn (isa? _ (t1 t2) (Any Any))
+                   (make-value Bool (isa? t1 t2))))
+
         (Any . ,Any)
         (Type . ,Type)
 
@@ -811,6 +854,9 @@
         (List . ,List)
         (List.Pair . ,List.Pair)
         (List.Empty . ,List.Empty)))))
+
+(extend centring.core '= (native-fn (= _ (c1 c2) (Char Char))
+                           ((immediate-binop eq? Bool) c1 c2)))
 
 (extend centring.core 'count (native-fn (count _ (tup) (Tuple))
                                (make-value Int
@@ -860,10 +906,15 @@
 
 (set-read-syntax! #\\
   (lambda (port)
-    (let ((c (read-char port)))
-      (if (eof-object? c)
-        (error "expected character, got EOF.")
-        c))))
+    (let ((tok (read port)))
+      (cond
+       ((eq? tok 'newline) #\newline)
+       ((eq? tok 'space) #\space)
+       ((eq? tok 'tab) #\tab)
+       ((eq? tok 'return) #\return)
+       ((and (symbol? tok) (= (string-length (symbol->string tok)) 1))
+        (string-ref (symbol->string tok) 0))
+       (else (error "not a char descriptor" tok))))))
 
 ;;;; Main
 ;;;; ===========================================================================

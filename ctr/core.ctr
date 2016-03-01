@@ -42,6 +42,17 @@
 (def (rest (StringSeq s i) :StringSeq)
   (StringSeq s (inc i)))
 
+;;;; Function Utils
+
+(def (comp & fs)
+  (fn (arg) (foldr (fn (f acc) (f acc)) arg fs)))
+
+(def (constantly v)
+  (fn (_) v))
+
+(def (flip f)
+  (fn (a b) (f b a)))
+
 ;;;; Numeric Utils
 
 (def (inc n) (+ n 1))
@@ -53,3 +64,30 @@
 (def (peek ls :List) (first ls))
 (def (push ls :List v) (prepend v ls))
 (def (pop ls :List) (rest ls))
+
+;;;; Seq Functions
+
+(defrecord (Reduced v))
+
+(def (reduce f acc ls :List.Empty)
+  acc)
+(def (reduce f acc (List.Pair v vs) :List.Pair)
+  (match (f acc v)
+    ((Reduced res) res)
+    (acc (reduce f acc vs))))
+
+(def (foldr f acc ls :List.Empty)
+  acc)
+(def (foldr f acc (List.Pair v vs) :List.Pair)
+  (f v (foldr f acc vs)))
+
+(def (reverse ls :List)
+  (reduce (flip prepend) '() ls))
+
+(def (any? pred? coll)
+  (reduce (fn (acc v) (if (pred? v) (Reduced #t) acc)) #f coll))
+
+;;;; Monads
+
+(def (>> mv1 mv2)
+  (mbind mv1 (fn (_) mv2)))
