@@ -734,17 +734,22 @@
 ;;;; ===========================================================================
 
 (define-method (print-object (rec <Record>) port)
-  (fprintf port "#.~S" (cons (slot-value (slot-value rec 'type) 'name)
+  (fprintf port "#=~S" (cons (slot-value (slot-value rec 'type) 'name)
                              (slot-value rec 'field-vals))))
 
 (define-method (print-object (s <Singleton>) port)
-  (fprintf port "#.(~S)" (slot-value (slot-value s 'type) 'name)))
+  (fprintf port "#=(~S)" (slot-value (slot-value s 'type) 'name)))
 
-(define-method (print-object (n <Int>) port)
-  (write (slot-value n 'val) port))
+(define-method (print-object (n <Int>) port) (write (slot-value n 'val) port))
+(define-method (print-object (b <Bool>) port) (write (slot-value b 'val) port))
+(define-method (print-object (c <Char>) port)
+  (fprintf port "\\~A" (slot-value c 'val)))
 
-(define-method (print-object (b <Bool>) port)
-  (write (slot-value b 'val) port))
+(define-method (print-object (tup <Tuple>) port)
+  (fprintf port "#~S" (slot-value tup 'vals)))
+
+(define-method (print-object (str <String>) port)
+  (write (slot-value str 'vals) port))
 
 ;;;; Core
 ;;;; ===========================================================================
@@ -753,20 +758,26 @@
   (make <Environment>
     'bindings
     (alist->hash-table
-      `((nth-field . ,(native-fn (nth-field itp (rec n) (Any Any))
+      `((nth-field . ,(native-fn (nth-field _ (rec n) (Any Any))
                         (list-ref (slot-value rec 'field-vals)
                                   (slot-value n 'val))))
         (load . ,(native-fn (load itp (filename) (String))
                    (interpret itp
                      `(do ,@(read-file (slot-value filename 'vals))))))
-        (+ . ,(native-fn (+ itp (n m) (Int Int))
+        (+ . ,(native-fn (+ _ (n m) (Int Int))
                 ((immediate-binop + Int) n m)))
-        (- . ,(native-fn (- itp (n m) (Int Int))
+        (- . ,(native-fn (- _ (n m) (Int Int))
                 ((immediate-binop - Int) n m)))
-        (* . ,(native-fn (* itp (n m) (Int Int))
+        (* . ,(native-fn (* _ (n m) (Int Int))
                 ((immediate-binop * Int) n m)))
-        (/ . ,(native-fn (/ itp (n m) (Int Int))
+        (/ . ,(native-fn (/ _ (n m) (Int Int))
                 ((immediate-binop / Int) n m)))
+        (< . ,(native-fn (< _ (n m) (Int Int))
+                ((immediate-binop < Bool) n m)))
+        (> . ,(native-fn (> _ (n m) (Int Int))
+                ((immediate-binop > Bool) n m)))
+        (= . ,(native-fn (= _ (n m) (Int Int))
+                ((immediate-binop = Bool) n m)))
 
         (Any . ,Any)
         (Type . ,Type)
@@ -792,6 +803,21 @@
         (List . ,List)
         (List.Pair . ,List.Pair)
         (List.Empty . ,List.Empty)))))
+
+(extend centring.core 'count (native-fn (count _ (tup) (Tuple))
+                               (make-value Int
+                                 (length (slot-value tup 'vals)))))
+(extend centring.core 'count (native-fn (count _ (str) (String))
+                               (make-value Int
+                                 (string-length (slot-value str 'vals)))))
+
+(extend centring.core 'get (native-fn (get _ (tup i) (Tuple Int))
+                             (list-ref (slot-value tup 'vals)
+                                       (slot-value i 'val))))
+(extend centring.core 'get (native-fn (get _ (str i) (String Int))
+                             (make-value Char
+                               (string-ref (slot-value str 'vals)
+                                           (slot-value i 'val)))))
 
 ;;;; Reader Modifications
 ;;;; ===========================================================================

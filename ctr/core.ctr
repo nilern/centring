@@ -1,0 +1,55 @@
+;; (module centring.core) FIXME: implement modules
+
+;;;; Option
+
+(defenum Option
+  (Some val)
+  (None))
+
+(def Some Option.Some)
+(def None Option.None)
+
+;;;; Result
+
+(defenum Result
+  (Ok val)
+  (Err msg))
+
+(def Ok Result.Ok)
+(def Err Result.Err)
+
+;;;; List Basics
+
+(def (first ls :List.Empty) (None))
+(def (first (List.Pair v _) :List.Pair) (Some v))
+
+(def (rest ls :List.Empty) ls)
+(def (rest (List.Pair _ vs) :List.Pair) vs)
+
+(def (prepend v ls :List) (List.Pair v ls))
+
+;;;; StringSeq
+
+(defrecord (StringSeq str index))
+
+(def (seq s :String) (StringSeq s 0))
+
+(def (first (StringSeq s i) :StringSeq)
+  (if (< i (count s))
+    (Some (get s i))
+    (None)))
+
+(def (rest (StringSeq s i) :StringSeq)
+  (StringSeq s (inc i)))
+
+;;;; Numeric Utils
+
+(def (inc n) (+ n 1))
+(def (dec n) (- n 1))
+(def (zero? n) (= n 0))
+
+;;;; Stack Functions
+
+(def (peek ls :List) (first ls))
+(def (push ls :List v) (prepend v ls))
+(def (pop ls :List) (rest ls))

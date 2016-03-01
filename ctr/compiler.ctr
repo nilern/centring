@@ -1,4 +1,4 @@
-(module centring.compiler)
+;; (module centring.compiler) FIXME: implement modules
 
 ;;;; Parser
 
@@ -24,9 +24,9 @@
 (def (mappend p :Parser q :Parser)
   (Parser
     (fn (cs)
-        (match (parse p cs)
-          ((and #((Ok _) _) res) res)
-          (_                     (parse q cs))))))
+        (if-let ((and #((Ok _) _) res) (parse p cs))
+          res
+          (parse q cs)))))
 
 (def (mzero (= Parser))
   (Parser (fn (cs) #((Err "out of options") cs))))
