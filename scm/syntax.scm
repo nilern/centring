@@ -147,7 +147,8 @@
 
 (define-class <MultiFn> (<Value>)
   (name
-   (methods (make-hash-table))))
+   (methods (make-hash-table))
+   (method-cache (make-hash-table))))
 
 (define-class <Continuation> (<Value>)
   (cont))
@@ -290,6 +291,7 @@
   (make-value res-type (f (slot-value a 'val) (slot-value b 'val))))
 
 (define (add-method! fn meth)
+  (hash-table-clear! (slot-value fn 'method-cache))
   (hash-table-set! (slot-value fn 'methods)
                    (slot-value meth 'formal-types) meth))
 
@@ -507,33 +509,41 @@
     ('() ((slot-value k 'cont) (make <Tuple> 'vals '())))
     (`(,v) ((slot-value k 'cont) v))))
 
+;; TODO: Change this to use the unsafe interpret-call it gets written
 (define-method (interpret-call (itp <Interpreter>) (fn <MultiFn>) args)
-  (let* ((methods (slot-value fn 'methods))
-         (methvecs (map (lambda (ftps)
-                          (receive (dd va?) (dispatch-distance ftps args #t)
-                            (vector dd va? ftps)))
-                        (hash-table-keys methods)))
-         (matchvecs (remove (lambda (methvec) 
-                                (negative? (vector-ref methvec 0)))
-                            methvecs)))
-    (cond
-     ((null? matchvecs) ; TODO: Print the nearest matches like Julia:
-      (error (sprintf "no matching method in ~S for args ~S"
-                      (slot-value fn 'name) args)))
-     ((null? (cdr matchvecs))
-      (interpret-call ; TODO: use the unsafe version (when it appears)
-       itp (hash-table-ref methods (vector-ref (car matchvecs) 2)) args))
-     (else
-      (let* ((sorted-matchvecs (sort matchvecs prefer-methvec))
-             (best-methvec (car sorted-matchvecs)))
-        (if (dispatch-equal? best-methvec (cadr sorted-matchvecs))
-          (error
-            (sprintf "ambiguous methods in ~S: ~S"
-                     (slot-value fn 'name)
-                     (take-while (cute dispatch-equal? best-methvec <>)
-                                 sorted-matchvecs)))
-          (interpret-call ; TODO: use the unsafe version (when it appears)
-           itp (hash-table-ref methods (vector-ref best-methvec 2)) args)))))))
+  (let ((method-cache (slot-value fn 'method-cache))
+        (argtypes (map ctr-type args)))
+    (aif (hash-table-ref/default method-cache argtypes #f)
+      (interpret-call itp it args)
+      (let* ((methods (slot-value fn 'methods))
+             (methvecs (map (lambda (ftps)
+                              (receive (dd va?) (dispatch-distance ftps args #t)
+                                       (vector dd va? ftps)))
+                            (hash-table-keys methods)))
+             (matchvecs (remove (lambda (methvec) 
+                                  (negative? (vector-ref methvec 0)))
+                                methvecs)))
+        (cond
+         ((null? matchvecs) ; TODO: Print the nearest matches like Julia:
+          (error (sprintf "no matching method in ~S for args ~S"
+                          (slot-value fn 'name) args)))
+         ((null? (cdr matchvecs))
+          (let ((method (hash-table-ref methods (vector-ref (car matchvecs) 2))))
+            (hash-table-set! method-cache argtypes method)
+            (interpret-call itp method args)))
+         (else
+          (let* ((sorted-matchvecs (sort matchvecs prefer-methvec))
+                 (best-methvec (car sorted-matchvecs)))
+            (if (dispatch-equal? best-methvec (cadr sorted-matchvecs))
+                (error
+                 (sprintf "ambiguous methods in ~S: ~S"
+                          (slot-value fn 'name)
+                          (take-while (cute dispatch-equal? best-methvec <>)
+                                      sorted-matchvecs)))
+                (let ((method (hash-table-ref methods
+                                              (vector-ref (car matchvecs) 2))))
+                  (hash-table-set! method-cache argtypes method)
+                  (interpret-call itp method args))))))))))
 
 ;; Args should already be evaluated and env built:
 (define-generic (bind-args formals args env))
