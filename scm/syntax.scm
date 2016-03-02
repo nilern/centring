@@ -29,22 +29,23 @@
   (mixed ls 0))
 
 (define (every? pred? l)
-  (match l
-    ('() #t)
-    (`(,v . ,vs) (and (pred? v) (every? pred? vs)))))
+  (cond
+    ((null? l) #t)
+    ((pred? (car l)) (every? pred? (cdr l)))
+    (else #f)))
 
 (define (some? pred? l)
-  (match l
-    ('() #f)
-    (`(,v . ,vs) (or (pred? v) (some? pred? vs)))))
+  (cond
+   ((null? l) #f)
+   ((pred? (car l)) #t)
+   (else (some? pred? (cdr l)))))
 
 (define (every-pair? pred? l1 l2)
-  (match (cons l1 l2)
-    (`(() . ()) #t)
-    (`(() . (,_ . ,_)) #f)
-    (`((,_ . ,_) . ()) #f)
-    (`((,v1 . ,vs1) . (,v2 . ,vs2))
-     (and (pred? v1 v2) (every-pair? pred? vs1 vs2)))))
+  (cond
+   ((null? l1) (null? l2))
+   ((null? l2) #f)
+   ((pred? (car l1) (car l2)) (every-pair? pred? (cdr l1) (cdr l2)))
+   (else #f)))
 
 (define (every-pair-lv? pred? ls vec)
   (let ((vlen (vector-length vec)))
