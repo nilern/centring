@@ -355,7 +355,7 @@
   (lookup itp (current-env itp) expr))
 
 (define-method (interpret (itp <Interpreter>) (expr <pair>))
-  (match (ctr-expand expr)
+  (match expr
     (`(quote ,e) (analyze e))
     (`(def ,name ,value) (interpret-def itp name value))
     (`(do . ,stmts) (interpret-stmts itp stmts))
@@ -563,12 +563,12 @@
 (define (interpose-dot sym1 sym2)
   (string->symbol (sprintf "~S.~S" sym1 sym2)))
 
-(define (match-body matchee-name succeed mlines)
+(define (match-body matchee-name mlines)
   (match mlines
     (`((,pattern ,expr) . ,mlines)
      `(if-let (,pattern ,matchee-name)
-        (,succeed ,expr)
-        ,(match-body matchee-name succeed mlines)))
+        ,expr
+        ,(match-body matchee-name mlines)))
     ('() '(Tuple))))
 
 (define (ctr-expand-1 expr)
@@ -638,12 +638,9 @@
               ,then)
             ,else))))
     (`(match ,matchee . ,mlines)
-     (let ((matchee-name (gensym 'matchee))
-           (succeed (gensym 'succeed)))
+     (let ((matchee-name (gensym 'matchee)))
        `(let ((,matchee-name ,matchee))
-          (letcc ,succeed
-            (do 
-              ,(match-body matchee-name succeed mlines))))))
+          ,(match-body matchee-name mlines))))
     (`(mlet ((,name ,mexpr) . ,bindings) . ,body)
      `(mbind ,mexpr (fn (,name) (mlet ,bindings ,@body))))
     (`(mlet () . ,body)
@@ -655,6 +652,13 @@
     (if (eq? expansion expr)
       expr
       (ctr-expand expansion))))
+
+;; Does not handle macro shadowing (i.e. (let ((if (fn (n) ...))) (if ...)))
+(define (ctr-expand-all expr)
+  (let ((expansion (ctr-expand expr)))
+    (if (list? expansion)
+      (map ctr-expand-all (ctr-expand expr))
+      expansion)))
 
 ;;;; Dispatch
 ;;;; ===========================================================================
@@ -758,13 +762,13 @@
     ((? symbol?)
      (extend env pattern val))
     (`(and . ,pats)
-     (map (lambda (pat) (bind env pat val)) pats))
+     (for-each (lambda (pat) (bind env pat val)) pats))
     (`(or . ,pats)) ; FIXME: actually bind (needs interleaving with matches?)
     (`(Tuple . ,arg-pats)
-     (map (cute bind env <> <>) arg-pats (slot-value val 'vals)))
+     (for-each (cute bind env <> <>) arg-pats (slot-value val 'vals)))
     (`(,stype))
     (`(,type . ,arg-pats)
-     (map (cute bind env <> <>) arg-pats (slot-value val 'field-vals)))
+     (for-each (cute bind env <> <>) arg-pats (slot-value val 'field-vals)))
     ((or (? char?) (? boolean?))))
   env)
 
@@ -809,8 +813,10 @@
                         (list-ref (slot-value rec 'field-vals)
                                   (slot-value n 'val))))
         (load . ,(native-fn (load itp (filename) (String))
-                   (interpret itp
-                     `(do ,@(read-file (slot-value filename 'vals))))))
+                   (interpret
+                    itp
+                    (ctr-expand-all
+                     `(do ,@(read-file (slot-value filename 'vals)))))))
         (+ . ,(native-fn (+ _ (n m) (Int Int))
                 ((immediate-binop + Int) n m)))
         (- . ,(native-fn (- _ (n m) (Int Int))
@@ -930,7 +936,10 @@
             (fprintf (current-error-port) "Error: ~A: ~S.~N"
                      ((condition-property-accessor 'exn 'message) exn)
                      ((condition-property-accessor 'exn 'arguments) exn))
-            (printf "~S~N" (interpret itp (with-input-from-string it read))))
+            (printf "~S~N"
+                    (interpret itp
+                               (ctr-expand-all (with-input-from-string it
+                                                 read)))))
           (recur))))
     (let ((expr (match arglist
                   (`("-e" ,estr) (with-input-from-string estr read))
@@ -940,7 +949,7 @@
               (interpret
                 (make <Interpreter>
                   'envstack (list centring.core))
-                expr))))
+                (ctr-expand-all expr)))))
   (exit 0))
 
 #+compiling
