@@ -1,397 +1,54 @@
-use std::ops::{Index, IndexMut, Range};
-use std::mem::transmute;
-use std::io;
-use std::io::stdout;
+use std::rc::Rc;
 use std::collections::HashMap;
+use std::fmt;
 
-// Examine tags of Words:
-const INT_MASK: usize = 0b1;
-const LOW_TAG_MASK: usize = 0b11;
-const HIGH_TAG_MASK: usize = 0b1100;
-const TAG_MASK: usize = 0b1111;
+// Types
 
-// Int, other immediate or block?:
-const INT_BIT: usize = 0b1;
-const IMMEDIATE_BITS: usize = 0b10;
-const BLOCK_BITS: usize = 0b00;
-
-// Tags of other immediates:
-const BOOL_BITS: usize = 0b0110;
-const CHAR_BITS: usize = 0b1010;
-const SPECIAL_BITS: usize = 0b1110;
-
-// Shifts for conversions:
-const INT_SHIFT: usize = 1;
-const BOOL_SHIFT: usize = 4;
-const CHAR_SHIFT: usize = 8;
-const BLOCK_SHIFT: usize = 2;
-
-// Bool representation:
-const TRUE: usize = 0b10110;
-const FALSE: usize = 0b00110;
-
-// Special objects:
-const EMPTY_LIST: usize = 0b1110;
-
-// Examine tags of block objects:
-// (these only work on 64-bit architectures)
-const BH_TYPE_MASK: usize = 0x0f00000000000000;
-const BH_LENGTH_MASK: usize = 0x00ffffffffffffff;
-const BH_SHIFT: usize = 56;
-
-// Type tags of block objects:
-const ARRAY_BITS: usize = 0;
-const SYMBOL_BITS: usize = 0x0100000000000000;
-const STRING_BITS: usize = 0x0200000000000000;
-const PAIR_BITS: usize = 0x0300000000000000;
-
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct Word(usize);
-
-//// Garbage-collected Heap
-
-trait Allocate {
-    fn alloc(&mut self, v: BlockValue) -> Word;
-    fn intern(&mut self, v: BlockValue) -> Word;
-}
+type ValueRef = Rc<Value>;
 
 #[derive(Debug)]
-struct GcHeap {
-    fromspace: Vec<Word>,
-    tospace: Vec<Word>,
-    symtab: HashMap<BlockValue, Word>
-}
-
-impl Index<usize> for GcHeap {
-    type Output = Word;
-    fn index<'a>(&'a self, index: usize) -> &'a Word {
-        & self.fromspace[index]
-    }
-}
-
-impl Index<Range<usize>> for GcHeap {
-    type Output = [Word];
-    fn index<'a>(&'a self, idxs: Range<usize>) -> &'a [Word] {
-        & self.fromspace[idxs]
-    }
-}
-
-impl GcHeap {
-    fn new() -> GcHeap {
-        GcHeap {
-            fromspace: vec![],
-            tospace: vec![],
-            symtab: HashMap::new()
-        }
-    }
-}
-
-
-impl Allocate for GcHeap {
-    fn alloc(&mut self, v: BlockValue) -> Word {
-        match v {
-            BlockValue::Array(ws) => {
-                let res = From::from(self.fromspace.len());
-                let header = Word(ws.len() | ARRAY_BITS);
-                self.fromspace.push(header);
-                for w in ws {
-                    self.fromspace.push(w)
-                }
-                res
-            },
-            BlockValue::Symbol(ns, name) => {
-                let header = Word(2 | SYMBOL_BITS);
-                let nsw = self.alloc(BlockValue::String(ns));
-                let nmw = self.alloc(BlockValue::String(name));
-                let res = From::from(self.fromspace.len());
-                self.fromspace.push(header);
-                self.fromspace.push(nsw);
-                self.fromspace.push(nmw);
-                res
-            },
-            BlockValue::String(s) => {
-                let res = From::from(self.fromspace.len());
-                let header = Word(s.len() | STRING_BITS);
-                self.fromspace.push(header);
-                for c in s.chars() {
-                    self.fromspace.push(From::from(c))
-                }
-                res
-            },
-            BlockValue::Pair(car, cdr) => {
-                let res = From::from(self.fromspace.len());
-                let header = Word(2 | PAIR_BITS);
-                self.fromspace.push(header);
-                self.fromspace.push(car);
-                self.fromspace.push(cdr);
-                res
-            }
-        }
-    }
-
-    fn intern(&mut self, v: BlockValue) -> Word {
-        if let Some(w) = self.symtab.get(&v) {
-            return w.clone()
-        }
-        let w = self.alloc(v.clone());
-        self.symtab.insert(v, w.clone());
-        w
-    }
-}
-
-//// Immediate Values
-
-#[derive(Debug)]
-enum ImmediateValue {
+enum Value {
     Int(isize),
     Bool(bool),
     Char(char),
-    EmptyList
-}
+    Symbol(Option<String>, String),
 
-use ImmediateValue::*;
+    Tuple(Vec<ValueRef>),
+    Array(Vec<ValueRef>),
+    Pair { first: ValueRef, rest: ValueRef },
+    EmptyList,
 
-impl From<isize> for Word {
-    fn from(i: isize) -> Word {
-        Word((i << INT_SHIFT) as usize | INT_BIT)
+    Record { typ: ValueRef, vals: Vec<ValueRef> },
+    Singleton { typ: ValueRef },
+
+    AbstractType { name: String, supertyp: ValueRef },
+    RecordType { name: String, supertyp: ValueRef, field_names: Vec<String> },
+    SingletonType { name: String, supertyp: ValueRef },
+    BuiltInType { name: String, supertyp: ValueRef },
+
+    Fn {
+        name: String,
+        formal_names: Vec<String>,
+        formal_types: Vec<ValueRef>,
+        body: ValueRef,
+        env: Rc<Environment>
+    },
+    NativeFn {
+        name: String,
+        formal_types: Vec<ValueRef>,
+        code: fn(Interpreter, Vec<ValueRef>) -> ValueRef
     }
 }
 
-impl From<bool> for Word {
-    fn from(b: bool) -> Word {
-        Word(if b { TRUE } else { FALSE })
-    }
+#[derive(Debug)]
+struct Environment {
+    bindings: HashMap<String, ValueRef>,
+    parent: Option<Rc<Environment>>
 }
 
-impl From<char> for Word {
-    fn from(c: char) -> Word {
-        Word((c as usize) << CHAR_SHIFT | CHAR_BITS)
-    }
-}
+struct Interpreter;
 
-impl From<Word> for char {
-    fn from(word: Word) -> char {
-        let Word(w) = word;
-        unsafe {
-            // This only works on 64-bit architectures:
-            transmute::<usize, [char; 2]>(w >> CHAR_SHIFT)[0]
-        }
-    }
-}
-
-impl Word {
-    fn imm_val(&self) -> Option<ImmediateValue> {
-        let Word(w) = *self;
-        if w & INT_MASK == INT_BIT {
-            Some(Int((w as isize) >> INT_SHIFT))
-        } else {
-            match w & LOW_TAG_MASK {
-                IMMEDIATE_BITS => match w & TAG_MASK {
-                    BOOL_BITS => match w {
-                        FALSE => Some(Bool(false)),
-                        TRUE  => Some(Bool(true)),
-                        _     => panic!("No such Bool value `{}`!", w >> BOOL_SHIFT)
-                    },
-                    CHAR_BITS => Some(Char(From::from(self.clone()))),
-                    SPECIAL_BITS => match w {
-                        EMPTY_LIST => Some(EmptyList),
-                        bp => panic!("Unimplemented special value `{:b}`!", bp)
-                    },
-                    bp => panic!("Unimplemented immediate tag `{:b}`!", bp)
-                },
-                BLOCK_BITS => None, // Non-immediate value
-                _ => unreachable!() // 0b01 and 0b11 are Ints
-            }
-        }
-    }
-}
-
-//// Block Values
-
-impl From<usize> for Word {
-    fn from(u: usize) -> Word {
-        Word(u << BLOCK_SHIFT)
-    }
-}
-
-impl<'a> From<&'a Word> for usize {
-    fn from(word: &'a Word) -> usize {
-        let Word(w) = *word;
-        w >> BLOCK_SHIFT
-    }
-}
-
-// Hmm, those Words might get invalidated...
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-enum BlockValue {
-    Array(Vec<Word>),
-    Symbol(String, String),
-    String(String),
-    Pair(Word, Word)
-
-// These should be stripped of refs
-//     BuiltinType {
-//         name: &'a Word
-//     },
-//     RecordType {
-//         name: &'a Word,
-//         field_names: &'a [Word]
-//     },
-//     EnumType {
-//         name: &'a Word,
-//         shards: &'a [Word]
-//     },
-// 
-//     EnumShard {
-//         parent_type: &'a Word,
-//         name: &'a Word,
-//         field_names: &'a [Word]
-//     },
-// 
-//     Record {
-//         typ: &'a Word,
-//         field_values: &'a [Word]
-//     },
-//     Tagged {
-//         shard: &'a Word,
-//         field_values: &'a [Word]
-//     }
-}
-
-use BlockValue::{Array, Symbol};
-
-impl Word {
-    fn block_val(& self, vm: &VM) -> Option<BlockValue> {
-        let Word(w) = *self;
-        if w & LOW_TAG_MASK == BLOCK_BITS {
-            let hdri: usize = From::from(self);
-            let Word(header) = vm.memory[hdri].clone();
-            let len = header & BH_LENGTH_MASK;
-            match header & BH_TYPE_MASK {
-                ARRAY_BITS => {
-                    let bdi = hdri + 1;
-                    Some(Array(vm.memory[bdi..(bdi + len)].iter()
-                                                          .map(Clone::clone)
-                                                          .collect()))
-                },
-                SYMBOL_BITS => {
-                    if let (Some(BlockValue::String(ns)), Some(BlockValue::String(name)))
-                           = (vm.memory[hdri + 1].block_val(vm),
-                              vm.memory[hdri + 2].block_val(vm)) {
-                        Some(Symbol(ns, name))
-                    } else {
-                        panic!()
-                    }
-                },
-                STRING_BITS => {
-                    let bdi = hdri + 1;
-                    let mut s = String::new();
-                    for w in vm.memory[bdi..(bdi + len)].iter() {
-                        s.push(From::from(w.clone()));
-                    }
-                    Some(BlockValue::String(s))
-                },
-                PAIR_BITS => {
-                    Some(BlockValue::Pair(vm.memory[hdri + 1].clone(),
-                                          vm.memory[hdri + 2].clone()))
-                },
-                bp => panic!("Unimplemented block tag `{:b}`!", bp >> BH_SHIFT)
-            }
-        } else {
-            None
-        }
-    }
-}
-
-//// Print
-
-trait Write {
-    fn write(&self, vm: &mut VM) -> io::Result<()>;
-}
-
-impl Write for ImmediateValue {
-    fn write(&self, vm: &mut VM) -> io::Result<()> {
-        match *self {
-            Int(i)  => write!(vm.curr_output, "{}", i),
-            Bool(true) => write!(vm.curr_output, "True"),
-            Bool(false) => write!(vm.curr_output, "True"),
-            Char(c) => write!(vm.curr_output, "\\{}", c),
-            EmptyList => write!(vm.curr_output, "()")
-        }
-    }
-}
-
-impl Write for BlockValue {
-    fn write(&self, vm: &mut VM) -> io::Result<()> {
-        match *self {
-            Array(ref ws) => {
-                try!(write!(vm.curr_output, "#.(core/Array"));
-                for w in ws.iter() {
-                    try!(write!(vm.curr_output, " "));
-                    try!(w.write(vm));
-                }
-                write!(vm.curr_output, ")")
-            },
-            Symbol(ref ns, ref name) => {
-                write!(vm.curr_output, "{}/{}", ns, name)
-            },
-            BlockValue::String(ref s) => {
-                write!(vm.curr_output, "\"{}\"", s)
-            },
-            BlockValue::Pair(ref car, ref cdr) => {
-                let mut first = car.clone();
-                let mut rest = cdr.clone();
-                try!(write!(vm.curr_output, "("));
-                try!(first.write(vm));
-                loop {
-                    if let Some(iv) = rest.imm_val() {
-                        if rest.0 != EMPTY_LIST {
-                            try!(write!(vm.curr_output, " . "));
-                            try!(iv.write(vm));
-                        }
-                        break;
-                    } else {
-                        let bvr = rest.block_val(vm);
-                        match bvr {
-                            Some(BlockValue::Pair(cadr, cddr)) => {
-                                first = cadr;
-                                rest = cddr;
-                                try!(write!(vm.curr_output, " "));
-                                try!(first.write(vm));
-                            },
-                            Some(bv) => {
-                                try!(write!(vm.curr_output, " . "));
-                                try!(bv.write(vm));
-                                break;
-                            },
-                            None => unreachable!() // No such bit patterns
-                        }
-                    }
-                }
-                write!(vm.curr_output, ")")
-            }
-        }
-    }
-}
-
-impl Write for Word {
-    fn write(&self, vm: &mut VM) -> io::Result<()> {
-        if let Some(iv) = self.imm_val() {
-            iv.write(vm)
-        } else {
-            // .unwrap() can't panic since .*_val() would have already:
-            self.block_val(vm).unwrap().write(vm)
-        }
-    }
-}
-
-fn writeln<T>(v: &T, vm: &mut VM) -> io::Result<()>
-    where T: Write {
-    try!(v.write(vm));
-    io::Write::write(&mut vm.curr_output, b"\n").map(|_| ())
-}
-
-//// Read
+// Read
 
 struct Parser {
     pos: usize,
@@ -399,196 +56,212 @@ struct Parser {
 }
 
 impl Parser {
+    fn new(s: &str) -> Parser {
+        Parser {
+            pos: 0,
+            input: s.to_string()
+        }
+    }
+
     fn peek(&self) -> Option<char> {
-        self.input[self.pos..].chars().next()
+        let mut iter = self.input[self.pos..].chars();
+        iter.next()
     }
-
-    fn char(&mut self) -> Option<char> {
+    
+    fn any_char(&mut self) -> Result<char, &str> {
         let mut iter = self.input[self.pos..].char_indices();
-        let res = iter.next().map(|(_, c)| c);
-        self.pos += iter.next().unwrap_or((1, ' ')).0;
-        res
+        let (_, c) = try!(iter.next().ok_or("EOF"));
+        let (pos_inc, _) = iter.next().unwrap_or((1, ' '));
+        self.pos += pos_inc;
+        Ok(c)
     }
 
-    fn eof(&self) -> bool {
-        self.pos >= self.input.len()
+    fn sat<P>(&mut self, pred: P) -> Result<char, &str>
+        where P: Fn(char) -> bool {
+        let c = try!(self.any_char());
+        if pred(c) { Ok(c) } else { Err("pred failed") }
     }
 
-    // Conditions
-
-    fn starts_with(&self, s: &str) -> bool {
-        self.input[self.pos ..].starts_with(s)
-    }
-
-    fn consume_if<F>(&mut self, pred: F) -> Option<char>
-        where F: Fn(char) -> bool {
-        self.peek().and_then(|c| if pred(c) { self.pos += 1; Some(c) } else { None })
-    }
-
-    fn consume_while<F>(&mut self, pred: F) -> String
-        where F: Fn(char) -> bool {
+    fn take_while<P>(&mut self, pred: P) -> String
+        where P: Fn(char) -> bool {
         let mut res = String::new();
         loop {
-            match self.peek() {
-                Some(c) if pred(c) => res.push(self.char().unwrap()),
+            match self.any_char() {
+                Ok(c) if pred(c) => res.push(c),
                 _ => return res
             }
         }
     }
 
-    fn whitespace(&mut self) -> String {
-        self.consume_while(|c| c.is_whitespace())
-    }
-
-    // Immediate values
-
-    fn parse_isize(&mut self) -> Result<isize, ()> {
-        self.consume_while(|c| c.is_digit(10)).parse::<isize>().or(Err(()))
-    }
-
-
-    fn parse_char(&mut self) -> Result<char, ()> {
-        try!(self.consume_if(|c| c == '#').ok_or(()));
-        self.consume_if(|c| !c.is_whitespace()).ok_or(())
-    }
-
-    fn parse_bool(&mut self) -> Result<bool, ()> {
-        try!(self.consume_if(|c| c == '#').ok_or(()));
-        match self.peek() {
-            Some('t') => { self.pos += 1; Ok(true)},
-            Some('f') => { self.pos += 1; Ok(false)},
-            _ => { self.pos -= 1; Err(()) }
+    fn parse_int(&mut self) -> Result<Value, &str> {
+        let ds = self.take_while(|c| c.is_digit(10));
+        match ds.parse() {
+            Err(_) => Err("not an int"),
+            Ok(i) => Ok(Value::Int(i))
         }
     }
 
-    fn parse_list(&mut self, vm: &mut VM) -> Result<Word, ()> {
-        try!(self.consume_if(|c| c == '(').ok_or(()));
-        let mut vals = vec![];
-        let mut tail = Word(EMPTY_LIST);
+    fn parse_bool(&mut self) -> Result<Value, &str> {
+        match self.any_char() {
+            Ok('t') => Ok(Value::Bool(true)),
+            Ok('f') => Ok(Value::Bool(false)),
+            Err(msg) => Err(msg),
+            _ => Err("not a boolean")
+        }
+    }
+
+    fn parse_coll(&mut self, term: char) -> Result<Value, &str> {
+        let exprs = self.parse_exprs();
+        try!(self.sat(|c| c == term).or(Err("missing terminator")));
+        let mut res = Value::EmptyList;
+        for v in exprs.into_iter().rev() {
+            res = Value::Pair { first: v, rest: Rc::new(res) };
+        }
+        Ok(res)
+    }
+
+    fn parse_pounded(&mut self) -> Result<Value, &str> {
+        match self.peek() {
+            Some('t') | Some('f') => self.parse_bool(),
+            Some('(') => {
+                self.any_char();
+                let vs = try!(self.parse_coll(')'));
+                Ok(Value::Pair {
+                    first: Rc::new(
+                        Value::Symbol(Some("centring.lang".to_string()),
+                                      "Tuple".to_string())),
+                    rest: Rc::new(vs)
+                })
+            },
+            Some('[') => {
+                self.any_char();
+                let vs = try!(self.parse_coll(']'));
+                Ok(Value::Pair {
+                    first: Rc::new(
+                        Value::Symbol(Some("centring.lang".to_string()),
+                                      "Array".to_string())),
+                    rest: Rc::new(vs)
+                })
+            },
+            None => Err("EOF"),
+            _ => Err("unrecognized pounded")
+        }
+    }
+    
+    fn parse_expr(&mut self) -> Result<Value, &str> {
         loop {
-            self.whitespace();
             match self.peek() {
-                Some(')') => {self.char(); break; },
-                Some('.') => {
-                    // FIXME
-                    tail = try!(self.parse_expr(vm));
-                    self.whitespace();
-                    try!(self.consume_if(|c| c == ')').ok_or(()));
-                    break;
+                Some(c) if c.is_digit(10) => return self.parse_int(),
+                Some(c) if c.is_whitespace() => self.any_char(),
+                Some('(') => {
+                    self.any_char();
+                    return self.parse_coll(')');
                 },
-                Some(c) => match self.parse_expr(vm) {
-                    Ok(w) => vals.push(w),
-                    err => return err
+                Some('#') => {
+                    self.any_char();
+                    return self.parse_pounded()
                 },
-                None => return Err(())
+                _ => return Err("not a valid expr")
+            };
+        }
+    }
+
+    fn parse_exprs(&mut self) -> Vec<ValueRef> {
+        let mut res = vec![];
+        loop {
+            if let Ok(v) = self.parse_expr() {
+                res.push(Rc::new(v))
+            } else {
+                return res
             }
-            self.whitespace();
-        }
-        for head in vals.into_iter().rev() {
-            tail = vm.alloc(BlockValue::Pair(head, tail));
-        }
-        Ok(tail)
-    }
-
-    fn parse_symbol(&mut self, vm: &mut VM) -> Result<Word, ()> {
-        let s = self.consume_while(|c| c.is_alphabetic());
-        if !s.is_empty() {
-            Ok(vm.intern(BlockValue::Symbol("user".to_string(), s)))
-        } else {
-            Err(())
-        }
-    }
-
-    fn parse_string(&mut self, vm: &mut VM) -> Result<Word, ()> {
-        try!(self.consume_if(|c| c == '"').ok_or(()));
-        let s = self.consume_while(|c| c != '"');
-        try!(self.consume_if(|c| c == '"').ok_or(()));
-        Ok(vm.alloc(BlockValue::String(s)))
-    }
-
-    fn parse_expr(&mut self, vm: &mut VM) -> Result<Word, ()> {
-        match self.peek() {
-            Some(c) if c.is_digit(10) => self.parse_isize().map(From::from),
-            Some('\\') => self.parse_char().map(From::from),
-            Some('#') => self.parse_bool().map(From::from),
-            Some('(') => self.parse_list(vm),
-            Some(c) if c.is_alphabetic() => self.parse_symbol(vm),
-            Some('"') => self.parse_string(vm),
-            _ => Err(())
         }
     }
 }
 
-fn read(vm: &mut VM, n: usize) {
-    let s = vm.pop().unwrap();
-    if let Some(BlockValue::String(s)) = s.block_val(vm) {
-        let mut p = Parser { pos: 0, input: s };
-        let res = p.parse_expr(vm);
-        vm.push(res.unwrap());
-    } else {
-        let msg = vm.alloc(BlockValue::String("Not a string!".to_string()));
-        vm.throw(msg);
-    }
-}
+// Print
 
-//// VM
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Value::Int(i) => write!(f, "{}", i),
+            Value::Bool(true) => write!(f, "#t"),
+            Value::Bool(false) => write!(f, "#f"),
+            Value::Char(c) => write!(f, "\\{}", c),
+            Value::Symbol(Some(ref mod_name), ref name) =>
+                write!(f, "{}/{}", mod_name, name),
+            Value::Symbol(None, ref name) => write!(f, "{}", name),
 
-struct VM {
-    codeobject: Word,
-    env: Word,
-    ip: usize,
-    framestack: Option<Word>,
-    valuestack: Vec<Word>,
-    memory: GcHeap,
-    curr_output: Box<io::Write>
-}
+            Value::Tuple(ref vs) => {
+                try!(write!(f, "#("));
+                for v in vs { try!(write!(f, " {}", v)) }
+                write!(f, ")")
+            },
+            Value::Array(ref vs) => {
+                try!(write!(f, "#["));
+                for v in vs { try!(write!(f, " {}", v)) }
+                write!(f, "]")
+            },
+            Value::Pair { first: ref v, rest: ref vs } => {
+                try!(write!(f, "("));
+                let mut h = v;
+                let mut t = vs;
+                loop {
+                    try!(write!(f, "{}", h));
+                    match **t {
+                        Value::EmptyList => break,
+                        Value::Pair { first: ref v, rest: ref vs } => {
+                            h = v;
+                            t = vs;
+                        },
+                        _ => { try!(write!(f, " . {}", t)); break }
+                    }
+                    try!(write!(f, " "));
+                }
+                write!(f, ")")
+            },
+            Value::EmptyList => write!(f, "()"),
 
-impl VM {
-    fn new(codeobject: Word, env: Word) -> VM {
-        VM {
-            codeobject: codeobject,
-            env: env,
-            ip: 0,
-            framestack: None,
-            valuestack: Vec::with_capacity(20),
-            memory: GcHeap::new(),
-            curr_output: Box::new(stdout())
+            Value::Singleton { ref typ } => write!(f, "#=({})", typ),
+            Value::Record { ref typ, vals: ref vs } => {
+                try!(write!(f, "#=({}", typ));
+                for v in vs { try!(write!(f, " {}", v)) }
+                write!(f, ")")
+            },
+
+            Value::AbstractType { ref name, .. } => write!(f, "{}", name),
+            Value::SingletonType { ref name, .. } => write!(f, "{}", name),
+            Value::RecordType { ref name, .. } => write!(f, "{}", name),
+            Value::BuiltInType { ref name, .. } => write!(f, "{}", name),
+
+            Value::Fn { ref name, formal_types: ref ftps, .. } => {
+                try!(write!(f, "#<Fn {} (", name));
+                for ftp in ftps { try!(write!(f, " {}", ftp)) }
+                write!(f, ")>")
+            },
+            Value::NativeFn { ref name, formal_types: ref ftps, .. } => {
+                try!(write!(f, "#<NativeFn {} (", name));
+                for ftp in ftps { try!(write!(f, " {}", ftp)) }
+                write!(f, ")>")
+            }
         }
     }
+}
 
-    fn push(&mut self, w: Word) {
-        self.valuestack.push(w)
+// Eval
+
+impl Interpreter {
+    fn new() -> Interpreter {
+        Interpreter
     }
-
-    fn pop(&mut self) -> Option<Word> {
-        self.valuestack.pop()
-    }
-
-    fn throw(&mut self, word: Word) -> io::Result<()> {
-        self.valuestack.push(word);
-        self.framestack = None;
-        writeln(&self.pop().unwrap(), self)
+    
+    fn eval(&mut self, expr: Value) -> ValueRef {
+        Rc::new(expr)
     }
 }
 
-impl Allocate for VM {
-    fn alloc(&mut self, v: BlockValue) -> Word {
-        self.memory.alloc(v)
-    }
+// Main
 
-    fn intern(&mut self, v: BlockValue) -> Word {
-        self.memory.intern(v)
-    }
-}
-
-//// Main
-
-fn main() {
-    let mut vm = VM::new(Word(FALSE), Word(FALSE));
-
-    let input = vm.alloc(BlockValue::String("(foo 23 (bar \"fnord\"))".to_string()));
-    vm.push(input);
-    read(&mut vm, 1);
-    let sexpr = vm.pop().unwrap();
-    writeln(&sexpr, &mut vm);
+fn main () {
+    let mut itp = Interpreter::new();
+    println!("{}", itp.eval(Parser::new("(#t 42 )").parse_expr().unwrap()));
 }
