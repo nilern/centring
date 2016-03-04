@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
 
 // Types
 
@@ -48,8 +49,41 @@ struct Environment {
 
 struct Interpreter;
 
+// Value Utils
+
+fn prepend(v: ValueRef, coll: ValueRef) -> Value {
+    match *coll {
+        Value::EmptyList | Value::Pair { .. } => Value::Pair {
+            first: v,
+            rest: coll
+        },
+        _ => panic!()
+    }
+}
+
+fn vec_to_list(vs: Vec<ValueRef>) -> Value {
+    let mut res = Value::EmptyList;
+    for v in vs.into_iter().rev() {
+        res = Value::Pair { first: v, rest: Rc::new(res) };
+    }
+    res
+}
+
 // Read
 
+#[derive(Debug)]
+enum ParseError {
+    EOF,
+    Illegal(char),
+    ExpectedPred(String),
+    ExpectedConstituent(char),
+    UnknownPounded,
+    InvalidCharDesc
+}
+
+type ParseResult<T> = Result<(T, Parser), (ParseError, Parser)>;
+
+#[derive(Debug, Clone)]
 struct Parser {
     pos: usize,
     input: String
@@ -67,116 +101,158 @@ impl Parser {
         let mut iter = self.input[self.pos..].chars();
         iter.next()
     }
-    
-    fn any_char(&mut self) -> Result<char, &str> {
+
+    fn pop(&self) -> ParseResult<char> {
         let mut iter = self.input[self.pos..].char_indices();
-        let (_, c) = try!(iter.next().ok_or("EOF"));
+        let (_, c) = try!(iter.next().ok_or((ParseError::EOF, self.clone())));
         let (pos_inc, _) = iter.next().unwrap_or((1, ' '));
-        self.pos += pos_inc;
-        Ok(c)
+        let q = Parser {
+            pos: self.pos + pos_inc,
+            input: self.input.clone()
+        };
+        Ok((c, q))
     }
 
-    fn sat<P>(&mut self, pred: P) -> Result<char, &str>
+    fn pop_if<P>(&self, pred: P, msg: &str) -> ParseResult<char>
         where P: Fn(char) -> bool {
-        let c = try!(self.any_char());
-        if pred(c) { Ok(c) } else { Err("pred failed") }
+        let res = try!(self.pop());
+        if pred(res.0) {
+            Ok(res)
+        } else {
+            Err((ParseError::ExpectedPred(msg.to_string()), self.clone()))
+        }
     }
 
-    fn take_while<P>(&mut self, pred: P) -> String
+    fn pop_while<'a, P>(&'a self, pred: P) -> (String, Parser)
         where P: Fn(char) -> bool {
+        let mut p = self.clone();
         let mut res = String::new();
         loop {
-            match self.any_char() {
-                Ok(c) if pred(c) => res.push(c),
-                _ => return res
+            match p.pop() {
+                Ok((c, ref q)) if pred(c) => {
+                    p = q.clone();
+                    res.push(c);
+                },
+                _ => return (res, p)
             }
         }
     }
 
-    fn parse_int(&mut self) -> Result<Value, &str> {
-        let ds = self.take_while(|c| c.is_digit(10));
-        match ds.parse() {
-            Err(_) => Err("not an int"),
-            Ok(i) => Ok(Value::Int(i))
+    fn parse_token(&self) -> ParseResult<Value> {
+        let ccs = self.pop_while(is_constituent);
+        if ccs.0.is_empty() {
+            match self.peek() {
+                Some(c) =>
+                    Err((ParseError::ExpectedConstituent(c), self.clone())),
+                None =>
+                    Err((ParseError::EOF, self.clone()))
+            }
+        } else {
+            match ccs.0.parse() {
+                Ok(v) => Ok((v, ccs.1)),
+                Err(msg) => Err((msg, self.clone()))
+            }
         }
     }
 
-    fn parse_bool(&mut self) -> Result<Value, &str> {
-        match self.any_char() {
-            Ok('t') => Ok(Value::Bool(true)),
-            Ok('f') => Ok(Value::Bool(false)),
-            Err(msg) => Err(msg),
-            _ => Err("not a boolean")
+    fn parse_char(&self) -> ParseResult<Value> {
+        let (_, p) = try!(self.pop_if(|c| c == '\\', "char literal \\..."));
+        let (s, q) = p.pop_while(char::is_alphabetic);
+        match s.as_ref() {
+            "newline" => Ok((Value::Char('\n'), q)),
+            "space" => Ok((Value::Char(' '), q)),
+            "tab" => Ok((Value::Char('\t'), q)),
+            "return" => Ok((Value::Char('\r'), q)),
+            _ if s.chars().count() == 1 =>
+                Ok((Value::Char(s.chars().next().unwrap()), q)),
+            _ => Err((ParseError::InvalidCharDesc, self.clone()))
         }
     }
 
-    fn parse_coll(&mut self, term: char) -> Result<Value, &str> {
-        let exprs = self.parse_exprs();
-        try!(self.sat(|c| c == term).or(Err("missing terminator")));
-        let mut res = Value::EmptyList;
-        for v in exprs.into_iter().rev() {
-            res = Value::Pair { first: v, rest: Rc::new(res) };
-        }
-        Ok(res)
-    }
-
-    fn parse_pounded(&mut self) -> Result<Value, &str> {
+    fn parse_pounded(&self) -> ParseResult<Value> {
         match self.peek() {
-            Some('t') | Some('f') => self.parse_bool(),
             Some('(') => {
-                self.any_char();
-                let vs = try!(self.parse_coll(')'));
-                Ok(Value::Pair {
-                    first: Rc::new(
-                        Value::Symbol(Some("centring.lang".to_string()),
-                                      "Tuple".to_string())),
-                    rest: Rc::new(vs)
-                })
+                let (vs, q) = self.pop().unwrap().1.parse_exprs();
+                let (_, r) = try!(q.pop_while(char::is_whitespace)
+                                  .1.pop_if(|c| c == ')', "list terminator \\)"));
+                Ok((prepend(
+                    Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                          "Tuple".to_string())),
+                    Rc::new(vec_to_list(vs))),
+                    r))
             },
             Some('[') => {
-                self.any_char();
-                let vs = try!(self.parse_coll(']'));
-                Ok(Value::Pair {
-                    first: Rc::new(
-                        Value::Symbol(Some("centring.lang".to_string()),
-                                      "Array".to_string())),
-                    rest: Rc::new(vs)
-                })
+                let (vs, q) = self.pop().unwrap().1.parse_exprs();
+                let (_, r) = try!(q.pop_while(char::is_whitespace)
+                                  .1.pop_if(|c| c == ']',
+                                            "array terminator \\]"));
+                Ok((prepend(
+                    Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                          "Array".to_string())),
+                    Rc::new(vec_to_list(vs))),
+                    r))
             },
-            None => Err("EOF"),
-            _ => Err("unrecognized pounded")
+            Some('t') => Ok((Value::Bool(true), self.pop().unwrap().1)),
+            Some('f') => Ok((Value::Bool(false), self.pop().unwrap().1)),
+            _ => Err((ParseError::UnknownPounded, self.clone()))
         }
-    }
-    
-    fn parse_expr(&mut self) -> Result<Value, &str> {
-        loop {
-            match self.peek() {
-                Some(c) if c.is_digit(10) => return self.parse_int(),
-                Some(c) if c.is_whitespace() => self.any_char(),
-                Some('(') => {
-                    self.any_char();
-                    return self.parse_coll(')');
-                },
-                Some('#') => {
-                    self.any_char();
-                    return self.parse_pounded()
-                },
-                _ => return Err("not a valid expr")
-            };
+    }            
+
+    fn parse_expr(&self) -> ParseResult<Value> {
+        match self.peek() {
+            Some(c) if is_constituent(c) => self.parse_token(),
+            Some(c) if c.is_whitespace() => {
+                self.pop_while(char::is_whitespace).1.parse_expr()
+            },
+            Some('(') => {
+                let (_, p) = self.pop().unwrap();
+                let (vs, q) = p.parse_exprs();
+                let (_, r) = try!(q.pop_while(char::is_whitespace)
+                                  .1.pop_if(|c| c == ')', "list terminator \\)"));
+                Ok((vec_to_list(vs), r))
+            },
+            Some('\\') => self.parse_char(),
+            Some('#') => self.pop().unwrap().1.parse_pounded(),
+            Some(c) => Err((ParseError::Illegal(c), self.clone())),
+            None => Err((ParseError::EOF, self.clone()))
         }
     }
 
-    fn parse_exprs(&mut self) -> Vec<ValueRef> {
+    fn parse_exprs(&self) -> (Vec<ValueRef>, Parser) {
+        let mut p = self.clone();
         let mut res = vec![];
         loop {
-            if let Ok(v) = self.parse_expr() {
-                res.push(Rc::new(v))
+            if let Ok((v, q)) = p.parse_expr() {
+                res.push(Rc::new(v));
+                p = q.clone();
             } else {
-                return res
+                return (res, p)
             }
         }
     }
 }
+
+fn is_constituent(c: char) -> bool {
+    c.is_alphanumeric() || ".!?&|<=>+-*/".contains(c)
+}
+
+impl FromStr for Value {
+    type Err = ParseError;
+    fn from_str(s: &str) -> Result<Self, ParseError> {
+        if let Ok(i) = s.parse().map(Value::Int) {
+            Ok(i)
+        } else {
+            // If the first '/' of the symbol is not the first or last char
+            // the symbol is module-qualified:
+            match s.chars().position(|c| c == '/') {
+                Some(i) if 0 < i && i < s.len() - 1 =>
+                    Ok(Value::Symbol(Some(s[0..i].to_string()),
+                                     s[i+1..].to_string())),
+                _ => Ok(Value::Symbol(None, s.to_string()))
+            }
+        }
+    }
+} 
 
 // Print
 
@@ -186,7 +262,15 @@ impl fmt::Display for Value {
             Value::Int(i) => write!(f, "{}", i),
             Value::Bool(true) => write!(f, "#t"),
             Value::Bool(false) => write!(f, "#f"),
-            Value::Char(c) => write!(f, "\\{}", c),
+            Value::Char(c) => {
+                match c {
+                    '\n' => write!(f, "\\newline"),
+                    ' ' => write!(f, "\\space"),
+                    '\t' => write!(f, "\\tab"),
+                    '\r' => write!(f, "\\return"),
+                    _ => write!(f, "\\{}", c)
+                }
+            },  
             Value::Symbol(Some(ref mod_name), ref name) =>
                 write!(f, "{}/{}", mod_name, name),
             Value::Symbol(None, ref name) => write!(f, "{}", name),
@@ -262,6 +346,6 @@ impl Interpreter {
 // Main
 
 fn main () {
-    let mut itp = Interpreter::new();
-    println!("{}", itp.eval(Parser::new("(#t 42 )").parse_expr().unwrap()));
+    println!("{}",
+             Parser::new("#(\\a \\ä \\newline)").parse_expr().unwrap().0);
 }
