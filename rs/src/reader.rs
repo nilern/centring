@@ -1,4 +1,4 @@
-use value::{Value, ValueRef, prepend, vec_to_list};
+use value::{Value, ValueRef, prepend};
 use std::str::FromStr;
 use std::rc::Rc;
 
@@ -106,10 +106,10 @@ impl Parser {
                 let (vs, q) = self.pop().unwrap().1.parse_exprs();
                 let (_, r) = try!(q.pop_while(char::is_whitespace)
                                   .1.pop_if(|c| c == ')', "list terminator \\)"));
-                Ok((prepend(
+                Ok((Value::List(prepend(
                     Rc::new(Value::Symbol(Some("centring.lang".to_string()),
                                           "Tuple".to_string())),
-                    Rc::new(vec_to_list(vs))),
+                    &Rc::new(vs.into_iter().collect()))),
                     r))
             },
             Some('[') => {
@@ -117,10 +117,10 @@ impl Parser {
                 let (_, r) = try!(q.pop_while(char::is_whitespace)
                                   .1.pop_if(|c| c == ']',
                                             "array terminator \\]"));
-                Ok((prepend(
+                Ok((Value::List(prepend(
                     Rc::new(Value::Symbol(Some("centring.lang".to_string()),
                                           "Array".to_string())),
-                    Rc::new(vec_to_list(vs))),
+                    &Rc::new(vs.into_iter().collect()))),
                     r))
             },
             Some('t') => Ok((Value::Bool(true), self.pop().unwrap().1)),
@@ -140,7 +140,7 @@ impl Parser {
                 let (vs, q) = p.parse_exprs();
                 let (_, r) = try!(q.pop_while(char::is_whitespace)
                                   .1.pop_if(|c| c == ')', "list terminator \\)"));
-                Ok((vec_to_list(vs), r))
+                Ok((Value::List(vs.into_iter().collect()), r))
             },
             Some('\\') => self.parse_char(),
             Some('#') => self.pop().unwrap().1.parse_pounded(),

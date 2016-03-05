@@ -1,5 +1,8 @@
 use std::rc::Rc;
 use std::collections::HashMap;
+use std::iter::FromIterator;
+
+use eval::Interpreter;
 
 pub type ValueRef = Rc<Value>;
 
@@ -12,8 +15,7 @@ pub enum Value {
 
     Tuple(Vec<ValueRef>),
     Array(Vec<ValueRef>),
-    Pair { first: ValueRef, rest: ValueRef },
-    EmptyList,
+    List(List<ValueRef>),
 
     Record { typ: ValueRef, vals: Vec<ValueRef> },
     Singleton { typ: ValueRef },
@@ -43,24 +45,49 @@ pub struct Environment {
     parent: Option<Rc<Environment>>
 }
 
-pub struct Interpreter;
+#[derive(Debug)]
+pub enum List<T> {
+    Pair { rest: Rc<List<T>>, first: T },
+    Empty
+}
 
-// Value Utils
+// List Iteration
 
-pub fn prepend(v: ValueRef, coll: ValueRef) -> Value {
-    match *coll {
-        Value::EmptyList | Value::Pair { .. } => Value::Pair {
-            first: v,
-            rest: coll
-        },
-        _ => panic!()
+impl<T> List<T> {
+    pub fn iter(&self) -> ListIter<T> {
+        ListIter(self)
     }
 }
 
-pub fn vec_to_list(vs: Vec<ValueRef>) -> Value {
-    let mut res = Value::EmptyList;
-    for v in vs.into_iter().rev() {
-        res = Value::Pair { first: v, rest: Rc::new(res) };
+pub fn prepend<T>(v: T, ls: &Rc<List<T>>) -> List<T> {
+    List::Pair {
+        first: v,
+        rest: ls.clone()
     }
-    res
+}
+
+struct ListIter<'a, T>(&'a List<T>) where T: 'a;
+
+impl<'a, T> Iterator for ListIter<'a, T> {
+    type Item = &'a T;
+    
+    fn next(&mut self) -> Option<&'a T> {
+        if let List::Pair { ref first, ref rest } = *self.0 {
+            self.0 = rest;
+            Some(first)
+        } else {
+            None
+        }
+    }
+}
+
+impl<T> FromIterator<T> for List<T> {
+    fn from_iter<I: IntoIterator<Item=T>>(iter: I) -> List<T> {
+        let mut it = iter.into_iter();
+        if let Some(v) = it.next() {
+            prepend(v, &Rc::new(FromIterator::from_iter(it)))
+        } else {
+            List::Empty
+        }
+    }
 }

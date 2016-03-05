@@ -1,26 +1,21 @@
-use std::rc::Rc;
-use value::{Value, ValueRef, Interpreter};
-use reader::{Parser};
-
 mod value;
 mod reader;
 mod printer;
+mod eval;
 
-// Eval
-
-impl Interpreter {
-    fn new() -> Interpreter {
-        Interpreter
-    }
-    
-    fn eval(&mut self, expr: Value) -> ValueRef {
-        Rc::new(expr)
-    }
-}
+use std::rc::Rc;
+use reader::Parser;
+use eval::{Interpreter, analyze};
 
 // Main
 
 fn main () {
+    let mut itp = Interpreter::new();
+
     println!("{}",
-             Parser::new("#(\\a \\ä \\newline)").parse_expr().unwrap().0);
+             itp.eval(
+                 &analyze(
+                     Rc::new(Parser::new(
+                         "(centring.lang/do (centring.lang/def foo 5) foo)")
+                             .parse_expr().unwrap().0))));
 }

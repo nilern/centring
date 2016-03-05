@@ -1,6 +1,5 @@
 use value::Value;
 use std::fmt;
-use std::rc::Rc;
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -31,25 +30,11 @@ impl fmt::Display for Value {
                 for v in vs { try!(write!(f, " {}", v)) }
                 write!(f, "]")
             },
-            Value::Pair { first: ref v, rest: ref vs } => {
+            Value::List(ref vs) => {
                 try!(write!(f, "("));
-                let mut h = v;
-                let mut t = vs;
-                loop {
-                    try!(write!(f, "{}", h));
-                    match **t {
-                        Value::EmptyList => break,
-                        Value::Pair { first: ref v, rest: ref vs } => {
-                            h = v;
-                            t = vs;
-                        },
-                        _ => { try!(write!(f, " . {}", t)); break }
-                    }
-                    try!(write!(f, " "));
-                }
+                for v in vs.iter() { try!(write!(f, " {}", v)) }
                 write!(f, ")")
             },
-            Value::EmptyList => write!(f, "()"),
 
             Value::Singleton { ref typ } => write!(f, "#=({})", typ),
             Value::Record { ref typ, vals: ref vs } => {
