@@ -1,8 +1,9 @@
 use std::rc::Rc;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use eval::{Interpreter, Env};
+use eval::{Interpreter, Env, Expr};
 
 pub type ValueRef = Rc<Value>;
 
@@ -29,13 +30,23 @@ pub enum Value {
         name: String,
         formal_names: Vec<String>,
         formal_types: Vec<ValueRef>,
-        body: ValueRef,
-        env: Rc<Env>
+        body: Rc<Expr>,
+        env: Rc<RefCell<Env>>
     },
     NativeFn {
         name: String,
         formal_types: Vec<ValueRef>,
         code: fn(Interpreter, Vec<ValueRef>) -> ValueRef
+    }
+}
+
+impl Value {
+    pub fn name(&self) -> Option<&str> {
+        if let Value::Symbol(_, ref name) = *self {
+            Some(name)
+        } else {
+            None
+        }
     }
 }
 
