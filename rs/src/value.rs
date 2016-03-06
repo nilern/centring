@@ -3,7 +3,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use eval::{Interpreter, Env, Expr};
+use eval::{Interpreter, Env, EnvRef, Expr};
 
 pub type ValueRef = Rc<Value>;
 
@@ -31,13 +31,14 @@ pub enum Value {
         formal_names: Vec<String>,
         formal_types: Vec<ValueRef>,
         body: Rc<Expr>,
-        env: Rc<RefCell<Env>>
+        env: EnvRef
     },
     NativeFn {
         name: String,
         formal_types: Vec<ValueRef>,
         code: fn(Interpreter, Vec<ValueRef>) -> ValueRef
-    }
+    },
+    Macro(ValueRef)
 }
 
 impl Value {

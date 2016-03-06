@@ -1,4 +1,4 @@
-use value::{Value, ValueRef, prepend};
+use value::{Value, ValueRef, List, prepend};
 use std::str::FromStr;
 use std::rc::Rc;
 
@@ -132,18 +132,24 @@ impl Parser {
     pub fn parse_expr(&self) -> ParseResult<Value> {
         match self.peek() {
             Some(c) if is_constituent(c) => self.parse_token(),
-            Some(c) if c.is_whitespace() => {
-                self.pop_while(char::is_whitespace).1.parse_expr()
-            },
+            Some(c) if c.is_whitespace() =>
+                self.pop_while(char::is_whitespace).1.parse_expr(),
             Some('(') => {
-                let (_, p) = self.pop().unwrap();
-                let (vs, q) = p.parse_exprs();
+                let (vs, q) = self.pop().unwrap().1.parse_exprs();
                 let (_, r) = try!(q.pop_while(char::is_whitespace)
                                   .1.pop_if(|c| c == ')', "list terminator \\)"));
                 Ok((Value::List(vs.into_iter().collect()), r))
             },
             Some('\\') => self.parse_char(),
             Some('#') => self.pop().unwrap().1.parse_pounded(),
+            Some('\'') => {
+                let (v, q) = try!(self.pop().unwrap().1.parse_expr());
+                Ok((Value::List(prepend(
+                    Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                          "quote".to_string())),
+                    &Rc::new(prepend(Rc::new(v), &Rc::new(List::Empty))))),
+                    q))
+            },
             Some(c) => Err((ParseError::Illegal(c), self.clone())),
             None => Err((ParseError::EOF, self.clone()))
         }

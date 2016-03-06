@@ -95,8 +95,8 @@ pub fn analyze(v: &ValueRef) -> Expr {
 }
 
 pub struct Interpreter {
-    env: Rc<RefCell<Env>>,
-    envstack: Vec<Rc<RefCell<Env>>>
+    env: EnvRef,
+    envstack: Vec<EnvRef>
 }
 
 impl Interpreter {
@@ -193,14 +193,16 @@ impl Interpreter {
     }
 }
 
+pub type EnvRef = Rc<RefCell<Env>>;
+
 #[derive(Debug)]
 pub struct Env {
     bindings: HashMap<String, ValueRef>,
-    parent: Option<Rc<RefCell<Env>>>
+    parent: Option<EnvRef>
 }
 
 impl Env {
-    fn new(parent: &Rc<RefCell<Env>>) -> Env {
+    fn new(parent: &EnvRef) -> Env {
         Env {
             bindings: HashMap::new(),
             parent: Some(parent.clone())

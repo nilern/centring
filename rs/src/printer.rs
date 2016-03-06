@@ -57,6 +57,11 @@ impl fmt::Display for Value {
                 try!(write!(f, "#<NativeFn {} (", name));
                 for ftp in ftps { try!(write!(f, " {}", ftp)) }
                 write!(f, ")>")
+            },
+            Value::Macro(ref expander) => {
+                try!(write!(f, "#<Macro "));
+                try!(write!(f, "{}", expander));
+                write!(f, ">")
             }
         }
     }
