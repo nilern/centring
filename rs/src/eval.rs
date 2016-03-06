@@ -17,39 +17,58 @@ pub enum Expr {
         cond: Box<Expr>,
         then: Box<Expr>,
         els: Box<Expr>
+    },
+
+    Fn {
+        name: Option<String>,
+        formal_names: Vec<String>,
+        formal_types: Vec<ValueRef>,
+        body: Box<Expr>
+    },
+    Call {
+        op: Box<Expr>,
+        args: Vec<Expr>
     }
 }
 
-pub fn analyze(v: ValueRef) -> Expr {
-    match *v {
+pub fn analyze(v: &ValueRef) -> Expr {
+    match **v {
         Value::Int(_) | Value::Bool(_) | Value::Char(_) => Expr::Const(v.clone()),
 
         Value::Symbol(..) => Expr::Id(v.clone()),
 
         Value::List(ref ls) => {
             let mut it = ls.iter();
-            if let Value::Symbol(Some(ref mod_name), ref name) =
-                **it.next().unwrap() {
+            let op = it.next().unwrap();
+            if let Value::Symbol(Some(ref mod_name), ref name) = **op {
                 if mod_name == "centring.lang" {
-                    match name.as_ref() {
-                        "do" => Expr::Do(it.map(|v| analyze(v.clone())).collect()),
+                    return match name.as_ref() {
+                        "quote" => Expr::Const(it.next().unwrap().clone()),
                         "def" => match **it.next().unwrap() {
                             Value::Symbol(None, ref name) =>
                                 Expr::Def {
                                     name: name.clone(),
                                     val: Box::new(analyze(it.next()
-                                                          .unwrap()
-                                                          .clone()))
+                                                          .unwrap()))
                                 },
                             _ => panic!()
                         },
-                        _ => panic!()
+                        "do" => Expr::Do(it.map(analyze).collect()),
+                        "if" => Expr::If {
+                            cond: Box::new(analyze(it.next().unwrap())),
+                            then: Box::new(analyze(it.next().unwrap())),
+                            els: Box::new(analyze(it.next().unwrap()))
+                        },
+                        _ => Expr::Call {
+                            op: Box::new(analyze(op)),
+                            args: it.map(analyze).collect()
+                        }
                     }
-                } else {
-                    panic!()
                 }
-            } else {
-                panic!()
+            }
+            Expr::Call {
+                op: Box::new(analyze(op)),
+                args: it.map(analyze).collect()
             }
         },  
         
@@ -58,13 +77,16 @@ pub fn analyze(v: ValueRef) -> Expr {
 }
 
 pub struct Interpreter {
-    env: HashMap<String, ValueRef>
+    env: Env
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
-            env: HashMap::new()
+            env: Env {
+                bindings: HashMap::new(),
+                parent: None
+            }
         }
     }
 
@@ -93,25 +115,43 @@ impl Interpreter {
                     Value::Bool(true) => self.eval(then),
                     Value::Bool(false) => self.eval(els),
                     _ => panic!()
-                }
+                },
+            _ => panic!()
         }
     }
 
     fn load(&self, sym: &Value) -> ValueRef {
         match *sym {
-            Value::Symbol(_, ref name) => {
-                if let Some(v) = self.env.get(name) {
-                    v.clone()
-                } else {
-                    panic!()
-                }
-            },
+            Value::Symbol(None, ref name) =>
+                self.env.lookup(name).unwrap().clone(),
             _ => panic!()
         }
     }
 
     fn store(&mut self, name: &str, val: ValueRef) -> ValueRef {
-        self.env.insert(name.to_string(), val);
+        self.env.extend(name, val);
         Rc::new(Value::Tuple(vec![]))
+    }
+}
+
+#[derive(Debug)]
+pub struct Env {
+    bindings: HashMap<String, ValueRef>,
+    parent: Option<Rc<Env>>
+}
+
+impl Env {
+    fn lookup(&self, k: &str) -> Option<ValueRef> {
+        if let Some(v) = self.bindings.get(k) {
+            Some(v.clone())
+        } else if let Some(ref penv) = self.parent {
+            penv.lookup(k)
+        } else {
+            None
+        }
+    }
+
+    fn extend(&mut self, k: &str, v: ValueRef) {
+        self.bindings.insert(k.to_string(), v);
     }
 }

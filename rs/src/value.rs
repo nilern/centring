@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use eval::Interpreter;
+use eval::{Interpreter, Env};
 
 pub type ValueRef = Rc<Value>;
 
@@ -30,19 +30,13 @@ pub enum Value {
         formal_names: Vec<String>,
         formal_types: Vec<ValueRef>,
         body: ValueRef,
-        env: Rc<Environment>
+        env: Rc<Env>
     },
     NativeFn {
         name: String,
         formal_types: Vec<ValueRef>,
         code: fn(Interpreter, Vec<ValueRef>) -> ValueRef
     }
-}
-
-#[derive(Debug)]
-pub struct Environment {
-    bindings: HashMap<String, ValueRef>,
-    parent: Option<Rc<Environment>>
 }
 
 #[derive(Debug)]
