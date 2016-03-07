@@ -5,7 +5,6 @@ use eval::{Interpreter, EnvRef, Expr};
 
 pub type ValueRef = Rc<Value>;
 
-#[derive(Debug)]
 pub enum Value {
     Int(isize),
     Bool(bool),
@@ -34,34 +33,26 @@ pub enum Value {
     NativeFn {
         name: String,
         formal_types: Vec<ValueRef>,
-        code: fn(Interpreter, Vec<ValueRef>) -> ValueRef
+        code: fn(&mut Interpreter, Vec<ValueRef>) -> ValueRef
     },
     Macro(ValueRef)
 }
 
 impl Value {
     pub fn name(&self) -> Option<&str> {
-        if let Value::Symbol(_, ref name) = *self {
-            Some(name)
-        } else {
-            None
-        }
+        if let Value::Symbol(_, ref name) = *self { Some(name) } else { None }
     }
 
     pub fn is_symbol(&self) -> bool {
-        if let Value::Symbol(..) = *self {
-            true
-        } else {
-            false
-        }
+        if let Value::Symbol(..) = *self { true } else { false }
     }
 
     pub fn is_macro(&self) -> bool {
-        if let Value::Macro(_) = *self {
-            true
-        } else {
-            false
-        }
+        if let Value::Macro(_) = *self { true } else { false }
+    }
+
+    pub fn get_int(&self) -> Option<isize> {
+        if let Value::Int(i) = *self { Some(i) } else { None }
     }
 }
 

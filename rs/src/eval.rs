@@ -4,7 +4,6 @@ use std::cell::RefCell;
 
 use value::{Value, ValueRef};
 
-#[derive(Debug)]
 pub enum Expr {
     Const(ValueRef),
 
@@ -72,21 +71,17 @@ impl Interpreter {
                 self.store(&name, v)
             },
 
-            Expr::Do(ref es) =>
-                if es.is_empty() {
-                    Rc::new(Value::Tuple(vec![]))
-                } else {
-                    let mut res = None;
-                    for e in es {
-                        res = Some(self.eval(e))
-                    }
-                    res.unwrap()
-                },
+            Expr::Do(ref es) => {
+                let mut res = Rc::new(Value::Tuple(vec![]));
+                for e in es {
+                    res = self.eval(e);
+                }
+                res
+            },
             Expr::If { ref cond, ref then, ref els } =>
                 match *self.eval(cond) {
                     Value::Bool(true) => self.eval(then),
-
-                            Value::Bool(false) => self.eval(els),
+                    Value::Bool(false) => self.eval(els),
                     _ => panic!()
                 },
 
@@ -116,8 +111,7 @@ impl Interpreter {
 
     pub fn load(&self, sym: &Value) -> Option<ValueRef> {
         match *sym {
-            Value::Symbol(None, ref name) =>
-                self.env.borrow().lookup(name),
+            Value::Symbol(None, ref name) => self.env.borrow().lookup(name),
             Value::Symbol(Some(_), _) => None,
             _ => panic!()
         }
@@ -137,29 +131,31 @@ impl Interpreter {
     }
 
     pub fn call(&mut self, op: ValueRef, args: Vec<ValueRef>) -> ValueRef {
-        if let Value::Fn { ref formal_names, ref body, ref env, .. } = *op {
-            // Store the old env:
-            self.envstack.push(self.env.clone());
-            // Make an env that extends that of the closure:
-            self.env = Rc::new(RefCell::new(Env::new(env)));
-            // Extend the env with the args:
-            for (k, v) in formal_names.iter().zip(args.into_iter()) {
-                self.store(k, v);
-            }
-            // Eval body in the extended env:
-            let res = self.eval(body);
-            // Restore previous env:
-            self.env = self.envstack.pop().unwrap();
-            res
-        } else {
-            panic!()
+        match *op {
+            Value::Fn { ref formal_names, ref body, ref env, .. } => {
+                // Store the old env:
+                self.envstack.push(self.env.clone());
+                // Make an env that extends that of the closure:
+                self.env = Rc::new(RefCell::new(Env::new(env)));
+                // Extend the env with the args:
+                // TODO: check arg counts and types
+                for (k, v) in formal_names.iter().zip(args.into_iter()) {
+                    self.store(k, v);
+                }
+                // Eval body in the extended env:
+                let res = self.eval(body);
+                // Restore previous env:
+                self.env = self.envstack.pop().unwrap();
+                res
+            },
+            Value::NativeFn { ref code, .. } => code(self, args),
+            _ => panic!()
         }
     }
 }
 
 pub type EnvRef = Rc<RefCell<Env>>;
 
-#[derive(Debug)]
 pub struct Env {
     bindings: HashMap<String, ValueRef>,
     parent: Option<EnvRef>,
