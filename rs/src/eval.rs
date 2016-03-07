@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -30,67 +30,18 @@ pub enum Expr {
     Call {
         op: Box<Expr>,
         args: Vec<Expr>
-    }
+    },
+
+    Macro(Box<Expr>),
+    AtExpansion(Box<Expr>)
 }
 
-pub fn analyze(v: &ValueRef) -> Expr {
-    match **v {
-        Value::Symbol(..) => Expr::Id(v.clone()),
-        Value::List(ref ls) => {
-            let mut it = ls.iter().peekable();
-            let op = it.next().unwrap();
-            if let Value::Symbol(Some(ref mod_name), ref name) = **op {
-                if mod_name == "centring.lang" {
-                    return match name.as_ref() {
-                        "quote" => Expr::Const(it.next().unwrap().clone()),
-                        "def" => match **it.next().unwrap() {
-                            Value::Symbol(None, ref name) =>
-                                Expr::Def {
-                                    name: name.clone(),
-                                    val: Box::new(analyze(it.next()
-                                                          .unwrap()))
-                                },
-                            _ => panic!()
-                        },
-                        "do" => Expr::Do(it.map(analyze).collect()),
-                        "if" => Expr::If {
-                            cond: Box::new(analyze(it.next().unwrap())),
-                            then: Box::new(analyze(it.next().unwrap())),
-                            els: Box::new(analyze(it.next().unwrap()))
-                        },
-                        "fn" => {
-                            let name = it.peek()
-                                .and_then(|v| (*v).name())
-                                .map(ToString::to_string);
-                            if name.is_some() {
-                                it.next();
-                            }
-                            if let Value::List(ref lss) = **it.next().unwrap() {
-                                Expr::Fn {
-                                    name: name,
-                                    formal_names: lss.iter()
-                                        .map(|v| v.name().unwrap().to_string())
-                                        .collect(),
-                                    formal_types: vec![],
-                                    body: Rc::new(analyze(it.next().unwrap()))
-                                }
-                            } else {
-                                panic!()
-                            }
-                        },
-                        _ => Expr::Call {
-                            op: Box::new(analyze(op)),
-                            args: it.map(analyze).collect()
-                        }
-                    }
-                }
-            }
-            Expr::Call {
-                op: Box::new(analyze(op)),
-                args: it.map(analyze).collect()
-            }
-        },
-        _ => Expr::Const(v.clone())
+impl Expr {
+    pub fn get_const(&self) -> Option<ValueRef> {
+        match *self {
+            Expr::Const(ref v) => Some(v.clone()),
+            _ => None
+        }
     }
 }
 
@@ -104,7 +55,8 @@ impl Interpreter {
         Interpreter {
             env: Rc::new(RefCell::new(Env {
                 bindings: HashMap::new(),
-                parent: None
+                parent: None,
+                non_macros: HashSet::new()
             })),
             envstack: vec![]
         }
@@ -114,7 +66,7 @@ impl Interpreter {
         match *expr {
             Expr::Const(ref v) => v.clone(),
 
-            Expr::Id(ref sym) => self.load(sym),
+            Expr::Id(ref sym) => self.load(sym).unwrap(),
             Expr::Def { ref name, ref val } => {
                 let v = self.eval(val);
                 self.store(&name, v)
@@ -149,30 +101,42 @@ impl Interpreter {
                     body: body.clone(),
                     env: self.env.clone()
                 }),
+            Expr::Macro(ref expf) =>
+                Rc::new(Value::Macro(self.eval(expf))),
                 
             Expr::Call { ref op, ref args } => {
                 let evop = self.eval(op);
-                let evargs: Vec<ValueRef> = args.iter().map(|e| self.eval(e))
-                    .collect();
+                let evargs = args.iter().map(|e| self.eval(e)).collect();
                 self.call(evop, evargs)
-            }
+            },
+
+            Expr::AtExpansion(_) => panic!()
         }
     }
 
-    fn load(&self, sym: &Value) -> ValueRef {
+    pub fn load(&self, sym: &Value) -> Option<ValueRef> {
         match *sym {
             Value::Symbol(None, ref name) =>
-                self.env.borrow_mut().lookup(name).unwrap().clone(),
+                self.env.borrow().lookup(name),
+            Value::Symbol(Some(_), _) => None,
             _ => panic!()
         }
     }
 
-    fn store(&mut self, name: &str, val: ValueRef) -> ValueRef {
+    pub fn store(&mut self, name: &str, val: ValueRef) -> ValueRef {
         self.env.borrow_mut().extend(name, val);
         Rc::new(Value::Tuple(vec![]))
     }
 
-    fn call(&mut self, op: ValueRef, args: Vec<ValueRef>) -> ValueRef {
+    pub fn shadow_macro(&mut self, name: String) {
+        self.env.borrow_mut().shadow_macro(name);
+    }
+
+    pub fn allow_macro(&mut self, name: &str) {
+        self.env.borrow_mut().allow_macro(name);
+    }
+
+    pub fn call(&mut self, op: ValueRef, args: Vec<ValueRef>) -> ValueRef {
         if let Value::Fn { ref formal_names, ref body, ref env, .. } = *op {
             // Store the old env:
             self.envstack.push(self.env.clone());
@@ -198,18 +162,20 @@ pub type EnvRef = Rc<RefCell<Env>>;
 #[derive(Debug)]
 pub struct Env {
     bindings: HashMap<String, ValueRef>,
-    parent: Option<EnvRef>
+    parent: Option<EnvRef>,
+    non_macros: HashSet<String>
 }
 
 impl Env {
-    fn new(parent: &EnvRef) -> Env {
+    pub fn new(parent: &EnvRef) -> Env {
         Env {
             bindings: HashMap::new(),
-            parent: Some(parent.clone())
+            parent: Some(parent.clone()),
+            non_macros: HashSet::new()
         }
     }
     
-    fn lookup(&self, k: &str) -> Option<ValueRef> {
+    pub fn lookup(&self, k: &str) -> Option<ValueRef> {
         if let Some(v) = self.bindings.get(k) {
             Some(v.clone())
         } else if let Some(ref penv) = self.parent {
@@ -219,7 +185,15 @@ impl Env {
         }
     }
 
-    fn extend(&mut self, k: &str, v: ValueRef) {
+    pub fn extend(&mut self, k: &str, v: ValueRef) {
         self.bindings.insert(k.to_string(), v);
+    }
+
+    pub fn shadow_macro(&mut self, name: String) {
+        self.non_macros.insert(name);
+    }
+
+    pub fn allow_macro(&mut self, name: &str) {
+        self.non_macros.remove(name);
     }
 }

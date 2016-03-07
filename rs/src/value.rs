@@ -1,9 +1,7 @@
 use std::rc::Rc;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::iter::FromIterator;
 
-use eval::{Interpreter, Env, EnvRef, Expr};
+use eval::{Interpreter, EnvRef, Expr};
 
 pub type ValueRef = Rc<Value>;
 
@@ -49,6 +47,22 @@ impl Value {
             None
         }
     }
+
+    pub fn is_symbol(&self) -> bool {
+        if let Value::Symbol(..) = *self {
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_macro(&self) -> bool {
+        if let Value::Macro(_) = *self {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -72,7 +86,7 @@ pub fn prepend<T>(v: T, ls: &Rc<List<T>>) -> List<T> {
     }
 }
 
-struct ListIter<'a, T>(&'a List<T>) where T: 'a;
+pub struct ListIter<'a, T>(&'a List<T>) where T: 'a;
 
 impl<'a, T> Iterator for ListIter<'a, T> {
     type Item = &'a T;
