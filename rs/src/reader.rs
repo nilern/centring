@@ -140,6 +140,12 @@ impl Parser {
                                   .1.pop_if(|c| c == ')', "list terminator \\)"));
                 Ok((Value::List(vs.into_iter().collect()), r))
             },
+            Some('"') => {
+                let (s, p) = self.pop().unwrap().1.pop_while(|c| c != '"');
+                let (_, q) = try!(p.pop_if(
+                    |c| c == '"', "string terminator \""));
+                Ok((Value::String(s), q))
+            },
             Some('\\') => self.parse_char(),
             Some('#') => self.pop().unwrap().1.parse_pounded(),
             Some('\'') => {
@@ -155,7 +161,7 @@ impl Parser {
         }
     }
 
-    fn parse_exprs(&self) -> (Vec<ValueRef>, Parser) {
+    pub fn parse_exprs(&self) -> (Vec<ValueRef>, Parser) {
         let mut p = self.clone();
         let mut res = vec![];
         loop {

@@ -14,6 +14,7 @@ pub enum Value {
     Tuple(Vec<ValueRef>),
     Array(Vec<ValueRef>),
     List(List<ValueRef>),
+    String(String),
 
     Record { typ: ValueRef, vals: Vec<ValueRef> },
     Singleton { typ: ValueRef },
@@ -54,9 +55,17 @@ impl Value {
     pub fn get_int(&self) -> Option<isize> {
         if let Value::Int(i) = *self { Some(i) } else { None }
     }
+
+    pub fn get_list(&self) -> Option<List<ValueRef>> {
+        if let Value::List(ref ls) = *self { Some(ls.clone()) } else { None }
+    }
+
+    pub fn get_str(&self) -> Option<&str> {
+        if let Value::String(ref s) = *self { Some(s) } else { None }
+    }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum List<T> {
     Pair { rest: Rc<List<T>>, first: T },
     Empty

@@ -1,0 +1,21 @@
+
+(centring.lang/at-expansion
+ (centring.lang/do
+   (centring.lang/def quote
+     (centring.lang/macro
+      (centring.lang/fn (v)
+        (prepend 'centring.lang/quote (prepend v '())))))
+   
+   (centring.lang/def def
+     (centring.lang/macro
+      (centring.lang/fn (name expr)
+        (prepend 'centring.lang/def (prepend name (prepend expr '()))))))
+
+   (def if
+     (centring.lang/macro
+      (centring.lang/fn (cond then else)
+        (prepend 'centring.lang/if
+                 (prepend cond
+                          (prepend then
+                                   (prepend else '())))))))))
+     

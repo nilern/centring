@@ -24,6 +24,16 @@ fn main () {
         formal_types: vec![],
         code: builtins::add_2i
     }));
+    itp.store("prepend", Rc::new(Value::NativeFn {
+        name: "prepend".to_string(),
+        formal_types: vec![],
+        code: builtins::prepend_ls
+    }));
+    itp.store("load", Rc::new(Value::NativeFn {
+        name: "load".to_string(),
+        formal_types: vec![],
+        code: builtins::load
+    }));
     
     loop {
         match cpl.read_line_utf8("ctr> ") {

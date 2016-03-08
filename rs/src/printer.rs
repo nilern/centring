@@ -35,6 +35,7 @@ impl fmt::Display for Value {
                 for v in vs.iter() { try!(write!(f, " {}", v)) }
                 write!(f, ")")
             },
+            Value::String(ref s) => write!(f, "{:?}", s),
 
             Value::Singleton { ref typ } => write!(f, "#=({})", typ),
             Value::Record { ref typ, vals: ref vs } => {
