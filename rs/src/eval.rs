@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::cmp::Ordering;
 
 use value::{Value, ValueRef};
 
@@ -23,7 +24,9 @@ pub enum Expr {
     Fn {
         name: Option<String>,
         formal_names: Vec<String>,
+        vararg_name: Option<String>,
         formal_types: Vec<Expr>,
+        vararg_type: Option<Box<Expr>>,
         body: Rc<Expr>
     },
     Call {
@@ -86,13 +89,16 @@ impl Interpreter {
                 },
 
             Expr::Fn { ref name,
-                       ref formal_names, ref formal_types,
+                       ref formal_names, ref vararg_name,
+                       ref formal_types, ref vararg_type,
                        ref body } =>
                 Rc::new(Value::Fn {
                     name: name.clone().unwrap_or("fn".to_string()),
                     formal_names: formal_names.clone(),
+                    vararg_name: vararg_name.clone(),
                     formal_types: formal_types.iter().map(|t| self.eval(t))
                         .collect(),
+                    vararg_type: vararg_type.as_ref().map(|t| self.eval(t)),
                     body: body.clone(),
                     env: self.env.clone()
                 }),
@@ -132,15 +138,41 @@ impl Interpreter {
 
     pub fn call(&mut self, op: ValueRef, args: Vec<ValueRef>) -> ValueRef {
         match *op {
-            Value::Fn { ref formal_names, ref body, ref env, .. } => {
+            Value::Fn { ref formal_names, ref vararg_name, ref body, ref env,
+                        .. } => {
                 // Store the old env:
                 self.envstack.push(self.env.clone());
                 // Make an env that extends that of the closure:
                 self.env = Rc::new(RefCell::new(Env::new(env)));
                 // Extend the env with the args:
                 // TODO: check arg counts and types
-                for (k, v) in formal_names.iter().zip(args.into_iter()) {
-                    self.store(k, v);
+                let formalc = formal_names.len();
+                match formalc.cmp(&args.len()) {
+                    Ordering::Equal => {
+                        for (k, v) in formal_names.iter().zip(args.into_iter()) {
+                            self.store(k, v);
+                        }
+                        if let Some(ref vname) = *vararg_name {
+                            self.store(vname, Rc::new(Value::Tuple(vec![])));
+                        }
+                    },
+                    Ordering::Less => {
+                        // Too many args, but a vararg will work:
+                        if let Some(ref vname) = *vararg_name {
+                            for (k, v) in formal_names.iter().zip(args.iter()) {
+                                self.store(k, v.clone());
+                            }
+                            self.store(vname,
+                                       Rc::new(Value::Tuple(args[formalc..]
+                                                            .iter()
+                                                            .map(Clone::clone)
+                                                            .collect())));
+                        } else {
+                            panic!()
+                        }
+                    },
+                    Ordering::Greater => // Too few args, no good in any case:
+                        panic!()
                 }
                 // Eval body in the extended env:
                 let res = self.eval(body);

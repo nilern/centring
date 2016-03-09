@@ -2,6 +2,34 @@ use value::{Value, ValueRef, List};
 use eval::{Interpreter, Expr};
 use std::rc::Rc;
 
+fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>) {
+    if let Value::List(ref ls) = *formals {
+        let mut formal_names = vec![];
+        let mut vararg_name = None;
+        let mut iter = ls.iter();
+        let mut va_expected = false;
+        while let Some(formal) = iter.next() {
+            match **formal {
+                Value::Symbol(None, ref name) =>
+                    if let "&" = name.as_ref() {
+                        va_expected = true;
+                    } else if !va_expected {
+                        formal_names.push(name.clone());
+                    } else {
+                        vararg_name = Some(name.clone());
+                    },
+                _ => panic!()
+            }
+        }
+        if va_expected && vararg_name.is_none() {
+            panic!()
+        }
+        (formal_names, vararg_name)
+    } else {
+        panic!()
+    }
+}
+
 pub fn shallow_analyze(sexpr: ValueRef) -> Expr {
     match *sexpr {
         Value::Symbol(..) => Expr::Id(sexpr.clone()),
@@ -42,18 +70,16 @@ pub fn shallow_analyze(sexpr: ValueRef) -> Expr {
                             if name.is_some() {
                                 it.next();
                             }
-                            if let Value::List(ref lss) = **it.next().unwrap() {
-                                Expr::Fn {
-                                    name: name,
-                                    formal_names: lss.iter()
-                                        .map(|v| v.name().unwrap().to_string())
-                                        .collect(),
-                                    formal_types: vec![],
-                                    body: Rc::new(Expr::Const(
-                                        it.next().unwrap().clone()))
-                                }
-                            } else {
-                                panic!()
+                            let (formal_names, vararg_name) =
+                                parse_formals(it.next().unwrap().clone());
+                            Expr::Fn {
+                                name: name,
+                                formal_names: formal_names,
+                                vararg_name: vararg_name,
+                                formal_types: vec![],
+                                vararg_type: None,
+                                body: Rc::new(Expr::Const(
+                                    it.next().unwrap().clone()))
                             }
                         },
                         "macro" =>
@@ -105,14 +131,17 @@ impl Interpreter {
                     then: Box::new(self.expand_all(then.get_const().unwrap())),
                     els: Box::new(self.expand_all(els.get_const().unwrap()))
                 },
-            Expr::Fn { name, formal_names, formal_types, body } => {
+            Expr::Fn { name, formal_names, vararg_name, formal_types, vararg_type,
+                       body } => {
                 for name in formal_names.iter() {
                     self.shadow_macro(name.clone());
                 }
                 let res = Expr::Fn {
                     name: name.clone(),
                     formal_names: formal_names.clone(),
+                    vararg_name: vararg_name.clone(),
                     formal_types: formal_types,
+                    vararg_type: vararg_type,
                     body: Rc::new(self.expand_all(body.get_const().unwrap()))
                 };
                 for name in formal_names.iter() {

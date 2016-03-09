@@ -27,7 +27,9 @@ pub enum Value {
     Fn {
         name: String,
         formal_names: Vec<String>,
+        vararg_name: Option<String>,
         formal_types: Vec<ValueRef>,
+        vararg_type: Option<ValueRef>,
         body: Rc<Expr>,
         env: EnvRef
     },
