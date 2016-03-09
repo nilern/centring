@@ -22,12 +22,24 @@ impl fmt::Display for Value {
 
             Value::Tuple(ref vs) => {
                 try!(write!(f, "#("));
-                for v in vs { try!(write!(f, " {}", v)) }
+                let mut it = vs.iter();
+                if let Some(v) = it.next() {
+                    try!(write!(f, "{}", v));
+                }
+                for v in it {
+                    try!(write!(f, " {}", v))
+                }
                 write!(f, ")")
             },
             Value::List(ref vs) => {
                 try!(write!(f, "("));
-                for v in vs.iter() { try!(write!(f, " {}", v)) }
+                let mut it = vs.iter();
+                if let Some(v) = it.next() {
+                    try!(write!(f, "{}", v));
+                }
+                for v in it {
+                    try!(write!(f, " {}", v))
+                }
                 write!(f, ")")
             },
             Value::String(ref s) => write!(f, "{:?}", s),
@@ -54,11 +66,8 @@ impl fmt::Display for Value {
                 for ftp in ftps { try!(write!(f, " {}", ftp)) }
                 write!(f, ")>")
             },
-            Value::Macro(ref expander) => {
-                try!(write!(f, "#<Macro "));
-                try!(write!(f, "{}", expander));
-                write!(f, ">")
-            }
+            Value::Macro(ref expander) =>
+                write!(f, "#<Macro {}>", expander)
         }
     }
 }

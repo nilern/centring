@@ -136,7 +136,7 @@ impl Interpreter {
         self.env.borrow_mut().allow_macro(name);
     }
 
-    pub fn call(&mut self, op: ValueRef, args: Vec<ValueRef>) -> ValueRef {
+    pub fn call(&mut self, op: ValueRef, mut args: Vec<ValueRef>) -> ValueRef {
         match *op {
             Value::Fn { ref formal_names, ref vararg_name, ref body, ref env,
                         .. } => {
@@ -159,14 +159,13 @@ impl Interpreter {
                     Ordering::Less => {
                         // Too many args, but a vararg will work:
                         if let Some(ref vname) = *vararg_name {
-                            for (k, v) in formal_names.iter().zip(args.iter()) {
-                                self.store(k, v.clone());
+                            let varvals = args.split_off(formalc);
+                            for (k, v) in
+                                formal_names.iter().zip(args.into_iter())
+                            {
+                                self.store(k, v);
                             }
-                            self.store(vname,
-                                       Rc::new(Value::Tuple(args[formalc..]
-                                                            .iter()
-                                                            .map(Clone::clone)
-                                                            .collect())));
+                            self.store(vname, Rc::new(Value::Tuple(varvals)));
                         } else {
                             panic!()
                         }

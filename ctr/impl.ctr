@@ -9,13 +9,14 @@
    (centring.lang/def def
      (centring.lang/macro
       (centring.lang/fn (name expr)
-        (prepend 'centring.lang/def (prepend name (prepend expr '()))))))
+        (prepend 'centring.lang/def (prepend name (prepend expr '()))))))))
 
-   (def if
-     (centring.lang/macro
-      (centring.lang/fn (cond then else)
-        (prepend 'centring.lang/if
-                 (prepend cond
-                          (prepend then
-                                   (prepend else '())))))))))
-     
+(centring.lang/at-expansion
+ (def if
+   (centring.lang/macro
+    (centring.lang/fn (cond then else)
+      (prepend 'centring.lang/if
+               (prepend cond
+                        (prepend then
+                                 (prepend else '()))))))))
+
