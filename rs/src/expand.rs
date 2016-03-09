@@ -1,5 +1,5 @@
 use value::{Value, ValueRef, List};
-use eval::{Interpreter, Expr};
+use eval::{Interpreter, Expr, Environment};
 use std::rc::Rc;
 
 fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>) {
@@ -198,9 +198,5 @@ impl Interpreter {
             }
         }
         (sexpr, false)
-    }
-
-    fn load_macro(&self, sym: &Value) -> Option<ValueRef> {
-        self.load(sym).and_then(|v| if v.is_macro() { Some(v) } else { None })
     }
 }

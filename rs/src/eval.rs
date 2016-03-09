@@ -49,18 +49,20 @@ impl Expr {
 
 pub struct Interpreter {
     env: EnvRef,
-    envstack: Vec<EnvRef>
+    envstack: Vec<EnvRef>,
+    mod_registry: HashMap<String, EnvRef>
 }
 
 impl Interpreter {
     pub fn new() -> Interpreter {
         Interpreter {
-            env: Rc::new(RefCell::new(Env {
+            env: Rc::new(RefCell::new(Environment::Env {
                 bindings: HashMap::new(),
                 parent: None,
-                non_macros: HashSet::new()
+                non_macros: HashSet::new(),
             })),
-            envstack: vec![]
+            envstack: vec![],
+            mod_registry: HashMap::new()
         }
     }
 
@@ -124,8 +126,24 @@ impl Interpreter {
     }
 
     pub fn store(&mut self, name: &str, val: ValueRef) -> ValueRef {
-        self.env.borrow_mut().extend(name, val);
+        self.env.borrow_mut().extend(name.to_string(), val);
         Rc::new(Value::Tuple(vec![]))
+    }
+
+    pub fn type_of(&self, val: &Value) -> ValueRef {
+        match *val {
+            Value::Record { ref typ, .. } => typ.clone(),
+            Value::Singleton { ref typ } => typ.clone(),
+            _ => panic!()
+        }
+    }
+
+    pub fn load_macro(&self, sym: &Value) -> Option<ValueRef> {
+        match *sym {
+            Value::Symbol(None, ref name) => self.env.borrow().lookup_macro(name),
+            Value::Symbol(Some(_), _) => None,
+            _ => panic!()
+        }
     }
 
     pub fn shadow_macro(&mut self, name: String) {
@@ -143,7 +161,7 @@ impl Interpreter {
                 // Store the old env:
                 self.envstack.push(self.env.clone());
                 // Make an env that extends that of the closure:
-                self.env = Rc::new(RefCell::new(Env::new(env)));
+                self.env = Rc::new(RefCell::new(Environment::new(env)));
                 // Extend the env with the args:
                 // TODO: check arg counts and types
                 let formalc = formal_names.len();
@@ -185,42 +203,81 @@ impl Interpreter {
     }
 }
 
-pub type EnvRef = Rc<RefCell<Env>>;
+pub type EnvRef = Rc<RefCell<Environment>>;
 
-pub struct Env {
-    bindings: HashMap<String, ValueRef>,
-    parent: Option<EnvRef>,
-    non_macros: HashSet<String>
+pub enum Environment {
+    Env {
+        bindings: HashMap<String, ValueRef>,
+        parent: Option<EnvRef>,
+        non_macros: HashSet<String>
+    },
+    Mod {
+        bindings: HashMap<String, ValueRef>,
+        refers: HashMap<String, ValueRef>,
+        aliases: HashMap<String, EnvRef>,
+        non_macros: HashSet<String>,
+        name: String
+    }
 }
 
-impl Env {
-    pub fn new(parent: &EnvRef) -> Env {
-        Env {
+impl Environment {
+    pub fn new(parent: &EnvRef) -> Environment {
+        Environment::Env {
             bindings: HashMap::new(),
             parent: Some(parent.clone()),
             non_macros: HashSet::new()
         }
     }
     
-    pub fn lookup(&self, k: &str) -> Option<ValueRef> {
-        if let Some(v) = self.bindings.get(k) {
-            Some(v.clone())
-        } else if let Some(ref penv) = self.parent {
-            penv.borrow().lookup(k)
-        } else {
-            None
+    fn lookup(&self, k: &str) -> Option<ValueRef> {
+        match *self {
+            Environment::Env { ref bindings, ref parent, .. } =>
+                if let Some(v) = bindings.get(k) {
+                    Some(v.clone())
+                } else if let Some(ref penv) = *parent {
+                    penv.borrow().lookup(k)
+                } else {
+                    None
+                },
+            Environment::Mod { ref bindings, ref refers, .. } =>
+                if let Some(v) = bindings.get(k) {
+                    Some(v.clone())
+                } else if let Some(v) = refers.get(k) {
+                    Some(v.clone())
+                } else {
+                    None
+                }
         }
     }
 
-    pub fn extend(&mut self, k: &str, v: ValueRef) {
-        self.bindings.insert(k.to_string(), v);
+    fn extend(&mut self, k: String, v: ValueRef) {
+        match *self {
+            Environment::Env { ref mut bindings, .. } => bindings.insert(k, v),
+            Environment::Mod { ref mut bindings, .. } => bindings.insert(k, v)
+        };
+    }
+    
+    fn lookup_macro(&self, name: &str) -> Option<ValueRef> {
+        // TODO: also ignore shadowed macros
+        self.lookup(name).and_then(
+            |v| if v.is_macro() {
+                Some(v)
+            } else {
+                None
+            })
     }
 
-    pub fn shadow_macro(&mut self, name: String) {
-        self.non_macros.insert(name);
+    fn shadow_macro(&mut self, name: String) {
+        match *self {
+            Environment::Env { ref mut non_macros, .. } => non_macros.insert(name),
+            Environment::Mod { ref mut non_macros, .. } => non_macros.insert(name),
+        };
     }
 
-    pub fn allow_macro(&mut self, name: &str) {
-        self.non_macros.remove(name);
+    fn allow_macro(&mut self, name: &str) {
+        match *self {
+            Environment::Env { ref mut non_macros, .. } => non_macros.remove(name),
+            Environment::Mod { ref mut non_macros, .. } => non_macros.remove(name),
+        };
     }
 }
