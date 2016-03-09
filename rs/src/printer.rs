@@ -25,11 +25,6 @@ impl fmt::Display for Value {
                 for v in vs { try!(write!(f, " {}", v)) }
                 write!(f, ")")
             },
-            Value::Array(ref vs) => {
-                try!(write!(f, "#["));
-                for v in vs { try!(write!(f, " {}", v)) }
-                write!(f, "]")
-            },
             Value::List(ref vs) => {
                 try!(write!(f, "("));
                 for v in vs.iter() { try!(write!(f, " {}", v)) }

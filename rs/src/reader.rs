@@ -112,17 +112,6 @@ impl Parser {
                     &Rc::new(vs.into_iter().collect()))),
                     r))
             },
-            Some('[') => {
-                let (vs, q) = self.pop().unwrap().1.parse_exprs();
-                let (_, r) = try!(q.pop_while(char::is_whitespace)
-                                  .1.pop_if(|c| c == ']',
-                                            "array terminator \\]"));
-                Ok((Value::List(prepend(
-                    Rc::new(Value::Symbol(Some("centring.lang".to_string()),
-                                          "Array".to_string())),
-                    &Rc::new(vs.into_iter().collect()))),
-                    r))
-            },
             Some('t') => Ok((Value::Bool(true), self.pop().unwrap().1)),
             Some('f') => Ok((Value::Bool(false), self.pop().unwrap().1)),
             _ => Err((ParseError::UnknownPounded, self.clone()))

@@ -12,7 +12,6 @@ pub enum Value {
     Symbol(Option<String>, String),
 
     Tuple(Vec<ValueRef>),
-    Array(Vec<ValueRef>),
     List(List<ValueRef>),
     String(String),
 
