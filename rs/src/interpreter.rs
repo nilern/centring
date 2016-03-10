@@ -14,7 +14,7 @@ pub struct Interpreter {
 
 impl Interpreter {
     pub fn new() -> Interpreter {
-        Interpreter {
+        let mut itp = Interpreter {
             env: Rc::new(RefCell::new(Environment::Env {
                 bindings: HashMap::new(),
                 parent: None,
@@ -22,13 +22,44 @@ impl Interpreter {
             })),
             envstack: vec![],
             mod_registry: HashMap::new()
-        }
+        };
+        itp.store_to_mod("centring.core", "Option.Some",
+                         Rc::new(Value::RecordType {
+                             name: Rc::new(Value::Symbol(
+                                 Some("centring.core".to_string()),
+                                 "Option.Some".to_string())),
+                             field_names: vec!["v".to_string()],
+                             supertyp: Rc::new(Value::Bool(false))
+                         }));
+        itp
     }
 
 // Getters
     
     pub fn current_env(&self) -> &EnvRef {
         &self.env
+    }
+
+    pub fn current_mod(&self) -> &EnvRef {
+        if self.envstack.is_empty() {
+            &self.env
+        } else {
+            &self.envstack[0]
+        }
+    }
+
+// Allocation
+
+    pub fn create_record(&self, typ: ValueRef, args: Vec<ValueRef>) -> ValueRef {
+        if let Value::RecordType { ref field_names, .. } = *typ {
+            if field_names.len() == args.len() {
+                return Rc::new(Value::Record {
+                    typ: typ.clone(),
+                    vals: args
+                })
+            }
+        }
+        panic!()
     }
 
 // Loads and Stores
@@ -48,7 +79,7 @@ impl Interpreter {
     }
 
     pub fn load_from_mod(&self, mod_name: &str, name: &str) -> Option<ValueRef> {
-        if let Environment::Mod { ref aliases, .. } = *self.envstack[0].borrow() {
+        if let Environment::Mod { ref aliases, .. } = *self.current_mod().borrow() {
             if let Some(ref md) = aliases.get(mod_name) {
                 return md.borrow().lookup(name)
             }
@@ -142,6 +173,7 @@ impl Interpreter {
                 res
             },
             Value::NativeFn { ref code, .. } => code(self, args),
+            Value::RecordType { .. } => self.create_record(op.clone(), args),
             _ => panic!()
         }
     }
