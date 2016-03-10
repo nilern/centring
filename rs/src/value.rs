@@ -1,7 +1,9 @@
 use std::rc::Rc;
 use std::iter::FromIterator;
 
-use eval::{Interpreter, EnvRef, Expr};
+use environment::EnvRef;
+use interpreter::Interpreter;
+use eval::Expr;
 
 pub type ValueRef = Rc<Value>;
 
@@ -18,10 +20,10 @@ pub enum Value {
     Record { typ: ValueRef, vals: Vec<ValueRef> },
     Singleton { typ: ValueRef },
 
-    AbstractType { name: String, supertyp: ValueRef },
-    RecordType { name: String, supertyp: ValueRef, field_names: Vec<String> },
-    SingletonType { name: String, supertyp: ValueRef },
-    BuiltInType { name: String, supertyp: ValueRef },
+    AbstractType { name: ValueRef, supertyp: ValueRef },
+    RecordType { name: ValueRef, supertyp: ValueRef, field_names: Vec<String> },
+    SingletonType { name: ValueRef, supertyp: ValueRef },
+    BuiltInType { name: ValueRef, supertyp: ValueRef },
 
     Fn {
         name: String,

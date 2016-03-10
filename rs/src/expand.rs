@@ -1,5 +1,6 @@
 use value::{Value, ValueRef, List};
-use eval::{Interpreter, Expr, Environment};
+use interpreter::Interpreter;
+use eval::Expr;
 use std::rc::Rc;
 
 fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>) {

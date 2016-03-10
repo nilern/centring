@@ -2,6 +2,8 @@ mod value;
 mod reader;
 mod printer;
 mod expand;
+mod environment;
+mod interpreter;
 mod eval;
 mod builtins;
 
@@ -11,7 +13,7 @@ use std::rc::Rc;
 use copperline::Copperline;
 use reader::Parser;
 use value::Value;
-use eval::Interpreter;
+use interpreter::Interpreter;
 
 // Main
 

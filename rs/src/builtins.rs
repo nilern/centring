@@ -1,6 +1,6 @@
 use reader::Parser;
 use value::{Value, ValueRef, List};
-use eval::Interpreter;
+use interpreter::Interpreter;
 use std::rc::Rc;
 use std::fs::File;
 use std::io::Read;
