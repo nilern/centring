@@ -13,7 +13,6 @@ use std::rc::Rc;
 use copperline::Copperline;
 use reader::Parser;
 use value::Value;
-use environment::Environment;
 use interpreter::Interpreter;
 
 // Main

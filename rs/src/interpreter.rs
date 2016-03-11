@@ -74,6 +74,10 @@ impl Interpreter {
         }
     }
 
+    pub fn lexical_mod(&self) -> Option<EnvRef> {
+        Environment::lexical_mod(self.env.clone())
+    }           
+
 // Allocation
 
     pub fn create_record(&self, typ: ValueRef, args: Vec<ValueRef>) -> ValueRef {
@@ -100,9 +104,11 @@ impl Interpreter {
     }
 
     pub fn load_global(&self, mod_name: &str, name: &str) -> Option<ValueRef> {
-        if let Environment::Mod { ref aliases, .. } = *self.current_mod().borrow() {
-            if let Some(ref md) = aliases.get(mod_name) {
-                return md.borrow().lookup(name)
+        if let Some(ref md) = self.lexical_mod() {
+            if let Environment::Mod { ref aliases, .. } = *md.borrow() {
+                if let Some(ref amd) = aliases.get(mod_name) {
+                    return amd.borrow().lookup(name)
+                }
             }
         }
         if let Some(ref md) = self.mod_registry.get(mod_name) {

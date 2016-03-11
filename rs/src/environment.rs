@@ -39,6 +39,17 @@ impl Environment {
             name: name
         }
     }
+
+    pub fn lexical_mod(env: EnvRef) -> Option<EnvRef> {
+        let mut res = Some(env);
+        while let Some(env) = res.clone() {
+            match *env.borrow() {
+                Environment::Mod { .. } => return res,
+                Environment::Env { ref parent, .. } => res = parent.clone()
+            }
+        }
+        res
+    }
     
     pub fn lookup(&self, k: &str) -> Option<ValueRef> {
         match *self {
