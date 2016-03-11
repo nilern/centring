@@ -6,7 +6,8 @@ use interpreter::Interpreter;
 pub enum Expr {
     Const(ValueRef),
 
-    Id(ValueRef),
+    Local(String),
+    Global(String, String),
     Def {
         name: String,
         val: Box<Expr>
@@ -50,10 +51,12 @@ impl Interpreter {
         match *expr {
             Expr::Const(ref v) => v.clone(),
 
-            Expr::Id(ref sym) => self.load(sym).unwrap(),
+            Expr::Local(ref name) => self.load_local(name).unwrap(),
+            Expr::Global(ref mod_name, ref name) =>
+                self.load_global(mod_name, name).unwrap(),
             Expr::Def { ref name, ref val } => {
                 let v = self.eval(val);
-                self.store(&name, v)
+                self.store_local(&name, v)
             },
 
             Expr::Do(ref es) => {

@@ -20,10 +20,11 @@ pub enum Value {
     Record { typ: ValueRef, vals: Vec<ValueRef> },
     Singleton { typ: ValueRef },
 
-    AbstractType { name: ValueRef, supertyp: ValueRef },
-    RecordType { name: ValueRef, supertyp: ValueRef, field_names: Vec<String> },
-    SingletonType { name: ValueRef, supertyp: ValueRef },
-    BuiltInType { name: ValueRef, supertyp: ValueRef },
+    AbstractType { name: ValueRef, supertyp: Option<ValueRef> },
+    RecordType { name: ValueRef, supertyp: Option<ValueRef>,
+                 field_names: Vec<String> },
+    SingletonType { name: ValueRef, supertyp: Option<ValueRef> },
+    BuiltInType { name: ValueRef, supertyp: Option<ValueRef> },
 
     Fn {
         name: String,
@@ -55,6 +56,10 @@ impl Value {
         if let Value::Macro(_) = *self { true } else { false }
     }
 
+    pub fn is_abs_type(&self) -> bool {
+        if let Value::AbstractType {..} = *self { true } else { false }
+    }
+        
     pub fn get_int(&self) -> Option<isize> {
         if let Value::Int(i) = *self { Some(i) } else { None }
     }
@@ -65,6 +70,10 @@ impl Value {
 
     pub fn get_str(&self) -> Option<&str> {
         if let Value::String(ref s) = *self { Some(s) } else { None }
+    }
+
+    pub fn get_string(&self) -> Option<String> {
+        if let Value::String(ref s) = *self { Some(s.clone()) } else { None }
     }
 }
 

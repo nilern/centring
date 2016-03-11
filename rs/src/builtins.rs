@@ -16,6 +16,27 @@ pub fn prepend_ls(_: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     }))
 }
 
+pub fn set_module(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    let mod_name = args[0].get_str().unwrap();
+    itp.set_mod(mod_name);
+    Rc::new(Value::Tuple(vec![]))
+}
+
+pub fn record_type(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    let name = args[0].get_string().unwrap();
+    let supertyp = args[1].clone();
+    if ! supertyp.is_abs_type() { panic!() }
+    let field_names = args[2..].iter().map(|s| s.get_string().unwrap()).collect();
+    itp.create_record_type(name, Some(supertyp), field_names)
+}
+
+pub fn abstract_type(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    let name = args[0].get_string().unwrap();
+    let supertyp = args[1].clone();
+    if ! supertyp.is_abs_type() { panic!() }
+    itp.create_abstract_type(name, Some(supertyp))
+}  
+
 pub fn load(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     let filename = args[0].get_str().unwrap();
     let mut f = File::open(filename).unwrap();

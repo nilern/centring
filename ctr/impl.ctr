@@ -1,21 +1,21 @@
 
-(centring.lang/at-expansion
- (centring.lang/do
-   (centring.lang/def quote
-     (centring.lang/macro
-      (centring.lang/fn (v)
-        (prepend 'centring.lang/quote (prepend v '())))))
+(centring.sf/at-expansion
+ (centring.sf/do
+   (centring.sf/def quote
+     (centring.sf/macro
+      (centring.sf/fn (v)
+        (prepend 'centring.sf/quote (prepend v '())))))
    
-   (centring.lang/def def
-     (centring.lang/macro
-      (centring.lang/fn (name expr)
-        (prepend 'centring.lang/def (prepend name (prepend expr '()))))))))
+   (centring.sf/def def
+     (centring.sf/macro
+      (centring.sf/fn (name expr)
+        (prepend 'centring.sf/def (prepend name (prepend expr '()))))))))
 
-(centring.lang/at-expansion
+(centring.sf/at-expansion
  (def if
-   (centring.lang/macro
-    (centring.lang/fn (cond then else)
-      (prepend 'centring.lang/if
+   (centring.sf/macro
+    (centring.sf/fn (cond then else)
+      (prepend 'centring.sf/if
                (prepend cond
                         (prepend then
                                  (prepend else '()))))))))

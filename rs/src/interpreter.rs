@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 
 use value::{Value, ValueRef};
 use environment::{Environment, EnvRef};
+use builtins::{set_module, record_type, abstract_type};
 
 pub struct Interpreter {
     env: EnvRef,
@@ -23,13 +24,30 @@ impl Interpreter {
             envstack: vec![],
             mod_registry: HashMap::new()
         };
-        itp.store_to_mod("centring.core", "Option.Some",
-                         Rc::new(Value::RecordType {
+        itp.store_global("centring.lang", "set-module!",
+                         Rc::new(Value::NativeFn {
+                             name: "set-module!".to_string(),
+                             formal_types: vec![],
+                             code: set_module
+                         }));
+        itp.store_global("centring.lang", "record-type",
+                         Rc::new(Value::NativeFn {
+                             name: "record-type".to_string(),
+                             formal_types: vec![],
+                             code: record_type
+                         }));
+        itp.store_global("centring.lang", "abstract-type",
+                         Rc::new(Value::NativeFn {
+                             name: "abstract-type".to_string(),
+                             formal_types: vec![],
+                             code: abstract_type
+                         }));
+        itp.store_global("centring.lang", "Any",
+                         Rc::new(Value::AbstractType {
                              name: Rc::new(Value::Symbol(
-                                 Some("centring.core".to_string()),
-                                 "Option.Some".to_string())),
-                             field_names: vec!["v".to_string()],
-                             supertyp: Rc::new(Value::Bool(false))
+                                 Some("centring.lang".to_string()),
+                                 "Any".to_string())),
+                             supertyp: None
                          }));
         itp
     }
@@ -45,6 +63,14 @@ impl Interpreter {
             &self.env
         } else {
             &self.envstack[0]
+        }
+    }
+
+    pub fn current_mod_name(&self) -> Option<String> {
+        if let Environment::Mod { ref name, .. }  = *self.current_mod().borrow() {
+            Some(name.to_string())
+        } else {
+            None
         }
     }
 
@@ -64,21 +90,16 @@ impl Interpreter {
 
 // Loads and Stores
 
-    pub fn load(&self, sym: &Value) -> Option<ValueRef> {
-        match *sym {
-            Value::Symbol(None, ref name) => self.env.borrow().lookup(name),
-            Value::Symbol(Some(ref mod_name), ref name) =>
-                self.load_from_mod(mod_name, name),
-            _ => panic!()
-        }
+    pub fn load_local(&self, name: &str) -> Option<ValueRef> {
+        self.env.borrow().lookup(name)
     }
 
-    pub fn store(&mut self, name: &str, val: ValueRef) -> ValueRef {
+    pub fn store_local(&mut self, name: &str, val: ValueRef) -> ValueRef {
         self.env.borrow_mut().extend(name.to_string(), val);
         Rc::new(Value::Tuple(vec![]))
     }
 
-    pub fn load_from_mod(&self, mod_name: &str, name: &str) -> Option<ValueRef> {
+    pub fn load_global(&self, mod_name: &str, name: &str) -> Option<ValueRef> {
         if let Environment::Mod { ref aliases, .. } = *self.current_mod().borrow() {
             if let Some(ref md) = aliases.get(mod_name) {
                 return md.borrow().lookup(name)
@@ -91,14 +112,13 @@ impl Interpreter {
         }
     }
 
-    pub fn store_to_mod(&mut self, mod_name: &str, name: &str, val: ValueRef) {
+    pub fn store_global(&mut self, mod_name: &str, name: &str, val: ValueRef) {
         if let Some(ref md) = self.mod_registry.get(mod_name) {
             md.borrow_mut().extend(name.to_string(), val);
             return;
         }
-        let mut md = Environment::new_mod(mod_name.to_string());
-        md.extend(name.to_string(), val);
-        self.mod_registry.insert(mod_name.to_string(), Rc::new(RefCell::new(md)));
+        let md = self.fresh_mod(mod_name.to_string());
+        md.borrow_mut().extend(name.to_string(), val);
     }
 
     pub fn load_macro(&self, sym: &Value) -> Option<ValueRef> {
@@ -118,6 +138,23 @@ impl Interpreter {
     }
 
 // Types
+
+    pub fn create_record_type(&self, name: String, supertyp: Option<ValueRef>,
+                              field_names: Vec<String>) -> ValueRef {
+        Rc::new(Value::RecordType {
+            name: Rc::new(Value::Symbol(self.current_mod_name(), name)),
+            field_names: field_names,
+            supertyp: supertyp
+        })
+    }
+
+    pub fn create_abstract_type(&self, name: String, supertyp: Option<ValueRef>)
+                                -> ValueRef {
+        Rc::new(Value::AbstractType {
+            name: Rc::new(Value::Symbol(self.current_mod_name(), name)),
+            supertyp: supertyp
+        })
+    }
     
     pub fn type_of(&self, val: &Value) -> ValueRef {
         match *val {
@@ -143,10 +180,10 @@ impl Interpreter {
                 match formalc.cmp(&args.len()) {
                     Ordering::Equal => {
                         for (k, v) in formal_names.iter().zip(args.into_iter()) {
-                            self.store(k, v);
+                            self.store_local(k, v);
                         }
                         if let Some(ref vname) = *vararg_name {
-                            self.store(vname, Rc::new(Value::Tuple(vec![])));
+                            self.store_local(vname, Rc::new(Value::Tuple(vec![])));
                         }
                     },
                     Ordering::Less => {
@@ -156,9 +193,10 @@ impl Interpreter {
                             for (k, v) in
                                 formal_names.iter().zip(args.into_iter())
                             {
-                                self.store(k, v);
+                                self.store_local(k, v);
                             }
-                            self.store(vname, Rc::new(Value::Tuple(varvals)));
+                            self.store_local(vname,
+                                             Rc::new(Value::Tuple(varvals)));
                         } else {
                             panic!()
                         }
@@ -175,6 +213,31 @@ impl Interpreter {
             Value::NativeFn { ref code, .. } => code(self, args),
             Value::RecordType { .. } => self.create_record(op.clone(), args),
             _ => panic!()
+        }
+    }
+
+// Module Management
+
+    pub fn fresh_mod(&mut self, mod_name: String) -> EnvRef {
+        let md = Rc::new(RefCell::new(Environment::new_mod(mod_name.clone())));
+        self.mod_registry.insert(mod_name, md.clone());
+        md
+    }
+
+    pub fn get_mod(&self, mod_name: &str) -> Option<EnvRef> {
+        self.mod_registry.get(mod_name).map(Clone::clone)
+    }
+
+    pub fn set_mod(&mut self, mod_name: &str) {
+        if self.envstack.is_empty() {
+            self.envstack.clear();
+            self.env = if let Some(ref md) = self.get_mod(mod_name) {
+                md.clone()
+            } else {
+                self.fresh_mod(mod_name.to_string())
+            };
+        } else {
+            panic!()
         }
     }
 }

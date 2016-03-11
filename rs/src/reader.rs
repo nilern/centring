@@ -140,7 +140,7 @@ impl Parser {
             Some('\'') => {
                 let (v, q) = try!(self.pop().unwrap().1.parse_expr());
                 Ok((Value::List(prepend(
-                    Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                    Rc::new(Value::Symbol(Some("centring.sf".to_string()),
                                           "quote".to_string())),
                     &Rc::new(prepend(Rc::new(v), &Rc::new(List::Empty))))),
                     q))

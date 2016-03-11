@@ -33,12 +33,14 @@ fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>) {
 
 pub fn shallow_analyze(sexpr: ValueRef) -> Expr {
     match *sexpr {
-        Value::Symbol(..) => Expr::Id(sexpr.clone()),
+        Value::Symbol(Some(ref mod_name), ref name) =>
+            Expr::Global(mod_name.clone(), name.clone()),
+        Value::Symbol(None, ref name) => Expr::Local(name.clone()),
         Value::List(ref ls) => {
             let mut it = ls.iter().peekable();
             let op = it.next().unwrap();
             if let Value::Symbol(Some(ref mod_name), ref name) = **op {
-                if mod_name == "centring.lang" {
+                if mod_name == "centring.sf" {
                     return match name.as_ref() {
                         "quote" => Expr::Const(it.next().unwrap().clone()),
                         "def" => match **it.next().unwrap() {
@@ -107,7 +109,7 @@ impl Interpreter {
     pub fn expand_all(&mut self, sexpr: ValueRef) -> Expr {
         let expr = shallow_analyze(self.expand(sexpr));
         match expr {
-            Expr::Const(_) | Expr::Id(_) => expr,
+            Expr::Const(_) | Expr::Local(_) | Expr::Global(..) => expr,
             Expr::Def { name, val } => {
                 self.shadow_macro(name.clone());
                 let res = Expr::Def {
