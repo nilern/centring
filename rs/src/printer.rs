@@ -1,4 +1,4 @@
-use value::Value;
+use value::{Value, TypeMatcher};
 use std::fmt;
 
 impl fmt::Display for Value {
@@ -19,6 +19,9 @@ impl fmt::Display for Value {
             Value::Symbol(Some(ref mod_name), ref name) =>
                 write!(f, "{}/{}", mod_name, name),
             Value::Symbol(None, ref name) => write!(f, "{}", name),
+            Value::Keyword(Some(ref mod_name), ref name) =>
+                write!(f, ":{}/{}", mod_name, name),
+            Value::Keyword(None, ref name) => write!(f, ":{}", name),
 
             Value::Tuple(ref vs) => {
                 try!(write!(f, "#("));
@@ -68,6 +71,15 @@ impl fmt::Display for Value {
             },
             Value::Macro(ref expander) =>
                 write!(f, "#<Macro {}>", expander)
+        }
+    }
+}
+
+impl fmt::Display for TypeMatcher {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            TypeMatcher::Isa(ref typ) => write!(f, "{}", typ),
+            TypeMatcher::Identical(ref typ) => write!(f, "(= {})", typ)
         }
     }
 }

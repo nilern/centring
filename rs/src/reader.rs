@@ -145,6 +145,10 @@ impl Parser {
                     &Rc::new(prepend(Rc::new(v), &Rc::new(List::Empty))))),
                     q))
             },
+            Some(':') => {
+                let (v, q) = try!(self.pop().unwrap().1.parse_token());
+                Ok((v.as_kw().unwrap(), q))
+            }
             Some(c) => Err((ParseError::Illegal(c), self.clone())),
             None => Err((ParseError::EOF, self.clone()))
         }

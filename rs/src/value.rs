@@ -12,6 +12,7 @@ pub enum Value {
     Bool(bool),
     Char(char),
     Symbol(Option<String>, String),
+    Keyword(Option<String>, String),
 
     Tuple(Vec<ValueRef>),
     List(List<ValueRef>),
@@ -30,14 +31,14 @@ pub enum Value {
         name: String,
         formal_names: Vec<String>,
         vararg_name: Option<String>,
-        formal_types: Vec<ValueRef>,
+        formal_types: Vec<TypeMatcher>,
         vararg_type: Option<ValueRef>,
         body: Rc<Expr>,
         env: EnvRef
     },
     NativeFn {
         name: String,
-        formal_types: Vec<ValueRef>,
+        formal_types: Vec<TypeMatcher>,
         code: fn(&mut Interpreter, Vec<ValueRef>) -> ValueRef
     },
     Macro(ValueRef)
@@ -72,9 +73,31 @@ impl Value {
         if let Value::String(ref s) = *self { Some(s) } else { None }
     }
 
+    pub fn as_kw(&self) -> Option<Value> {
+        if let Value::Symbol(ref mod_name, ref name) = *self {
+            Some(Value::Keyword(mod_name.clone(), name.clone()))
+        } else {
+            None
+        }
+    }
+
+    pub fn as_id(&self) -> Option<Expr> {
+        match *self {
+            Value::Keyword(None, ref name) => Some(Expr::Local(name.clone())),
+            Value::Keyword(Some(ref mod_name), ref name) =>
+                Some(Expr::Global(mod_name.clone(), name.clone())),
+            _ => None
+        }
+    }
+
     pub fn get_string(&self) -> Option<String> {
         if let Value::String(ref s) = *self { Some(s.clone()) } else { None }
     }
+}
+
+pub enum TypeMatcher {
+    Isa(ValueRef),
+    Identical(ValueRef),
 }
 
 #[derive(Debug, Clone)]

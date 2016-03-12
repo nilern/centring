@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-use value::{Value, ValueRef};
+use value::{Value, ValueRef, TypeMatcher};
 use interpreter::Interpreter;
 
 pub enum Expr {
@@ -81,7 +81,8 @@ impl Interpreter {
                     name: name.clone().unwrap_or("fn".to_string()),
                     formal_names: formal_names.clone(),
                     vararg_name: vararg_name.clone(),
-                    formal_types: formal_types.iter().map(|t| self.eval(t))
+                    formal_types: formal_types.iter()
+                        .map(|t| self.eval_type_matcher(t))
                         .collect(),
                     vararg_type: vararg_type.as_ref().map(|t| self.eval(t)),
                     body: body.clone(),
@@ -97,6 +98,22 @@ impl Interpreter {
             },
 
             Expr::AtExpansion(_) => panic!()
+        }
+    }
+
+    fn eval_type_matcher(&mut self, mexpr: &Expr) -> TypeMatcher {
+        match *mexpr {
+            Expr::Const(ref typ) =>
+                TypeMatcher::Isa(self.eval(&typ.as_id().unwrap())),
+            Expr::Call { ref op, ref args } => {
+                if let Expr::Local(ref op_name) = **op {
+                    if op_name.as_str() == "=" && args.len() == 1 {
+                        return TypeMatcher::Identical(self.eval(&args[0]))
+                    }
+                }
+                panic!()
+            }
+            _ => panic!()
         }
     }
 }

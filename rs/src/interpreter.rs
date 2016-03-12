@@ -3,7 +3,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 
-use value::{Value, ValueRef};
+use value::{Value, ValueRef, TypeMatcher};
 use environment::{Environment, EnvRef};
 use builtins::{set_module, require, refer, record_type, abstract_type};
 
@@ -185,6 +185,37 @@ impl Interpreter {
         }
     }
 
+    pub fn isa(&self, formal_type: ValueRef, arg_type: ValueRef) -> bool {
+        self.type_dist(formal_type, arg_type).is_some()
+    }
+
+    pub fn supertype(&self, typ: ValueRef) -> Option<ValueRef> {
+        match *typ {
+            Value::RecordType { ref supertyp, .. } => supertyp.clone(),
+            Value::AbstractType { ref supertyp, .. } => supertyp.clone(),
+            _ => panic!()
+        }
+    }
+
+    fn type_dist(&self, formal_type: ValueRef, arg_type: ValueRef)
+                     -> Option<usize> {
+        let faddr = formal_type.as_ref() as *const Value;
+        let mut typ = arg_type;
+        let mut dist = Some(0);
+        loop {
+            if typ.as_ref() as *const Value == faddr {
+                return dist;
+            }
+            match self.supertype(typ) {
+                None => return None,
+                Some(st) => {
+                    typ = st;
+                    dist = dist.map(|d| d + 1);
+                }
+            }
+        }
+    }
+
 // Call
 
     pub fn call(&mut self, op: ValueRef, mut args: Vec<ValueRef>) -> ValueRef {
@@ -235,6 +266,19 @@ impl Interpreter {
             Value::NativeFn { ref code, .. } => code(self, args),
             Value::RecordType { .. } => self.create_record(op.clone(), args),
             _ => panic!()
+        }
+    }
+
+    fn arg_dist(&self, matcher: &TypeMatcher, arg: ValueRef) -> Option<usize> {
+        match *matcher {
+            TypeMatcher::Isa(ref typ) => self.type_dist(typ.clone(), arg),
+            TypeMatcher::Identical(ref typ) =>
+                if typ.as_ref() as *const Value
+                == self.type_of(arg.as_ref()).as_ref() as *const Value {
+                    Some(0)
+                } else {
+                    None
+                }
         }
     }
 
