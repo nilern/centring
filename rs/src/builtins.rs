@@ -22,6 +22,17 @@ pub fn set_module(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     Rc::new(Value::Tuple(vec![]))
 }
 
+pub fn require(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    itp.require(args[0].get_str().unwrap(), args[1].get_string().unwrap());
+    Rc::new(Value::Tuple(vec![]))
+}
+
+pub fn refer(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    itp.refer(args[0].get_str().unwrap(),
+              args[1..].iter().map(|v| v.get_string().unwrap()).collect());
+    Rc::new(Value::Tuple(vec![]))
+}
+
 pub fn record_type(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     let name = args[0].get_string().unwrap();
     let supertyp = args[1].clone();

@@ -91,15 +91,38 @@ impl Environment {
 
     pub fn shadow_macro(&mut self, name: String) {
         match *self {
-            Environment::Env { ref mut non_macros, .. } => non_macros.insert(name),
-            Environment::Mod { ref mut non_macros, .. } => non_macros.insert(name),
+            Environment::Env { ref mut non_macros, .. } =>
+                non_macros.insert(name),
+            Environment::Mod { ref mut non_macros, .. } =>
+                non_macros.insert(name),
         };
     }
 
     pub fn allow_macro(&mut self, name: &str) {
         match *self {
-            Environment::Env { ref mut non_macros, .. } => non_macros.remove(name),
-            Environment::Mod { ref mut non_macros, .. } => non_macros.remove(name),
+            Environment::Env { ref mut non_macros, .. } =>
+                non_macros.remove(name),
+            Environment::Mod { ref mut non_macros, .. } =>
+                non_macros.remove(name),
         };
+    }
+
+    pub fn add_alias(&mut self, md: EnvRef, alias: String) {
+        if let Environment::Mod { ref mut aliases, .. } = *self {
+            aliases.insert(alias, md);
+        } else {
+            panic!();
+        }
+    }
+
+    pub fn refer(&mut self, md: EnvRef, names: Vec<String>) {
+        if let Environment::Mod { ref mut refers, .. } = *self {
+            for name in names {
+                let val = md.borrow().lookup(&name).unwrap();
+                refers.insert(name, val);
+            }
+        } else {
+            panic!()
+        }
     }
 }

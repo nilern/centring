@@ -5,7 +5,7 @@ use std::cmp::Ordering;
 
 use value::{Value, ValueRef};
 use environment::{Environment, EnvRef};
-use builtins::{set_module, record_type, abstract_type};
+use builtins::{set_module, require, refer, record_type, abstract_type};
 
 pub struct Interpreter {
     env: EnvRef,
@@ -16,10 +16,12 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new() -> Interpreter {
         let mut itp = Interpreter {
-            env: Rc::new(RefCell::new(Environment::Env {
+            env: Rc::new(RefCell::new(Environment::Mod {
                 bindings: HashMap::new(),
-                parent: None,
+                refers: HashMap::new(),
+                aliases: HashMap::new(),
                 non_macros: HashSet::new(),
+                name: "user.repl".to_string()
             })),
             envstack: vec![],
             mod_registry: HashMap::new()
@@ -29,6 +31,18 @@ impl Interpreter {
                              name: "set-module!".to_string(),
                              formal_types: vec![],
                              code: set_module
+                         }));
+        itp.store_global("centring.lang", "require",
+                         Rc::new(Value::NativeFn {
+                             name: "require".to_string(),
+                             formal_types: vec![],
+                             code: require
+                         }));
+        itp.store_global("centring.lang", "refer",
+                         Rc::new(Value::NativeFn {
+                             name: "refer".to_string(),
+                             formal_types: vec![],
+                             code: refer
                          }));
         itp.store_global("centring.lang", "record-type",
                          Rc::new(Value::NativeFn {
@@ -129,7 +143,8 @@ impl Interpreter {
 
     pub fn load_macro(&self, sym: &Value) -> Option<ValueRef> {
         match *sym {
-            Value::Symbol(None, ref name) => self.env.borrow().lookup_macro(name),
+            Value::Symbol(None, ref name) =>
+                self.env.borrow().lookup_macro(name),
             Value::Symbol(Some(_), _) => None,
             _ => panic!()
         }
@@ -189,7 +204,8 @@ impl Interpreter {
                             self.store_local(k, v);
                         }
                         if let Some(ref vname) = *vararg_name {
-                            self.store_local(vname, Rc::new(Value::Tuple(vec![])));
+                            self.store_local(vname,
+                                             Rc::new(Value::Tuple(vec![])));
                         }
                     },
                     Ordering::Less => {
@@ -245,5 +261,15 @@ impl Interpreter {
         } else {
             panic!()
         }
+    }
+
+    pub fn require(&mut self, mod_name: &str, alias: String) {
+        let md = self.get_mod(mod_name).unwrap();
+        self.current_mod().borrow_mut().add_alias(md, alias);
+    }
+
+    pub fn refer(&mut self, mod_name: &str, names: Vec<String>) {
+        let md = self.get_mod(mod_name).unwrap();
+        self.current_mod().borrow_mut().refer(md, names);
     }
 }
