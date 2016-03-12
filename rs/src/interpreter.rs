@@ -5,6 +5,7 @@ use std::cmp::Ordering;
 
 use value::{Value, ValueRef, TypeMatcher};
 use environment::{Environment, EnvRef};
+use builtins;
 use builtins::{set_module, require, refer, record_type, abstract_type};
 
 pub struct Interpreter {
@@ -26,6 +27,23 @@ impl Interpreter {
             envstack: vec![],
             mod_registry: HashMap::new()
         };
+        
+        let any = Rc::new(Value::AbstractType {
+                             name: Rc::new(Value::Symbol(
+                                 Some("centring.lang".to_string()),
+                                 "Any".to_string())),
+                             supertyp: None
+                         });
+        itp.store_global("centring.lang", "Any", any.clone());
+        itp.store_global("centring.lang", "String",
+                         Rc::new(Value::BuiltInType {
+                             name: Rc::new(Value::Symbol(
+                                 Some("centring.lang".to_string()),
+                                 "String".to_string())),
+                             supertyp: Some(any.clone())
+                         }));
+                         
+        
         itp.store_global("centring.lang", "set-module!",
                          Rc::new(Value::NativeFn {
                              name: "set-module!".to_string(),
@@ -56,13 +74,40 @@ impl Interpreter {
                              formal_types: vec![],
                              code: abstract_type
                          }));
-        itp.store_global("centring.lang", "Any",
-                         Rc::new(Value::AbstractType {
-                             name: Rc::new(Value::Symbol(
-                                 Some("centring.lang".to_string()),
-                                 "Any".to_string())),
-                             supertyp: None
+        itp.store_global("centring.lang", "type",
+                         Rc::new(Value::NativeFn {
+                             name: "type".to_string(),
+                             formal_types: vec![],
+                             code: builtins::type_of
                          }));
+        itp.store_global("centring.lang", "supertype",
+                         Rc::new(Value::NativeFn {
+                             name: "supertype".to_string(),
+                             formal_types: vec![],
+                             code: builtins::supertype
+                         }));
+        itp.store_global("centring.lang", "isa?",
+                         Rc::new(Value::NativeFn {
+                             name: "isa?".to_string(),
+                             formal_types: vec![],
+                             code: builtins::isa
+                         }));
+        itp.store_global("centring.lang", "+", Rc::new(Value::NativeFn {
+            name: "+".to_string(),
+            formal_types: vec![],
+            code: builtins::add_2i
+        }));
+        itp.store_global("centring.lang", "prepend", Rc::new(Value::NativeFn {
+            name: "prepend".to_string(),
+            formal_types: vec![],
+            code: builtins::prepend_ls
+        }));
+        itp.store_global("centring.lang", "load", Rc::new(Value::NativeFn {
+            name: "load".to_string(),
+            formal_types: vec![],
+            code: builtins::load
+        }));
+        
         itp
     }
 
@@ -181,18 +226,22 @@ impl Interpreter {
         match *val {
             Value::Record { ref typ, .. } => typ.clone(),
             Value::Singleton { ref typ } => typ.clone(),
+            Value::String(_) =>
+                self.load_global("centring.lang", "String").unwrap(),
             _ => panic!()
         }
     }
 
-    pub fn isa(&self, formal_type: ValueRef, arg_type: ValueRef) -> bool {
-        self.type_dist(formal_type, arg_type).is_some()
+    pub fn isa(&self, formal_type: ValueRef, arg: ValueRef) -> bool {
+        self.type_dist(formal_type, self.type_of(arg.as_ref())).is_some()
     }
 
-    pub fn supertype(&self, typ: ValueRef) -> Option<ValueRef> {
+    pub fn supertype(&self, typ: &Value) -> Option<ValueRef> {
         match *typ {
             Value::RecordType { ref supertyp, .. } => supertyp.clone(),
+            Value::SingletonType { ref supertyp, .. } => supertyp.clone(),
             Value::AbstractType { ref supertyp, .. } => supertyp.clone(),
+            Value::BuiltInType { ref supertyp, .. } => supertyp.clone(),
             _ => panic!()
         }
     }
@@ -206,7 +255,7 @@ impl Interpreter {
             if typ.as_ref() as *const Value == faddr {
                 return dist;
             }
-            match self.supertype(typ) {
+            match self.supertype(typ.as_ref()) {
                 None => return None,
                 Some(st) => {
                     typ = st;

@@ -65,6 +65,10 @@ impl Value {
         if let Value::Int(i) = *self { Some(i) } else { None }
     }
 
+    pub fn get_bool(&self) -> Option<bool> {
+        if let Value::Bool(b) = *self { Some(b) } else { None }
+    }
+
     pub fn get_list(&self) -> Option<List<ValueRef>> {
         if let Value::List(ref ls) = *self { Some(ls.clone()) } else { None }
     }

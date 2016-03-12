@@ -12,7 +12,6 @@ extern crate copperline;
 use std::rc::Rc;
 use copperline::Copperline;
 use reader::Parser;
-use value::Value;
 use interpreter::Interpreter;
 
 // Main
@@ -20,22 +19,6 @@ use interpreter::Interpreter;
 fn main () {
     let mut cpl = Copperline::new();
     let mut itp = Interpreter::new();
-
-    itp.store_local("+", Rc::new(Value::NativeFn {
-        name: "+".to_string(),
-        formal_types: vec![],
-        code: builtins::add_2i
-    }));
-    itp.store_local("prepend", Rc::new(Value::NativeFn {
-        name: "prepend".to_string(),
-        formal_types: vec![],
-        code: builtins::prepend_ls
-    }));
-    itp.store_local("load", Rc::new(Value::NativeFn {
-        name: "load".to_string(),
-        formal_types: vec![],
-        code: builtins::load
-    }));
     
     loop {
         let mod_name = itp.current_mod_name().unwrap_or_else(|| "???".to_string());

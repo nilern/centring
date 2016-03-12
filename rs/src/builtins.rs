@@ -46,7 +46,20 @@ pub fn abstract_type(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     let supertyp = args[1].clone();
     if ! supertyp.is_abs_type() { panic!() }
     itp.create_abstract_type(name, Some(supertyp))
-}  
+}
+
+pub fn type_of(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    itp.type_of(args[0].as_ref())
+}
+
+pub fn supertype(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    itp.supertype(args[0].as_ref()).unwrap_or_else(
+        || itp.load_global("centring.lang", "Any").unwrap())
+}
+
+pub fn isa(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    Rc::new(Value::Bool(itp.isa(args[0].clone(), args[1].clone())))
+}
 
 pub fn load(itp: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     let filename = args[0].get_str().unwrap();
