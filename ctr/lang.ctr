@@ -1,3 +1,4 @@
+(centring.lang/set-module! "centring.lang")
 
 (centring.sf/at-expansion
  (centring.sf/do

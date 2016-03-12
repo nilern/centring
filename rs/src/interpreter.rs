@@ -97,6 +97,21 @@ impl Interpreter {
             formal_types: vec![],
             code: builtins::add_2i
         }));
+        itp.store_global("centring.lang", "-", Rc::new(Value::NativeFn {
+            name: "-".to_string(),
+            formal_types: vec![],
+            code: builtins::sub_2i
+        }));
+        itp.store_global("centring.lang", "*", Rc::new(Value::NativeFn {
+            name: "*".to_string(),
+            formal_types: vec![],
+            code: builtins::mul_2i
+        }));
+        itp.store_global("centring.lang", "<", Rc::new(Value::NativeFn {
+            name: "<".to_string(),
+            formal_types: vec![],
+            code: builtins::lt_2i
+        }));
         itp.store_global("centring.lang", "prepend", Rc::new(Value::NativeFn {
             name: "prepend".to_string(),
             formal_types: vec![],

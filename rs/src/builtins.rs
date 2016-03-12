@@ -9,6 +9,18 @@ pub fn add_2i(_: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     Rc::new(Value::Int(args[0].get_int().unwrap() + args[1].get_int().unwrap()))
 }
 
+pub fn sub_2i(_: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    Rc::new(Value::Int(args[0].get_int().unwrap() - args[1].get_int().unwrap()))
+}
+
+pub fn mul_2i(_: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    Rc::new(Value::Int(args[0].get_int().unwrap() * args[1].get_int().unwrap()))
+}
+
+pub fn lt_2i(_: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
+    Rc::new(Value::Bool(args[0].get_int().unwrap() < args[1].get_int().unwrap()))
+}
+
 pub fn prepend_ls(_: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     Rc::new(Value::List(List::Pair {
         first: args[0].clone(),
