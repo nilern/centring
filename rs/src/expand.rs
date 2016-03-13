@@ -77,9 +77,13 @@ pub fn shallow_analyze(sexpr: ValueRef) -> Expr {
                                 parse_formals(it.next().unwrap().clone());
                             Expr::Fn {
                                 name: name,
-                                formal_names: formal_names,
+                                formal_names: formal_names.clone(),
                                 vararg_name: vararg_name,
-                                formal_types: vec![],
+                                formal_types: formal_names.iter()
+                                    .map(|_| Expr::Const(
+                                        Rc::new(Value::Keyword(
+                                            Some("centring.lang".to_string()),
+                                            "Any".to_string())))).collect(),
                                 vararg_type: None,
                                 body: Rc::new(Expr::Const(
                                     it.next().unwrap().clone()))

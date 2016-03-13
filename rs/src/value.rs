@@ -243,12 +243,7 @@ impl<T: Hash> Hash for List<T> {
 
 impl<T: PartialEq> PartialEq for List<T> {
     fn eq(&self, other: &List<T>) -> bool {
-        for (v, w) in self.iter().zip(other.iter()) {
-            if !v.eq(w) {
-                return false
-            }
-        }
-        true
+        self.iter().eq(other.iter())
     }
 }
     
