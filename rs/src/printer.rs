@@ -69,6 +69,8 @@ impl fmt::Display for Value {
                 for ftp in ftps { try!(write!(f, " {}", ftp)) }
                 write!(f, ")>")
             },
+            Value::MultiFn { ref name, ref methods } =>
+                write!(f, "#<MultiFn {} with {} methods>", name, methods.len()),
             Value::Macro(ref expander) =>
                 write!(f, "#<Macro {}>", expander)
         }

@@ -1,6 +1,7 @@
 use std::rc::Rc;
 use std::iter::FromIterator;
 use std::hash::{Hash, Hasher};
+use std::collections::HashMap;
 
 use environment::EnvRef;
 use interpreter::Interpreter;
@@ -41,6 +42,10 @@ pub enum Value {
         name: String,
         formal_types: Vec<TypeMatcher>,
         code: fn(&mut Interpreter, Vec<ValueRef>) -> ValueRef
+    },
+    MultiFn {
+        name: String,
+        methods: HashMap<Vec<TypeMatcher>, ValueRef>
     },
     Macro(ValueRef)
 }
@@ -145,20 +150,84 @@ impl Hash for Value {
             Value::NativeFn { ref name, ref formal_types, ref code } => {
                 name.hash(state);
                 formal_types.hash(state);
-                code.hash(state);
+                (code as *const _).hash(state);
             },
+            Value::MultiFn { ref name, .. } => name.hash(state),
             Value::Macro(ref expander) => expander.hash(state)
         }   
     }
 }
 
-#[derive(Hash)]
+impl PartialEq for Value {
+    fn eq(&self, other: &Value) -> bool {
+        match (self, other) {
+            (&Value::Int(i), &Value::Int(j)) => i == j,
+            (&Value::Bool(b), &Value::Bool(c)) => b == c,
+            (&Value::Char(c), &Value::Char(d)) => c == d,
+            (&Value::Symbol(ref mod_name, ref name),
+             &Value::Symbol(ref omod_name, ref oname)) |
+            (&Value::Keyword(ref mod_name, ref name),
+             &Value::Keyword(ref omod_name, ref oname)) =>
+                mod_name == omod_name && name == oname,
+
+            (&Value::Tuple(ref vs), &Value::Tuple(ref ws)) => vs == ws,
+            (&Value::List(ref vs), &Value::List(ref ws)) => vs == ws,
+            (&Value::String(ref s), &Value::String(ref t)) => s == t,
+
+            (&Value::Record { ref typ, ref vals },
+             &Value::Record { typ: ref otyp, vals: ref ovals }) =>
+                typ == otyp && vals == ovals,
+            (&Value::Singleton { ref typ },
+             &Value::Singleton { typ: ref otyp }) =>
+                typ == otyp,
+
+            (&Value::AbstractType { ref name, ref supertyp },
+             &Value::AbstractType { name: ref oname, supertyp: ref osupertyp }) |
+            (&Value::SingletonType { ref name, ref supertyp },
+             &Value::SingletonType { name: ref oname,
+                                     supertyp: ref osupertyp }) |
+            (&Value::BuiltInType { ref name, ref supertyp },
+             &Value::BuiltInType { name: ref oname, supertyp: ref osupertyp }) =>
+                name == oname && supertyp == osupertyp,
+            (&Value::RecordType { ref name, ref supertyp, ref field_names },
+             &Value::RecordType { name: ref oname, supertyp: ref osupertyp,
+                                 field_names: ref ofield_names }) =>
+                name == oname && supertyp == osupertyp
+                && field_names == ofield_names,
+
+            (&Value::Fn { ref name, ref formal_names, ref vararg_name,
+                         ref formal_types, ref vararg_type, .. },
+             &Value::Fn { name: ref oname, formal_names: ref oformal_names,
+                         vararg_name: ref ovararg_name,
+                         formal_types: ref oformal_types,
+                         vararg_type: ref ovararg_type, .. }) =>
+                name == oname && formal_names == oformal_names
+                && vararg_name == ovararg_name && formal_types == oformal_types
+                && vararg_type == ovararg_type,
+            (&Value::NativeFn { ref name, ref formal_types, ref code },
+             &Value::NativeFn { name: ref oname, formal_types: ref oformal_types,
+                               code: ref ocode }) =>
+                name == oname && formal_types == oformal_types
+                && code as *const _ == ocode as *const _,
+            (&Value::MultiFn { ref name, .. },
+             &Value::MultiFn { name: ref oname, .. }) =>
+                name == oname,
+            (&Value::Macro(ref expander), &Value::Macro(ref oexpander)) =>
+                expander == oexpander,
+            _ => false
+        }
+    }
+}
+
+impl Eq for Value { }
+
+#[derive(Hash, PartialEq, Eq)]
 pub enum TypeMatcher {
     Isa(ValueRef),
     Identical(ValueRef),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq)]
 pub enum List<T> {
     Pair { rest: Rc<List<T>>, first: T },
     Empty
@@ -172,6 +241,17 @@ impl<T: Hash> Hash for List<T> {
     }
 }
 
+impl<T: PartialEq> PartialEq for List<T> {
+    fn eq(&self, other: &List<T>) -> bool {
+        for (v, w) in self.iter().zip(other.iter()) {
+            if !v.eq(w) {
+                return false
+            }
+        }
+        true
+    }
+}
+    
 // List Iteration
 
 impl<T> List<T> {
