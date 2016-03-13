@@ -1,5 +1,6 @@
 use std::rc::Rc;
 use std::iter::FromIterator;
+use std::hash::{Hash, Hasher};
 
 use environment::EnvRef;
 use interpreter::Interpreter;
@@ -99,6 +100,59 @@ impl Value {
     }
 }
 
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match *self {
+            Value::Int(i) => i.hash(state),
+            Value::Bool(b) => b.hash(state),
+            Value::Char(c) => c.hash(state),
+            Value::Symbol(ref mod_name, ref name) |
+            Value::Keyword(ref mod_name, ref name) => {
+                mod_name.hash(state);
+                name.hash(state);
+            },
+
+            Value::Tuple(ref vs) => vs.hash(state),
+            Value::List(ref vs) => vs.hash(state),
+            Value::String(ref s) => s.hash(state),
+
+            Value::Record { ref typ, ref vals } => {
+                typ.hash(state);
+                vals.hash(state);
+            },
+            Value::Singleton { ref typ } => typ.hash(state),
+
+            Value::AbstractType { ref name, ref supertyp } |
+            Value::SingletonType { ref name, ref supertyp } |
+            Value::BuiltInType { ref name, ref supertyp } => {
+                name.hash(state);
+                supertyp.hash(state);
+            },
+            Value::RecordType { ref name, ref supertyp, ref field_names } => {
+                name.hash(state);
+                supertyp.hash(state);
+                field_names.hash(state);
+            },
+
+            Value::Fn { ref name, ref formal_names, ref vararg_name,
+                        ref formal_types, ref vararg_type, .. } => {
+                name.hash(state);
+                formal_names.hash(state);
+                vararg_name.hash(state);
+                formal_types.hash(state);
+                vararg_type.hash(state);
+            },
+            Value::NativeFn { ref name, ref formal_types, ref code } => {
+                name.hash(state);
+                formal_types.hash(state);
+                code.hash(state);
+            },
+            Value::Macro(ref expander) => expander.hash(state)
+        }   
+    }
+}
+
+#[derive(Hash)]
 pub enum TypeMatcher {
     Isa(ValueRef),
     Identical(ValueRef),
@@ -108,6 +162,14 @@ pub enum TypeMatcher {
 pub enum List<T> {
     Pair { rest: Rc<List<T>>, first: T },
     Empty
+}
+
+impl<T: Hash> Hash for List<T> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        for v in self.iter() {
+            v.hash(state)
+        }
+    }
 }
 
 // List Iteration
