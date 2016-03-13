@@ -8,7 +8,7 @@ use std::cmp::Ordering;
 use value::{Value, ValueRef, TypeMatcher};
 use environment::{Environment, EnvRef};
 use builtins;
-use builtins::{set_module, require, refer, record_type, abstract_type};
+use builtins::NativeFnCode;
 
 pub struct Interpreter {
     env: EnvRef,
@@ -40,8 +40,26 @@ impl Interpreter {
                                         "String".to_string())),
             supertyp: Some(any.clone())
         });
+        let int_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "Int".to_string())),
+            supertyp: Some(any.clone())
+        });
+        let bool_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "Bool".to_string())),
+            supertyp: Some(any.clone())
+        });
+        let char_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "Char".to_string())),
+            supertyp: Some(any.clone())
+        });
         itp.store_global("centring.lang", "Any", any.clone());
         itp.store_global("centring.lang", "String", ctr_string.clone());
+        itp.store_global("centring.lang", "Int", int_type.clone());
+        itp.store_global("centring.lang", "Bool", bool_type.clone());
+        itp.store_global("centring.lang", "Char", char_type.clone());
                          
         
         itp.store_global("centring.lang", "set-module!",
@@ -50,7 +68,7 @@ impl Interpreter {
                              formal_types: vec![
                                  TypeMatcher::Isa(ctr_string.clone())],
                              vararg_type: None,
-                             code: set_module
+                             code: builtins::set_module
                          }));
         itp.store_global("centring.lang", "require",
                          Rc::new(Value::NativeFn {
@@ -59,33 +77,36 @@ impl Interpreter {
                                  TypeMatcher::Isa(ctr_string.clone()),
                                  TypeMatcher::Isa(ctr_string.clone())],
                              vararg_type: None,
-                             code: require
+                             code: builtins::require
                          }));
         itp.store_global("centring.lang", "refer",
                          Rc::new(Value::NativeFn {
                              name: "refer".to_string(),
-                             formal_types: vec![],
-                             vararg_type: None,
-                             code: refer
+                             formal_types: vec![
+                                 TypeMatcher::Isa(ctr_string.clone())],
+                             vararg_type: Some(
+                                 TypeMatcher::Isa(ctr_string.clone())),
+                             code: builtins::refer
                          }));
         itp.store_global("centring.lang", "record-type",
                          Rc::new(Value::NativeFn {
                              name: "record-type".to_string(),
                              formal_types: vec![],
                              vararg_type: None,
-                             code: record_type
+                             code: builtins::record_type
                          }));
         itp.store_global("centring.lang", "abstract-type",
                          Rc::new(Value::NativeFn {
                              name: "abstract-type".to_string(),
                              formal_types: vec![],
                              vararg_type: None,
-                             code: abstract_type
+                             code: builtins::abstract_type
                          }));
         itp.store_global("centring.lang", "type",
                          Rc::new(Value::NativeFn {
                              name: "type".to_string(),
-                             formal_types: vec![],
+                             formal_types: vec![
+                                 TypeMatcher::Isa(any.clone())],
                              vararg_type: None,
                              code: builtins::type_of
                          }));
@@ -103,30 +124,22 @@ impl Interpreter {
                              vararg_type: None,
                              code: builtins::isa
                          }));
-        itp.store_global("centring.lang", "+", Rc::new(Value::NativeFn {
-            name: "+".to_string(),
-            formal_types: vec![],
-            vararg_type: None,
-            code: builtins::add_2i
-        }));
-        itp.store_global("centring.lang", "-", Rc::new(Value::NativeFn {
-            name: "-".to_string(),
-            formal_types: vec![],
-            vararg_type: None,
-            code: builtins::sub_2i
-        }));
-        itp.store_global("centring.lang", "*", Rc::new(Value::NativeFn {
-            name: "*".to_string(),
-            formal_types: vec![],
-            vararg_type: None,
-            code: builtins::mul_2i
-        }));
-        itp.store_global("centring.lang", "<", Rc::new(Value::NativeFn {
-            name: "<".to_string(),
-            formal_types: vec![],
-            vararg_type: None,
-            code: builtins::lt_2i
-        }));
+
+        let mathops: [(&str, NativeFnCode); 4] =
+            [("+", builtins::add_2i),
+             ("-", builtins::sub_2i),
+             ("*", builtins::mul_2i),
+             ("<", builtins::lt_2i)];
+        for &(name, code) in mathops.into_iter() {
+            itp.store_global("centring.lang", name, Rc::new(Value::NativeFn {
+                name: name.to_string(),
+                formal_types: vec![TypeMatcher::Isa(int_type.clone()),
+                                   TypeMatcher::Isa(int_type.clone())],
+                vararg_type: None,
+                code: code
+            }));
+        }
+        
         itp.store_global("centring.lang", "prepend", Rc::new(Value::NativeFn {
             name: "prepend".to_string(),
             formal_types: vec![],
@@ -260,6 +273,9 @@ impl Interpreter {
             Value::Singleton { ref typ } => typ.clone(),
             Value::String(_) =>
                 self.load_global("centring.lang", "String").unwrap(),
+            Value::Int(_) => self.load_global("centring.lang", "Int").unwrap(),
+            Value::Bool(_) => self.load_global("centring.lang", "Bool").unwrap(),
+            Value::Char(_) => self.load_global("centring.lang", "Char").unwrap(),
             _ => panic!()
         }
     }
@@ -307,28 +323,32 @@ impl Interpreter {
             Value::NativeFn { ref formal_types, ref vararg_type, .. } => {
                 let formalc = formal_types.len();
                 let argc = args.len();
+                // Too few args?
                 if formalc > argc {
-                    panic!() // Too few args
+                    panic!()
                 }
+                // Too many args?
                 if formalc < argc {
+                    // Vararg can still handle it:
                     if vararg_type.is_some() {
-                        // Extra args are set aside for vararg:
                         varvals = args.split_off(formalc);
                     } else {
-                        panic!() // Too many args
+                        panic!()
                     }
                 }
+                // Check types of positionals:
                 for (tm, v) in formal_types.iter().zip(args.iter()) {
                     if self.arg_dist(tm,
                                      self.type_of(v.as_ref())).is_none() {
-                        panic!() // Type mismatch
+                        panic!()
                     }
                 }
+                // Check the types of vararg contents:
                 if let Some(ref tm) = *vararg_type {
                     for v in varvals.iter() {
                         if self.arg_dist(tm,
                                          self.type_of(v.as_ref())).is_none() {
-                            panic!() // Type mismatch
+                            panic!()
                         }
                     }
                 }
@@ -342,18 +362,23 @@ impl Interpreter {
                         } else {
                             None
                         }}).collect();
-                if match_tups.is_empty() { // No such method:
+                // No method for this at all?
+                if match_tups.is_empty() {
                     panic!()
                 }
-                let mtup = if match_tups.len() == 1 { // One applicable method:
+                let mtup = if match_tups.len() == 1 {
+                    // One applicable method:
                     &match_tups[0]
-                } else { // Several applicable methods:
+                } else {
+                    // Several applicable methods:
                     match_tups.sort_by(dispatch_cmp);
+                    // Ambiguity?
                     if dispatch_eq(&match_tups[0], &match_tups[1]) {
-                        panic!() // Ambiguity
+                        panic!()
                     }
                     &match_tups[0]
                 };
+                // Split off vararg contents:
                 if mtup.2.is_some() {
                     varvals = args.split_off(mtup.1.len());
                 }
@@ -377,6 +402,7 @@ impl Interpreter {
                 for (n, v) in formal_names.iter().zip(args.into_iter()) {
                     self.store_local(n, v);
                 }
+                // Fill vararg if needed:
                 if let Some(ref vname) = *vararg_name {
                     self.store_local(vname, Rc::new(Value::Tuple(varvals)));
                 }        
@@ -384,6 +410,7 @@ impl Interpreter {
                 let res = self.eval(body);
                 // Restore previous env:
                 self.env = self.envstack.pop().unwrap();
+                // Return value:
                 res
             },
             Value::NativeFn { ref code, .. } => code(self, args),
@@ -495,10 +522,10 @@ fn combine_dists(d1: isize, d2: isize) -> isize {
 }
 
 fn dispatch_cmp(&(ref dd1, _, ref vtm1, _):
-                   &(isize, Vec<TypeMatcher>, Option<TypeMatcher>, &ValueRef),
-                   &(ref dd2, _, ref vtm2, _):
-                   &(isize, Vec<TypeMatcher>, Option<TypeMatcher>, &ValueRef))
-                   -> Ordering {
+                &(isize, Vec<TypeMatcher>, Option<TypeMatcher>, &ValueRef),
+                &(ref dd2, _, ref vtm2, _):
+                &(isize, Vec<TypeMatcher>, Option<TypeMatcher>, &ValueRef))
+                -> Ordering {
     match dd1.cmp(&dd2) {
         Ordering::Equal => match (vtm1, vtm2) {
             (&Some(_), &None) => Ordering::Greater,

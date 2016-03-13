@@ -25,24 +25,12 @@ impl fmt::Display for Value {
 
             Value::Tuple(ref vs) => {
                 try!(write!(f, "#("));
-                let mut it = vs.iter();
-                if let Some(v) = it.next() {
-                    try!(write!(f, "{}", v));
-                }
-                for v in it {
-                    try!(write!(f, " {}", v))
-                }
+                try!(write_joined(f, vs.iter()));
                 write!(f, ")")
             },
             Value::List(ref vs) => {
                 try!(write!(f, "("));
-                let mut it = vs.iter();
-                if let Some(v) = it.next() {
-                    try!(write!(f, "{}", v));
-                }
-                for v in it {
-                    try!(write!(f, " {}", v))
-                }
+                try!(write_joined(f, vs.iter()));
                 write!(f, ")")
             },
             Value::String(ref s) => write!(f, "{:?}", s),
@@ -50,7 +38,7 @@ impl fmt::Display for Value {
             Value::Singleton { ref typ } => write!(f, "#=({})", typ),
             Value::Record { ref typ, vals: ref vs } => {
                 try!(write!(f, "#=({}", typ));
-                for v in vs { try!(write!(f, " {}", v)) }
+                try!(write_joined(f, vs.iter()));
                 write!(f, ")")
             },
 
@@ -59,14 +47,22 @@ impl fmt::Display for Value {
             Value::RecordType { ref name, .. } => write!(f, "{}", name),
             Value::BuiltInType { ref name, .. } => write!(f, "{}", name),
 
-            Value::Fn { ref name, formal_types: ref ftps, .. } => {
+            Value::Fn { ref name, formal_types: ref ftps,
+                        vararg_type: ref vtp, .. } => {
                 try!(write!(f, "#<Fn {} (", name));
-                for ftp in ftps { try!(write!(f, " {}", ftp)) }
+                try!(write_joined(f, ftps.iter()));
+                if let Some(ref vtm) = *vtp {
+                    try!(write!(f, " & {}", vtm));
+                }
                 write!(f, ")>")
             },
-            Value::NativeFn { ref name, formal_types: ref ftps, .. } => {
+            Value::NativeFn { ref name, formal_types: ref ftps,
+                              vararg_type: ref vtp,  .. } => {
                 try!(write!(f, "#<NativeFn {} (", name));
-                for ftp in ftps { try!(write!(f, " {}", ftp)) }
+                try!(write_joined(f, ftps.iter()));
+                if let Some(ref vtm) = *vtp {
+                    try!(write!(f, " & {}", vtm));
+                }
                 write!(f, ")>")
             },
             Value::MultiFn { ref name, ref methods } =>
@@ -85,3 +81,15 @@ impl fmt::Display for TypeMatcher {
         }
     }
 }
+
+fn write_joined<I: Iterator>(f: &mut fmt::Formatter, mut vs: I) -> fmt::Result
+    where I::Item: fmt::Display {
+    if let Some(v) = vs.next() {
+        try!(write!(f, "{}", v));
+    }
+    for v in vs {
+        try!(write!(f, " {}", v))
+    }
+    Ok(())
+}
+    

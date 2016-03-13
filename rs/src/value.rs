@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use environment::EnvRef;
 use interpreter::Interpreter;
 use eval::Expr;
+use builtins::NativeFnCode;
 
 pub type ValueRef = Rc<Value>;
 
@@ -42,7 +43,7 @@ pub enum Value {
         name: String,
         formal_types: Vec<TypeMatcher>,
         vararg_type: Option<TypeMatcher>,
-        code: fn(&mut Interpreter, Vec<ValueRef>) -> ValueRef
+        code: NativeFnCode
     },
     MultiFn {
         name: String,

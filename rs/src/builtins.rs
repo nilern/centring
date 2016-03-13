@@ -5,6 +5,8 @@ use std::rc::Rc;
 use std::fs::File;
 use std::io::Read;
 
+pub type NativeFnCode = fn(&mut Interpreter, Vec<ValueRef>) -> ValueRef;
+
 pub fn add_2i(_: &mut Interpreter, args: Vec<ValueRef>) -> ValueRef {
     Rc::new(Value::Int(args[0].get_int().unwrap() + args[1].get_int().unwrap()))
 }
