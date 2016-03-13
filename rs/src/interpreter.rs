@@ -345,20 +345,19 @@ impl Interpreter {
                 if match_tups.is_empty() { // No such method:
                     panic!()
                 }
-                let meth = if match_tups.len() == 1 { // One applicable method:
-                    let mtup = &match_tups[0];
-                    if mtup.2.is_some() {
-                        varvals = args.split_off(mtup.1.len());
-                    }
-                    mtup.3
+                let mtup = if match_tups.len() == 1 { // One applicable method:
+                    &match_tups[0]
                 } else { // Several applicable methods:
                     match_tups.sort_by(dispatch_cmp);
                     if dispatch_eq(&match_tups[0], &match_tups[1]) {
                         panic!() // Ambiguity
                     }
-                    match_tups[0].3
+                    &match_tups[0]
                 };
-                return self.call_unchecked(meth.clone(), args, varvals);
+                if mtup.2.is_some() {
+                    varvals = args.split_off(mtup.1.len());
+                }
+                return self.call_unchecked(mtup.3.clone(), args, varvals);
             },
             _ => { }
         }
