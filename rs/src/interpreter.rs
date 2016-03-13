@@ -1,6 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::iter::repeat;
+use std::cmp::min;
 
 use value::{Value, ValueRef, TypeMatcher};
 use environment::{Environment, EnvRef};
@@ -316,7 +318,8 @@ impl Interpreter {
                     }
                 }
                 for (tm, v) in formal_types.iter().zip(args.iter()) {
-                    if self.arg_dist(tm, self.type_of(v.as_ref())).is_none() {
+                    if self.arg_dist(tm,
+                                     self.type_of(v.as_ref())).is_none() {
                         panic!() // Type mismatch
                     }
                 }
@@ -367,14 +370,58 @@ impl Interpreter {
         match *matcher {
             TypeMatcher::Isa(ref typ) => self.type_dist(typ.clone(), arg),
             TypeMatcher::Identical(ref typ) =>
-                if typ.as_ref() as *const Value
-                == self.type_of(arg.as_ref()).as_ref() as *const Value {
+                if typ.as_ref() == self.type_of(arg.as_ref()).as_ref() {
                     Some(0)
                 } else {
                     None
                 }
         }
     }
+
+    fn dispatch_dist(&self, formal_tms: &Vec<TypeMatcher>,
+                     vararg_tm: &Option<TypeMatcher>,
+                     argv: &Vec<ValueRef>, short_circ: bool) -> isize {
+        let mut ddist = 0;
+        let mut args = argv.iter().peekable();
+        let mut tms = formal_tms.iter().peekable();
+        loop {
+            if args.peek().is_none() { // Out of args:
+                if tms.peek().is_none() { // Matched exactly, we are done:
+                    return ddist;
+                } else if short_circ { // Too few args!:
+                    return -1;
+                } else { // Too few args, here in detail:
+                    return combine_dists(ddist, -(tms.count() as isize));
+                }
+            } else { // Args left:
+                if tms.peek().is_none() { // But no formals:
+                    if let Some(ref tm) = *vararg_tm { // Vararg is utilized:
+                        return combine_dists(
+                            ddist,
+                            self.dispatch_dist(
+                                // Expand to the missing args:
+                                &repeat(tm.clone())
+                                    .take(argv.len() - formal_tms.len())
+                                    .collect(),
+                                // So that no further expansion takes place:
+                                &None,
+                                &args.map(Clone::clone).collect(),
+                                short_circ));
+                    } else if short_circ { // Too many args!:
+                        return -1;
+                    } else { // Too many args, here in detail:
+                        return combine_dists(ddist, -(args.count() as isize));
+                    }
+                }
+                // Both left, we go on:
+                let v = args.next().unwrap(); // this is safe since we peeked
+                let tm = tms.next().unwrap(); // this also
+                let arg_dist = self.arg_dist(tm, v.clone())
+                    .map(|u| u as isize).unwrap_or(-1);
+                ddist = combine_dists(ddist, arg_dist);
+            }
+        }
+    }      
 
 // Module Management
 
@@ -409,5 +456,13 @@ impl Interpreter {
     pub fn refer(&mut self, mod_name: &str, names: Vec<String>) {
         let md = self.get_mod(mod_name).unwrap();
         self.current_mod().borrow_mut().refer(md, names);
+    }
+}
+
+fn combine_dists(d1: isize, d2: isize) -> isize {
+    if (d1 < 0) == (d2 < 0) {
+        d1 + d2
+    } else {
+        min(d1, d2)
     }
 }

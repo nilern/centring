@@ -227,7 +227,7 @@ impl PartialEq for Value {
 
 impl Eq for Value { }
 
-#[derive(Hash, PartialEq, Eq)]
+#[derive(Hash, PartialEq, Eq, Clone)]
 pub enum TypeMatcher {
     Isa(ValueRef),
     Identical(ValueRef),
