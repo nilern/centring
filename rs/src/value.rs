@@ -34,13 +34,14 @@ pub enum Value {
         formal_names: Vec<String>,
         vararg_name: Option<String>,
         formal_types: Vec<TypeMatcher>,
-        vararg_type: Option<ValueRef>,
+        vararg_type: Option<TypeMatcher>,
         body: Rc<Expr>,
         env: EnvRef
     },
     NativeFn {
         name: String,
         formal_types: Vec<TypeMatcher>,
+        vararg_type: Option<TypeMatcher>,
         code: fn(&mut Interpreter, Vec<ValueRef>) -> ValueRef
     },
     MultiFn {
@@ -147,9 +148,11 @@ impl Hash for Value {
                 formal_types.hash(state);
                 vararg_type.hash(state);
             },
-            Value::NativeFn { ref name, ref formal_types, ref code } => {
+            Value::NativeFn { ref name, ref formal_types, ref vararg_type,
+                              ref code } => {
                 name.hash(state);
                 formal_types.hash(state);
+                vararg_type.hash(state);
                 (code as *const _).hash(state);
             },
             Value::MultiFn { ref name, .. } => name.hash(state),
@@ -204,10 +207,13 @@ impl PartialEq for Value {
                 name == oname && formal_names == oformal_names
                 && vararg_name == ovararg_name && formal_types == oformal_types
                 && vararg_type == ovararg_type,
-            (&Value::NativeFn { ref name, ref formal_types, ref code },
+            (&Value::NativeFn { ref name, ref formal_types, ref vararg_type,
+                                ref code },
              &Value::NativeFn { name: ref oname, formal_types: ref oformal_types,
-                               code: ref ocode }) =>
+                                vararg_type: ref ovararg_type,
+                                code: ref ocode }) =>
                 name == oname && formal_types == oformal_types
+                && vararg_type == ovararg_type
                 && code as *const _ == ocode as *const _,
             (&Value::MultiFn { ref name, .. },
              &Value::MultiFn { name: ref oname, .. }) =>

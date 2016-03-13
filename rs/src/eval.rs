@@ -84,7 +84,8 @@ impl Interpreter {
                     formal_types: formal_types.iter()
                         .map(|t| self.eval_type_matcher(t))
                         .collect(),
-                    vararg_type: vararg_type.as_ref().map(|t| self.eval(t)),
+                    vararg_type: vararg_type.as_ref().map(
+                        |t| self.eval_type_matcher(t)),
                     body: body.clone(),
                     env: self.current_env().clone()
                 }),

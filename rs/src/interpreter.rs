@@ -1,7 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::cmp::Ordering;
 
 use value::{Value, ValueRef, TypeMatcher};
 use environment::{Environment, EnvRef};
@@ -47,6 +46,7 @@ impl Interpreter {
                              name: "set-module!".to_string(),
                              formal_types: vec![
                                  TypeMatcher::Isa(ctr_string.clone())],
+                             vararg_type: None,
                              code: set_module
                          }));
         itp.store_global("centring.lang", "require",
@@ -55,72 +55,85 @@ impl Interpreter {
                              formal_types: vec![
                                  TypeMatcher::Isa(ctr_string.clone()),
                                  TypeMatcher::Isa(ctr_string.clone())],
+                             vararg_type: None,
                              code: require
                          }));
         itp.store_global("centring.lang", "refer",
                          Rc::new(Value::NativeFn {
                              name: "refer".to_string(),
                              formal_types: vec![],
+                             vararg_type: None,
                              code: refer
                          }));
         itp.store_global("centring.lang", "record-type",
                          Rc::new(Value::NativeFn {
                              name: "record-type".to_string(),
                              formal_types: vec![],
+                             vararg_type: None,
                              code: record_type
                          }));
         itp.store_global("centring.lang", "abstract-type",
                          Rc::new(Value::NativeFn {
                              name: "abstract-type".to_string(),
                              formal_types: vec![],
+                             vararg_type: None,
                              code: abstract_type
                          }));
         itp.store_global("centring.lang", "type",
                          Rc::new(Value::NativeFn {
                              name: "type".to_string(),
                              formal_types: vec![],
+                             vararg_type: None,
                              code: builtins::type_of
                          }));
         itp.store_global("centring.lang", "supertype",
                          Rc::new(Value::NativeFn {
                              name: "supertype".to_string(),
                              formal_types: vec![],
+                             vararg_type: None,
                              code: builtins::supertype
                          }));
         itp.store_global("centring.lang", "isa?",
                          Rc::new(Value::NativeFn {
                              name: "isa?".to_string(),
                              formal_types: vec![],
+                             vararg_type: None,
                              code: builtins::isa
                          }));
         itp.store_global("centring.lang", "+", Rc::new(Value::NativeFn {
             name: "+".to_string(),
             formal_types: vec![],
+            vararg_type: None,
             code: builtins::add_2i
         }));
         itp.store_global("centring.lang", "-", Rc::new(Value::NativeFn {
             name: "-".to_string(),
             formal_types: vec![],
+            vararg_type: None,
             code: builtins::sub_2i
         }));
         itp.store_global("centring.lang", "*", Rc::new(Value::NativeFn {
             name: "*".to_string(),
             formal_types: vec![],
+            vararg_type: None,
             code: builtins::mul_2i
         }));
         itp.store_global("centring.lang", "<", Rc::new(Value::NativeFn {
             name: "<".to_string(),
             formal_types: vec![],
+            vararg_type: None,
             code: builtins::lt_2i
         }));
         itp.store_global("centring.lang", "prepend", Rc::new(Value::NativeFn {
             name: "prepend".to_string(),
             formal_types: vec![],
+            vararg_type: None,
             code: builtins::prepend_ls
         }));
         itp.store_global("centring.lang", "load", Rc::new(Value::NativeFn {
             name: "load".to_string(),
             formal_types: vec![TypeMatcher::Isa(ctr_string)],
+            vararg_type: None,
             code: builtins::load
         }));
         
@@ -284,43 +297,57 @@ impl Interpreter {
 // Call
 
     pub fn call(&mut self, op: ValueRef, mut args: Vec<ValueRef>) -> ValueRef {
+        let mut varvals = vec![];
+        // Check argument counts and types, split off values for vararg:
         match *op {
-            Value::Fn { ref formal_names, ref vararg_name, ref body, ref env,
-                        ref formal_types, .. } => {
+            Value::Fn { ref formal_types, ref vararg_type, .. } |
+            Value::NativeFn { ref formal_types, ref vararg_type, .. } => {
+                let formalc = formal_types.len();
+                let argc = args.len();
+                if formalc > argc {
+                    panic!() // Too few args
+                }
+                if formalc < argc {
+                    if vararg_type.is_some() {
+                        // Extra args are set aside for vararg:
+                        varvals = args.split_off(formalc);
+                    } else {
+                        panic!() // Too many args
+                    }
+                }
+                for (tm, v) in formal_types.iter().zip(args.iter()) {
+                    if self.arg_dist(tm, self.type_of(v.as_ref())).is_none() {
+                        panic!() // Type mismatch
+                    }
+                }
+                if let Some(ref tm) = *vararg_type {
+                    for v in varvals.iter() {
+                        if self.arg_dist(tm,
+                                         self.type_of(v.as_ref())).is_none() {
+                            panic!() // Type mismatch
+                        }
+                    }
+                }
+            }
+            _ => { }
+        }
+        self.call_unchecked(op, args, varvals)
+    }
+
+    fn call_unchecked(&mut self, op: ValueRef, args: Vec<ValueRef>,
+                      varvals: Vec<ValueRef>) -> ValueRef {
+        match *op {
+            Value::Fn { ref formal_names, ref vararg_name,
+                        ref body, ref env, .. } => {
                 // Store the old env:
                 self.envstack.push(self.env.clone());
                 // Make an env that extends that of the closure:
                 self.env = Rc::new(RefCell::new(Environment::new(env)));
-                // Check arg counts, split off varvals:
-                let mut varvals = vec![];
-                let formalc = formal_names.len();
-                match formalc.cmp(&args.len()) {
-                    Ordering::Equal => { },
-                    Ordering::Less => // Too many args, but a vararg will work:
-                        if vararg_name.is_some() {
-                            varvals = args.split_off(formalc);
-                        } else {
-                            panic!()
-                        },
-                    Ordering::Greater => // Too few args, no good in any case:
-                        panic!()
-                }
-                // Extend the env with the args, checking types:
-                let mut names = formal_names.iter();
-                let mut types = formal_types.iter();
-                let mut vals = args.into_iter();
-                while let Some(n) = names.next() {
-                    let t = types.next().unwrap();
-                    let v = vals.next().unwrap();
-                    if let Some(0)
-                        = self.arg_dist(t, self.type_of(v.as_ref())) {
-                            self.store_local(n, v);
-                        } else {
-                            panic!()
-                        }
+                // Extend the env with the args:
+                for (n, v) in formal_names.iter().zip(args.into_iter()) {
+                    self.store_local(n, v);
                 }
                 if let Some(ref vname) = *vararg_name {
-                    // FIXME: check types of these
                     self.store_local(vname, Rc::new(Value::Tuple(varvals)));
                 }        
                 // Eval body in the extended env:
@@ -329,17 +356,7 @@ impl Interpreter {
                 self.env = self.envstack.pop().unwrap();
                 res
             },
-            Value::NativeFn { ref code, ref formal_types, .. } => {
-                if formal_types.len() != args.len() {
-                    panic!()
-                }
-                for (t, v) in formal_types.iter().zip(args.iter()) {
-                    if self.arg_dist(t, self.type_of(v.as_ref())).is_none() {
-                        panic!()
-                    }
-                }
-                code(self, args)
-            },
+            Value::NativeFn { ref code, .. } => code(self, args),
             // FIXME: use the MultiFn call(t :RecordType & field-vals) for this:
             Value::RecordType { .. } => self.create_record(op.clone(), args),
             _ => panic!()
