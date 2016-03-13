@@ -46,7 +46,7 @@ pub enum Value {
     },
     MultiFn {
         name: String,
-        methods: HashMap<Vec<TypeMatcher>, ValueRef>
+        methods: HashMap<(Vec<TypeMatcher>, Option<TypeMatcher>), ValueRef>
     },
     Macro(ValueRef)
 }

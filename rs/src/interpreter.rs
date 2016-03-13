@@ -3,6 +3,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::iter::repeat;
 use std::cmp::min;
+use std::cmp::Ordering;
 
 use value::{Value, ValueRef, TypeMatcher};
 use environment::{Environment, EnvRef};
@@ -331,7 +332,34 @@ impl Interpreter {
                         }
                     }
                 }
-            }
+            },
+            Value::MultiFn { ref methods, .. } => {
+                let mut match_tups: Vec<_> = methods.iter().filter_map(
+                    |(k, meth)| {
+                        let ddist = self.dispatch_dist(&k.0, &k.1, &args, true);
+                        if ddist >= 0 {
+                            Some((ddist, k.0.clone(), k.1.clone(), meth))
+                        } else {
+                            None
+                        }}).collect();
+                if match_tups.is_empty() { // No such method:
+                    panic!()
+                }
+                let meth = if match_tups.len() == 1 { // One applicable method:
+                    let mtup = &match_tups[0];
+                    if mtup.2.is_some() {
+                        varvals = args.split_off(mtup.1.len());
+                    }
+                    mtup.3
+                } else { // Several applicable methods:
+                    match_tups.sort_by(dispatch_cmp);
+                    if dispatch_eq(&match_tups[0], &match_tups[1]) {
+                        panic!() // Ambiguity
+                    }
+                    match_tups[0].3
+                };
+                return self.call_unchecked(meth.clone(), args, varvals);
+            },
             _ => { }
         }
         self.call_unchecked(op, args, varvals)
@@ -465,4 +493,27 @@ fn combine_dists(d1: isize, d2: isize) -> isize {
     } else {
         min(d1, d2)
     }
+}
+
+fn dispatch_cmp(&(ref dd1, _, ref vtm1, _):
+                   &(isize, Vec<TypeMatcher>, Option<TypeMatcher>, &ValueRef),
+                   &(ref dd2, _, ref vtm2, _):
+                   &(isize, Vec<TypeMatcher>, Option<TypeMatcher>, &ValueRef))
+                   -> Ordering {
+    match dd1.cmp(&dd2) {
+        Ordering::Equal => match (vtm1, vtm2) {
+            (&Some(_), &None) => Ordering::Greater,
+            (&None, &Some(_)) => Ordering::Less,
+            _ => Ordering::Equal
+        },
+        ord => ord
+    }
+}
+
+fn dispatch_eq(&(ref dd1, _, ref vtm1, _):
+               &(isize, Vec<TypeMatcher>, Option<TypeMatcher>, &ValueRef),
+               &(ref dd2, _, ref vtm2, _):
+               &(isize, Vec<TypeMatcher>, Option<TypeMatcher>, &ValueRef))
+               -> bool {
+    dd1 == dd2 && vtm1.is_some() == vtm2.is_some()
 }
