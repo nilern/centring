@@ -4,7 +4,6 @@ use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
 
 use environment::EnvRef;
-use interpreter::Interpreter;
 use eval::Expr;
 use builtins::NativeFnCode;
 

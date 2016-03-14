@@ -104,8 +104,8 @@ impl Interpreter {
 
     fn eval_type_matcher(&mut self, mexpr: &Expr) -> TypeMatcher {
         match *mexpr {
-            Expr::Const(ref typ) =>
-                TypeMatcher::Isa(self.eval(&typ.as_id().unwrap())),
+            Expr::Local(_) | Expr::Global(..) =>
+                TypeMatcher::Isa(self.eval(mexpr)),
             Expr::Call { ref op, ref args } => {
                 if let Expr::Local(ref op_name) = **op {
                     if op_name.as_str() == "=" && args.len() == 1 {

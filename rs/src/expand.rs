@@ -2,30 +2,121 @@ use value::{Value, ValueRef, List};
 use interpreter::Interpreter;
 use eval::Expr;
 use std::rc::Rc;
+use std::iter::Peekable;
 
-fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>) {
+enum ParsedArg {
+    FormalName(String),
+    Identical(Expr),
+    VarargMarker
+}
+
+enum ArgParseError {
+    NonFormalName(ValueRef),
+    End
+}
+    
+fn parse_formal<'a, I>(formals: &mut I) -> Result<ParsedArg, ArgParseError>
+    where I: Iterator<Item=&'a ValueRef> {
+    if let Some(fv) = formals.next() {
+        match **fv {
+            Value::Symbol(None, ref name) =>
+                if name == "&" {
+                    // Vararg marker:
+                    Ok(ParsedArg::VarargMarker)
+                } else {
+                    // Normal formal name `foo`:
+                    Ok(ParsedArg::FormalName(name.clone()))
+                },
+            // A type argument `(= List.Empty)`:
+            Value::List(ref ls) => {
+                let mut it = ls.iter();
+                let op = it.next();
+                let typ = it.next();
+                // Is it a two-element list?
+                if op.is_some() && typ.is_some() && it.next().is_none() {
+                    if let Value::Symbol(None, ref opname) = **op.unwrap() {
+                        // Is the first element `=`?
+                        if &*opname == "=" {
+                            // Is the second element a symbol?
+                            if let Value::Symbol(..) = **typ.unwrap() {
+                                // If so, make an Expr::Local or Expr::Global:
+                                return Ok(ParsedArg::Identical(
+                                    Expr::Call {
+                                        op: Box::new(
+                                            shallow_analyze(op.unwrap().clone())),
+                                        args: vec![shallow_analyze(
+                                            typ.unwrap().clone())]
+                                    }));
+                            }
+                        }
+                    }
+                }
+                Err(ArgParseError::NonFormalName(fv.clone()))
+            },
+            _ => Err(ArgParseError::NonFormalName(fv.clone()))
+        }
+    } else {
+        // Out of formals:
+        Err(ArgParseError::End)
+    }
+}
+
+fn parse_formal_type<'a, I>(formals: &mut Peekable<I>) -> Expr
+    where I: Iterator<Item=&'a ValueRef> {
+    let mut res = Expr::Global("centring.lang".to_string(), "Any".to_string());
+    let mut found = false;
+    if let Some(fv) = formals.peek() {
+        if let Value::Keyword(..) = ***fv {
+            res = fv.as_id().unwrap();
+            found = true;
+        }
+    }
+    if found {
+        formals.next();
+    }
+    res
+}
+
+fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>,
+                                        Vec<Expr>, Option<Box<Expr>>) {
     if let Value::List(ref ls) = *formals {
         let mut formal_names = vec![];
         let mut vararg_name = None;
-        let mut iter = ls.iter();
+        let mut formal_types = vec![];
+        let mut vararg_type = None;
+
+        let mut it = ls.iter().peekable();
         let mut va_expected = false;
-        while let Some(formal) = iter.next() {
-            match **formal {
-                Value::Symbol(None, ref name) =>
-                    if let "&" = name.as_ref() {
-                        va_expected = true;
-                    } else if !va_expected {
-                        formal_names.push(name.clone());
+        loop {
+            match parse_formal(&mut it) {
+                Ok(ParsedArg::FormalName(name)) => {
+                    if !va_expected {
+                        formal_names.push(name);
+                        formal_types.push(parse_formal_type(&mut it));
+                    } else if vararg_name.is_none() {
+                        vararg_name = Some(name);
+                        vararg_type = Some(Box::new(parse_formal_type(&mut it)));
                     } else {
-                        vararg_name = Some(name.clone());
-                    },
-                _ => panic!()
+                        panic!()
+                    }
+                },
+                Ok(ParsedArg::Identical(e)) => {
+                    if !va_expected {
+                        formal_names.push("_".to_string());
+                        formal_types.push(e);
+                    } else if vararg_name.is_none() {
+                        vararg_name = Some("_".to_string());
+                        vararg_type = Some(Box::new(e));
+                    } else {
+                        panic!()
+                    }
+                },
+                Ok(ParsedArg::VarargMarker) => va_expected = true,
+                Err(ArgParseError::End) => break,
+                Err(_) => panic!()
             }
         }
-        if va_expected && vararg_name.is_none() {
-            panic!()
-        }
-        (formal_names, vararg_name)
+        (formal_names, vararg_name, formal_types, vararg_type)
     } else {
         panic!()
     }
@@ -73,18 +164,15 @@ pub fn shallow_analyze(sexpr: ValueRef) -> Expr {
                             if name.is_some() {
                                 it.next();
                             }
-                            let (formal_names, vararg_name) =
+                            let (formal_names, vararg_name,
+                                 formal_types, vararg_type) =
                                 parse_formals(it.next().unwrap().clone());
                             Expr::Fn {
                                 name: name,
                                 formal_names: formal_names.clone(),
                                 vararg_name: vararg_name,
-                                formal_types: formal_names.iter()
-                                    .map(|_| Expr::Const(
-                                        Rc::new(Value::Keyword(
-                                            Some("centring.lang".to_string()),
-                                            "Any".to_string())))).collect(),
-                                vararg_type: None,
+                                formal_types: formal_types,
+                                vararg_type: vararg_type,
                                 body: Rc::new(Expr::Const(
                                     it.next().unwrap().clone()))
                             }
