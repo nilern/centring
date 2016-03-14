@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::cell::RefCell;
 use std::iter::FromIterator;
 use std::hash::{Hash, Hasher};
 use std::collections::HashMap;
@@ -46,7 +47,8 @@ pub enum Value {
     },
     MultiFn {
         name: String,
-        methods: HashMap<(Vec<TypeMatcher>, Option<TypeMatcher>), ValueRef>
+        methods: RefCell<HashMap<(Vec<TypeMatcher>, Option<TypeMatcher>),
+                                 ValueRef>>
     },
     Macro(ValueRef)
 }
@@ -66,6 +68,14 @@ impl Value {
 
     pub fn is_abs_type(&self) -> bool {
         if let Value::AbstractType {..} = *self { true } else { false }
+    }
+
+    pub fn is_anyfn(&self) -> bool {
+        match *self {
+            Value::Fn { .. } | Value::NativeFn { .. } | Value::MultiFn { .. } =>
+                true,
+            _ => false
+        }
     }
         
     pub fn get_int(&self) -> Option<isize> {
@@ -101,8 +111,46 @@ impl Value {
         }
     }
 
+    pub fn add_method(&self, meth: ValueRef) {
+        if let Value::MultiFn { ref methods, .. } = *self {
+            match *meth {
+                Value::Fn { ref name, ref formal_types, ref vararg_type, .. } |
+                Value::NativeFn { ref name, ref formal_types,
+                                  ref vararg_type, .. } => {
+                    methods.borrow_mut().insert(
+                        (formal_types.clone(), vararg_type.clone()),
+                        meth.clone());
+                },
+                Value::MultiFn { methods: ref vmethods, .. } =>
+                    for (k, v) in vmethods.borrow().iter() {
+                        methods.borrow_mut().insert(k.clone(), v.clone());
+                    },
+                _ => panic!()
+            };
+        } else {
+            panic!()
+        }
+    }
+
     pub fn get_string(&self) -> Option<String> {
         if let Value::String(ref s) = *self { Some(s.clone()) } else { None }
+    }
+}
+
+pub fn as_multi(fv: ValueRef) -> Option<ValueRef> {
+    match *fv {
+        Value::MultiFn { .. } => Some(fv.clone()),
+        Value::Fn { ref name, ref formal_types, ref vararg_type, .. } |
+        Value::NativeFn { ref name, ref formal_types, ref vararg_type, .. } => {
+            let mut methods = HashMap::new();
+            methods.insert((formal_types.clone(), vararg_type.clone()),
+                           fv.clone());
+            Some(Rc::new(Value::MultiFn {
+                name: name.clone(),
+                methods: RefCell::new(methods)
+            }))
+        },
+        _ => None
     }
 }
 

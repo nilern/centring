@@ -2,7 +2,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use value::ValueRef;
+use value::{Value, ValueRef, as_multi};
 
 pub type EnvRef = Rc<RefCell<Environment>>;
 
@@ -73,6 +73,17 @@ impl Environment {
     }
 
     pub fn extend(&mut self, k: String, v: ValueRef) {
+        match self.lookup(&k) {
+            Some(ref mut prevv) if prevv.is_anyfn() && v.is_anyfn() => {
+                let mut multi = as_multi(prevv.clone()).unwrap();
+                multi.add_method(v.clone());
+                self.insert(k, multi);
+            },
+            _ => self.insert(k, v)
+        }
+    }
+
+    fn insert(&mut self, k: String, v: ValueRef) {
         match *self {
             Environment::Env { ref mut bindings, .. } => bindings.insert(k, v),
             Environment::Mod { ref mut bindings, .. } => bindings.insert(k, v)

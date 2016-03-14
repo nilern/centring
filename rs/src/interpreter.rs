@@ -366,7 +366,8 @@ impl Interpreter {
                 }
             },
             Value::MultiFn { ref methods, .. } => {
-                let mut match_tups: Vec<_> = methods.iter().filter_map(
+                let meths = methods.borrow();
+                let mut match_tups: Vec<_> = meths.iter().filter_map(
                     |(k, meth)| {
                         let ddist = self.dispatch_dist(&k.0, &k.1, &args, true);
                         if ddist >= 0 {

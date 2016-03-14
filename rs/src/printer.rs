@@ -66,7 +66,8 @@ impl fmt::Display for Value {
                 write!(f, ")>")
             },
             Value::MultiFn { ref name, ref methods } =>
-                write!(f, "#<MultiFn {} with {} methods>", name, methods.len()),
+                write!(f, "#<MultiFn {} with {} methods>",
+                       name, methods.borrow().len()),
             Value::Macro(ref expander) =>
                 write!(f, "#<Macro {}>", expander)
         }
