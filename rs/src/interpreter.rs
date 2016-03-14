@@ -425,7 +425,7 @@ impl Interpreter {
                 // Return value:
                 res
             },
-            Value::NativeFn { ref code, .. } => code(self, args),
+            Value::NativeFn { ref code, .. } => code(self, args, varvals),
             // FIXME: use the MultiFn call(t :RecordType & field-vals) for this:
             Value::RecordType { .. } => self.create_record(op.clone(), args),
             _ => panic!()
