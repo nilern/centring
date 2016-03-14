@@ -55,13 +55,24 @@ impl Interpreter {
                                         "Char".to_string())),
             supertyp: Some(any.clone())
         });
+        let type_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "Type".to_string())),
+            supertyp: Some(any.clone())
+        });
+        let builtin_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "BuiltInType".to_string())),
+            supertyp: Some(type_type.clone())
+        });
         itp.store_global("centring.lang", "Any", any.clone());
         itp.store_global("centring.lang", "String", ctr_string.clone());
         itp.store_global("centring.lang", "Int", int_type.clone());
         itp.store_global("centring.lang", "Bool", bool_type.clone());
         itp.store_global("centring.lang", "Char", char_type.clone());
-                         
-        
+        itp.store_global("centring.lang", "Type", type_type.clone());
+        itp.store_global("centring.lang", "BuiltInType", builtin_type.clone());
+
         itp.store_global("centring.lang", "set-module!",
                          Rc::new(Value::NativeFn {
                              name: "set-module!".to_string(),
@@ -276,6 +287,9 @@ impl Interpreter {
             Value::Int(_) => self.load_global("centring.lang", "Int").unwrap(),
             Value::Bool(_) => self.load_global("centring.lang", "Bool").unwrap(),
             Value::Char(_) => self.load_global("centring.lang", "Char").unwrap(),
+
+            Value::BuiltInType { .. } =>
+                self.load_global("centring.lang", "BuiltInType").unwrap(),
             _ => panic!()
         }
     }
@@ -338,16 +352,14 @@ impl Interpreter {
                 }
                 // Check types of positionals:
                 for (tm, v) in formal_types.iter().zip(args.iter()) {
-                    if self.arg_dist(tm,
-                                     self.type_of(v.as_ref())).is_none() {
+                    if self.arg_dist(tm, v.clone()).is_none() {
                         panic!()
                     }
                 }
                 // Check the types of vararg contents:
                 if let Some(ref tm) = *vararg_type {
                     for v in varvals.iter() {
-                        if self.arg_dist(tm,
-                                         self.type_of(v.as_ref())).is_none() {
+                        if self.arg_dist(tm, v.clone()).is_none() {
                             panic!()
                         }
                     }
@@ -422,9 +434,10 @@ impl Interpreter {
 
     fn arg_dist(&self, matcher: &TypeMatcher, arg: ValueRef) -> Option<usize> {
         match *matcher {
-            TypeMatcher::Isa(ref typ) => self.type_dist(typ.clone(), arg),
+            TypeMatcher::Isa(ref typ) =>
+                self.type_dist(typ.clone(), self.type_of(arg.as_ref())),
             TypeMatcher::Identical(ref typ) =>
-                if typ.as_ref() == self.type_of(arg.as_ref()).as_ref() {
+                if &**typ as *const _ == &*arg as *const _ {
                     Some(0)
                 } else {
                     None

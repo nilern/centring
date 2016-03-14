@@ -39,7 +39,7 @@ fn parse_formal<'a, I>(formals: &mut I) -> Result<ParsedArg, ArgParseError>
                         if &*opname == "=" {
                             // Is the second element a symbol?
                             if let Value::Symbol(..) = **typ.unwrap() {
-                                // If so, make an Expr::Local or Expr::Global:
+                                // If so, make the AST node for `(= ...)`:
                                 return Ok(ParsedArg::Identical(
                                     Expr::Call {
                                         op: Box::new(
@@ -89,7 +89,7 @@ fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>,
         let mut va_expected = false;
         loop {
             match parse_formal(&mut it) {
-                Ok(ParsedArg::FormalName(name)) => {
+                Ok(ParsedArg::FormalName(name)) =>
                     if !va_expected {
                         formal_names.push(name);
                         formal_types.push(parse_formal_type(&mut it));
@@ -98,9 +98,8 @@ fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>,
                         vararg_type = Some(Box::new(parse_formal_type(&mut it)));
                     } else {
                         panic!()
-                    }
-                },
-                Ok(ParsedArg::Identical(e)) => {
+                    },
+                Ok(ParsedArg::Identical(e)) =>
                     if !va_expected {
                         formal_names.push("_".to_string());
                         formal_types.push(e);
@@ -109,8 +108,7 @@ fn parse_formals(formals: ValueRef) -> (Vec<String>, Option<String>,
                         vararg_type = Some(Box::new(e));
                     } else {
                         panic!()
-                    }
-                },
+                    },
                 Ok(ParsedArg::VarargMarker) => va_expected = true,
                 Err(ArgParseError::End) => break,
                 Err(_) => panic!()
