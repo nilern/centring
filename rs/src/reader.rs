@@ -172,7 +172,7 @@ impl Parser {
 }
 
 fn is_constituent(c: char) -> bool {
-    c.is_alphanumeric() || ".!?&|<=>+-*/".contains(c)
+    c.is_alphanumeric() || ".!?&|<=>+-*/_$".contains(c)
 }
 
 impl FromStr for Value {

@@ -2,21 +2,92 @@
 
 (centring.sf/at-expansion
  (centring.sf/do
-   (centring.sf/def quote
-     (centring.sf/macro
-      (centring.sf/fn (v)
-        (prepend 'centring.sf/quote (prepend v '())))))
+   (centring.sf/def list
+     (centring.sf/fn () '()))
+   (centring.sf/def list
+     (centring.sf/fn (v & vs) (prepend v (apply list vs))))
    
-   (centring.sf/def def
-     (centring.sf/macro
-      (centring.sf/fn (name expr)
-        (prepend 'centring.sf/def (prepend name (prepend expr '()))))))))
+   (centring.sf/def list*
+     (centring.sf/fn () '()))
+   (centring.sf/def list*
+     (centring.sf/fn (ls) ls))
+   (centring.sf/def list*
+     (centring.sf/fn (v & vs) (prepend v (apply list* vs))))))
 
 (centring.sf/at-expansion
- (def if
+ (centring.sf/def at-expansion
    (centring.sf/macro
-    (centring.sf/fn (cond then else)
-      (prepend 'centring.sf/if
-               (prepend cond
-                        (prepend then
-                                 (prepend else '()))))))))
+    (centring.sf/fn (expr)
+      (list 'centring.sf/at-expansion expr)))))
+
+(at-expansion
+ (centring.sf/def def
+   (centring.sf/macro
+    (centring.sf/fn (name expr)
+      (list 'centring.sf/def name expr)))))
+
+(at-expansion
+ (def macro
+   (centring.sf/macro
+    (centring.sf/fn (expander)
+      (list 'centring.sf/macro expander)))))
+
+(at-expansion
+ (def fn
+   (macro
+    (centring.sf/fn (formals body)
+      (list 'centring.sf/fn formals body)))))
+
+(at-expansion
+ (def defmacro
+   (macro (fn (name expander)
+            (list 'at-expansion
+                  (list 'def name
+                        (list 'macro expander)))))))
+
+(defmacro if
+  (fn (cond then else)
+    (list 'centring.sf/if cond then else)))
+
+(at-expansion
+ (centring.sf/do
+   (def expand-cond
+     (fn () '(centring.sf/do)))
+   (def expand-cond
+     (fn (entry) entry))
+   (def expand-cond
+     (fn (entry & entries)
+       (list 'if (.left entry)
+             (.left (.right entry))
+             (apply expand-cond entries))))
+   (def cond (macro expand-cond))
+
+   (def expand-and
+     (fn () #t))
+   (def expand-and
+     (fn (expr & exprs)
+       (list 'if expr (apply list 'and exprs) #f)))
+   (def and (macro expand-and))))
+
+(def inc (fn (n) (+ n 1)))
+(def dec (fn (n) (- n 1)))
+
+(def foldl
+  (fn (f v ls :List.Empty) v))
+(def foldl
+  (fn (f v ls :List.Pair)
+    (foldl f (f v (.left ls)) (.right ls))))
+
+(def count (fn (ls :List) (foldl (fn (acc _) (inc acc)) 0 ls)))
+
+;; (def expand-qq
+;;   (fn (_ l :List.Empty) l))
+;; (def expand-qq
+;;   (fn (n expr :List.Pair)
+;;     (cond
+;;      ((and (= (.left expr) 'unquote) (= (count expr) 2))
+;;       (if (= n 1)
+;;         (.left (.right expr))
+;;         (list 'list ''unquote (expand-qq (dec n) (.left (.right expr))))))
+;;      (
+

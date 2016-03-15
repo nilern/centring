@@ -61,6 +61,11 @@ impl Interpreter {
             supertyp: Some(any.clone())
         });
         
+        let tuple_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "Tuple".to_string())),
+            supertyp: Some(any.clone())
+        });
         let list_type = Rc::new(Value::BuiltInType {
             name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
                                         "List".to_string())),
@@ -87,6 +92,22 @@ impl Interpreter {
                                         "BuiltInType".to_string())),
             supertyp: Some(type_type.clone())
         });
+
+        let fn_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "Fn".to_string())),
+            supertyp: Some(any.clone())
+        });
+        let natfn_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "NativeFn".to_string())),
+            supertyp: Some(any.clone())
+        });
+        let multifn_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "MultiFn".to_string())),
+            supertyp: Some(any.clone())
+        });
         
         itp.store_global("centring.lang", "Any", any.clone());
         itp.store_global("centring.lang", "String", ctr_string.clone());
@@ -95,12 +116,17 @@ impl Interpreter {
         itp.store_global("centring.lang", "Char", char_type.clone());
         itp.store_global("centring.lang", "Symbol", symbol_type.clone());
         
+        itp.store_global("centring.lang", "Tuple", tuple_type.clone());
         itp.store_global("centring.lang", "List", list_type.clone());
         itp.store_global("centring.lang", "List.Empty", elist_type.clone());
         itp.store_global("centring.lang", "List.Pair", plist_type.clone());
         
         itp.store_global("centring.lang", "Type", type_type.clone());
         itp.store_global("centring.lang", "BuiltInType", builtin_type.clone());
+        
+        itp.store_global("centring.lang", "Fn", fn_type.clone());
+        itp.store_global("centring.lang", "NativeFn", natfn_type.clone());
+        itp.store_global("centring.lang", "MultiFn", multifn_type.clone());
 
         itp.store_global("centring.lang", "set-module!",
                          Rc::new(Value::NativeFn {
@@ -189,6 +215,24 @@ impl Interpreter {
                                TypeMatcher::Isa(list_type.clone())],
             vararg_type: None,
             code: builtins::prepend_ls
+        }));
+        itp.store_global("centring.lang", ".left", Rc::new(Value::NativeFn {
+            name: ".left".to_string(),
+            formal_types: vec![TypeMatcher::Isa(plist_type.clone())],
+            vararg_type: None,
+            code: builtins::fld_left_pair
+        }));
+        itp.store_global("centring.lang", ".right", Rc::new(Value::NativeFn {
+            name: "prepend".to_string(),
+            formal_types: vec![TypeMatcher::Isa(plist_type.clone())],
+            vararg_type: None,
+            code: builtins::fld_right_pair
+        }));
+        itp.store_global("centring.lang", "apply", Rc::new(Value::NativeFn {
+            name: "apply".to_string(),
+            formal_types: vec![TypeMatcher::Isa(any.clone())],
+            vararg_type: Some(TypeMatcher::Isa(any.clone())),
+            code: builtins::apply
         }));
         itp.store_global("centring.lang", "load", Rc::new(Value::NativeFn {
             name: "load".to_string(),
@@ -315,22 +359,32 @@ impl Interpreter {
         match *val {
             Value::Record { ref typ, .. } => typ.clone(),
             Value::Singleton { ref typ } => typ.clone(),
-            Value::String(_) =>
-                self.load_global("centring.lang", "String").unwrap(),
             Value::Int(_) => self.load_global("centring.lang", "Int").unwrap(),
             Value::Bool(_) => self.load_global("centring.lang", "Bool").unwrap(),
             Value::Char(_) => self.load_global("centring.lang", "Char").unwrap(),
             Value::Symbol(..) =>
                 self.load_global("centring.lang", "Symbol").unwrap(),
 
+            Value::Tuple(_) =>
+                self.load_global("centring.lang", "Tuple").unwrap(),
             Value::List(List::Empty) =>
                 self.load_global("centring.lang", "List.Empty").unwrap(),
             Value::List(List::Pair { .. }) =>
                 self.load_global("centring.lang", "List.Pair").unwrap(),
+            Value::String(_) =>
+                self.load_global("centring.lang", "String").unwrap(),
 
             Value::BuiltInType { .. } =>
                 self.load_global("centring.lang", "BuiltInType").unwrap(),
-            _ => panic!()
+
+            Value::Fn { .. } =>
+                self.load_global("centring.lang", "Fn").unwrap(),
+            Value::NativeFn { .. } =>
+                self.load_global("centring.lang", "NativeFn").unwrap(),
+            Value::MultiFn { .. } =>
+                self.load_global("centring.lang", "MultiFn").unwrap(),
+            
+            _ => panic!("{} has an unknown type", val)
         }
     }
 

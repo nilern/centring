@@ -36,6 +36,24 @@ pub fn prepend_ls(_: &mut Interpreter, args: Vec<ValueRef>,
     }))
 }
 
+pub fn fld_left_pair(_: &mut Interpreter, args: Vec<ValueRef>,
+                   _: Vec<ValueRef>) -> ValueRef {
+    if let Value::List(List::Pair { ref first, .. }) = *args[0] {
+        first.clone()
+    } else {
+        panic!()
+    }
+}
+
+pub fn fld_right_pair(_: &mut Interpreter, args: Vec<ValueRef>,
+                   _: Vec<ValueRef>) -> ValueRef {
+    if let Value::List(List::Pair { ref rest, .. }) = *args[0] {
+        Rc::new(Value::List((**rest).clone()))
+    } else {
+        panic!()
+    }
+}
+
 pub fn set_module(itp: &mut Interpreter, args: Vec<ValueRef>,
                   _: Vec<ValueRef>) -> ValueRef {
     let mod_name = args[0].get_str().unwrap();
@@ -87,6 +105,19 @@ pub fn supertype(itp: &mut Interpreter, args: Vec<ValueRef>, _: Vec<ValueRef>)
 pub fn isa(itp: &mut Interpreter, args: Vec<ValueRef>, _: Vec<ValueRef>)
            -> ValueRef {
     Rc::new(Value::Bool(itp.isa(args[0].clone(), args[1].clone())))
+}
+
+pub fn apply(itp: &mut Interpreter, args: Vec<ValueRef>, varvals: Vec<ValueRef>)
+             -> ValueRef {
+    let mut new_args = varvals.clone();
+    if let Some(ref expandee) = new_args.pop() {
+        if let Value::Tuple(ref vs) = **expandee {
+            new_args.extend(vs.clone().into_iter());
+        }
+    } else {
+        panic!();
+    }
+    itp.call(args[0].clone(), new_args)
 }
 
 pub fn load(itp: &mut Interpreter, args: Vec<ValueRef>, _: Vec<ValueRef>)
