@@ -42,6 +42,7 @@ impl Parser {
             input: self.input.clone()
         };
         Ok((c, q))
+
     }
 
     fn pop_if<P>(&self, pred: P, msg: &str) -> ParseResult<char>
@@ -148,7 +149,9 @@ impl Parser {
             Some(':') => {
                 let (v, q) = try!(self.pop().unwrap().1.parse_token());
                 Ok((v.as_kw().unwrap(), q))
-            }
+            },
+            Some(';') =>
+                self.pop_while(|c| c != '\n').1.pop().unwrap().1.parse_expr(),
             Some(c) => Err((ParseError::Illegal(c), self.clone())),
             None => Err((ParseError::EOF, self.clone()))
         }

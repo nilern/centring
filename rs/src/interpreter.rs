@@ -5,7 +5,7 @@ use std::iter::repeat;
 use std::cmp::min;
 use std::cmp::Ordering;
 
-use value::{Value, ValueRef, TypeMatcher};
+use value::{Value, ValueRef, TypeMatcher, List};
 use environment::{Environment, EnvRef};
 use builtins;
 use builtins::NativeFnCode;
@@ -55,6 +55,28 @@ impl Interpreter {
                                         "Char".to_string())),
             supertyp: Some(any.clone())
         });
+        let symbol_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "Symbol".to_string())),
+            supertyp: Some(any.clone())
+        });
+        
+        let list_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "List".to_string())),
+            supertyp: Some(any.clone())
+        });
+        let elist_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "List.Empty".to_string())),
+            supertyp: Some(list_type.clone())
+        });
+        let plist_type = Rc::new(Value::BuiltInType {
+            name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                        "List.Pair".to_string())),
+            supertyp: Some(list_type.clone())
+        });
+        
         let type_type = Rc::new(Value::BuiltInType {
             name: Rc::new(Value::Symbol(Some("centring.lang".to_string()),
                                         "Type".to_string())),
@@ -65,11 +87,18 @@ impl Interpreter {
                                         "BuiltInType".to_string())),
             supertyp: Some(type_type.clone())
         });
+        
         itp.store_global("centring.lang", "Any", any.clone());
         itp.store_global("centring.lang", "String", ctr_string.clone());
         itp.store_global("centring.lang", "Int", int_type.clone());
         itp.store_global("centring.lang", "Bool", bool_type.clone());
         itp.store_global("centring.lang", "Char", char_type.clone());
+        itp.store_global("centring.lang", "Symbol", symbol_type.clone());
+        
+        itp.store_global("centring.lang", "List", list_type.clone());
+        itp.store_global("centring.lang", "List.Empty", elist_type.clone());
+        itp.store_global("centring.lang", "List.Pair", plist_type.clone());
+        
         itp.store_global("centring.lang", "Type", type_type.clone());
         itp.store_global("centring.lang", "BuiltInType", builtin_type.clone());
 
@@ -124,14 +153,17 @@ impl Interpreter {
         itp.store_global("centring.lang", "supertype",
                          Rc::new(Value::NativeFn {
                              name: "supertype".to_string(),
-                             formal_types: vec![],
+                             formal_types: vec![
+                                 TypeMatcher::Isa(type_type.clone())],
                              vararg_type: None,
                              code: builtins::supertype
                          }));
         itp.store_global("centring.lang", "isa?",
                          Rc::new(Value::NativeFn {
                              name: "isa?".to_string(),
-                             formal_types: vec![],
+                             formal_types: vec![
+                                 TypeMatcher::Isa(type_type.clone()),
+                                 TypeMatcher::Isa(any.clone())],
                              vararg_type: None,
                              code: builtins::isa
                          }));
@@ -153,13 +185,14 @@ impl Interpreter {
         
         itp.store_global("centring.lang", "prepend", Rc::new(Value::NativeFn {
             name: "prepend".to_string(),
-            formal_types: vec![],
+            formal_types: vec![TypeMatcher::Isa(any.clone()),
+                               TypeMatcher::Isa(list_type.clone())],
             vararg_type: None,
             code: builtins::prepend_ls
         }));
         itp.store_global("centring.lang", "load", Rc::new(Value::NativeFn {
             name: "load".to_string(),
-            formal_types: vec![TypeMatcher::Isa(ctr_string)],
+            formal_types: vec![TypeMatcher::Isa(ctr_string.clone())],
             vararg_type: None,
             code: builtins::load
         }));
@@ -287,6 +320,13 @@ impl Interpreter {
             Value::Int(_) => self.load_global("centring.lang", "Int").unwrap(),
             Value::Bool(_) => self.load_global("centring.lang", "Bool").unwrap(),
             Value::Char(_) => self.load_global("centring.lang", "Char").unwrap(),
+            Value::Symbol(..) =>
+                self.load_global("centring.lang", "Symbol").unwrap(),
+
+            Value::List(List::Empty) =>
+                self.load_global("centring.lang", "List.Empty").unwrap(),
+            Value::List(List::Pair { .. }) =>
+                self.load_global("centring.lang", "List.Pair").unwrap(),
 
             Value::BuiltInType { .. } =>
                 self.load_global("centring.lang", "BuiltInType").unwrap(),
