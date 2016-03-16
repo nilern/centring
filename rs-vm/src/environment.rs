@@ -6,17 +6,17 @@ use value::ValueRef;
 
 pub type EnvRef = Rc<RefCell<Environment>>;
 
-enum Environment {
+pub enum Environment {
     Env(Env),
     Mod(Mod)
 }
 
-struct Env {
+pub struct Env {
     bindings: HashMap<String, ValueRef>,
     parent: EnvRef
 }
 
-struct Mod {
+pub struct Mod {
     name: String,
     bindings: HashMap<String, ValueRef>,
     aliases: HashMap<String, EnvRef>,

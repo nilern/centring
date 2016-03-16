@@ -2,11 +2,10 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use environment::EnvRef;
 use bytecode::Bytecode;
 use builtins::NativeFnCode;
 
-enum Value {
+pub enum Value {
     Int(isize),
     Bool(bool),
     Char(char),
@@ -24,53 +23,51 @@ enum Value {
     AbstractType(FieldlessType),
     BuiltInType(FieldlessType),
 
-    Fn(Fn),
+    Fn(Closure),
     NativeFn(NativeFn),
     MultiFn(MultiFn)
 }
 
 pub type ValueRef = Rc<Value>;
 
-struct Symbol(Option<String>, String);
+pub struct Symbol(Option<String>, String);
 
-struct Record {
+pub struct Record {
     typ: ValueRef,
     vals: Vec<ValueRef>
 }
 
-struct Singleton {
+pub struct Singleton {
     typ: ValueRef
 }
 
-struct FieldType {
+pub struct FieldType {
     name: ValueRef,
     supertyp: ValueRef,
     field_names: Vec<String>
 }
 
-struct FieldlessType {
+pub struct FieldlessType {
     name: ValueRef,
     supertyp: ValueRef
 }
 
-struct Fn {
-    name: ValueRef,
-    formal_names: Vec<String>,
-    vararg_name: Option<String>,
-    formal_types: Vec<TypeMatcher>,
-    vararg_type: Option<TypeMatcher>,
-    code: Vec<Bytecode>,
-    env: EnvRef
+pub struct Closure {
+    pub code: Rc<CodeObject>,
+    pub clovers: Rc<Vec<ValueRef>>
 }
 
-struct NativeFn {
-    name: ValueRef,
-    formal_types: Vec<TypeMatcher>,
-    vararg_type: Option<TypeMatcher>,
-    code: NativeFnCode
+pub struct CodeObject {
+    pub instrs: Rc<Vec<Bytecode>>,
+    pub consts: Rc<Vec<ValueRef>>,
+    pub codeobjs: Rc<Vec<Rc<CodeObject>>>
 }
 
-struct MultiFn {
+pub struct NativeFn {
+    pub code: NativeFnCode
+}
+
+pub struct MultiFn {
     name: ValueRef,
     methods: RefCell<HashMap<(Vec<TypeMatcher>, Option<TypeMatcher>), ValueRef>>
 }
@@ -78,4 +75,14 @@ struct MultiFn {
 enum TypeMatcher {
     Isa(ValueRef),
     Identical(ValueRef)
+}
+
+impl Value {
+    pub fn unwrap_bool(&self) -> bool {
+        if let Value::Bool(b) = *self {
+            b
+        } else {
+            panic!()
+        }
+    }
 }

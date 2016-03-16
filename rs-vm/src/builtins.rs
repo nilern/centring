@@ -1,5 +1,4 @@
 use value::ValueRef;
-use vm::{VMProcess, VMError};
+use vm::{VMProcess, VMResult};
 
-pub type NativeFnCode = fn(&mut VMProcess, Vec<ValueRef>, Option<Vec<ValueRef>>)
-                           -> Result<ValueRef, VMError>;
+pub type NativeFnCode = fn(&mut VMProcess);
