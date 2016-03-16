@@ -1,4 +1,5 @@
 rs/target
+rs-vm/target
 clj/.nrepl-*
 git_stats
 scm/syntax
