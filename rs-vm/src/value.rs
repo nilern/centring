@@ -1,10 +1,8 @@
 use std::rc::Rc;
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
-use bytecode::Bytecode;
+use vm::CodeObject;
 use builtins::NativeFnCode;
 
 #[derive(Debug)]
@@ -63,14 +61,7 @@ pub struct FieldlessType {
 #[derive(Debug)]
 pub struct Closure {
     pub codeobj: Rc<CodeObject>,
-    pub clovers: Vec<ValueRef>
-}
-
-#[derive(Debug)]
-pub struct CodeObject {
-    pub instrs: Vec<Bytecode>,
-    pub consts: Vec<ValueRef>,
-    pub codeobjs: Vec<Rc<CodeObject>>
+    pub clovers: Rc<Vec<ValueRef>>
 }
 
 pub struct NativeFn {
@@ -120,7 +111,7 @@ impl Value {
         }
     }
 
-    pub fn unwrap_clovers(&self) -> Vec<ValueRef> {
+    pub fn unwrap_clovers(&self) -> Rc<Vec<ValueRef>> {
         if let Value::Fn(Closure { ref clovers, .. }) = *self {
             clovers.clone()
         } else {
