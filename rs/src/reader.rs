@@ -146,6 +146,30 @@ impl Parser {
                     &Rc::new(prepend(Rc::new(v), &Rc::new(List::Empty))))),
                     q))
             },
+            Some('`') => {
+                let (v, q) = try!(self.pop().unwrap().1.parse_expr());
+                Ok((Value::List(prepend(
+                    Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                          "quasiquote".to_string())),
+                    &Rc::new(prepend(Rc::new(v), &Rc::new(List::Empty))))),
+                    q))
+            },
+            Some(',') => {
+                let (_, q) = self.pop().unwrap();
+                let mut opname = "unquote";
+                let (v, r) = if let Some('@') = q.peek() {
+                    opname = "unquote-splicing";
+                    try!(q.pop().unwrap().1.parse_expr())
+                } else {
+                    try!(q.parse_expr())
+                };
+                    
+                Ok((Value::List(prepend(
+                    Rc::new(Value::Symbol(Some("centring.lang".to_string()),
+                                          opname.to_string())),
+                    &Rc::new(prepend(Rc::new(v), &Rc::new(List::Empty))))),
+                    r))
+            },
             Some(':') => {
                 let (v, q) = try!(self.pop().unwrap().1.parse_token());
                 Ok((v.as_kw().unwrap(), q))

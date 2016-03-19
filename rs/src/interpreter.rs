@@ -193,6 +193,15 @@ impl Interpreter {
                              vararg_type: None,
                              code: builtins::isa
                          }));
+        itp.store_global("centring.lang", "=",
+                         Rc::new(Value::NativeFn {
+                             name: "=".to_string(),
+                             formal_types: vec![
+                                 TypeMatcher::Isa(any.clone()),
+                                 TypeMatcher::Isa(any.clone())],
+                             vararg_type: None,
+                             code: builtins::egal
+                         }));
 
         let mathops: [(&str, NativeFnCode); 4] =
             [("+", builtins::add_2i),
@@ -323,7 +332,12 @@ impl Interpreter {
         match *sym {
             Value::Symbol(None, ref name) =>
                 self.env.borrow().lookup_macro(name),
-            Value::Symbol(Some(_), _) => None,
+            Value::Symbol(Some(ref mod_name), ref name) =>
+                if let Some(ref md) = self.mod_registry.get(mod_name) {
+                    md.borrow().lookup_macro(name)
+                } else {
+                    None
+                },
             _ => panic!()
         }
     }

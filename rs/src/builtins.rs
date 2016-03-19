@@ -79,7 +79,7 @@ pub fn record_type(itp: &mut Interpreter, args: Vec<ValueRef>,
     let name = args[0].get_string().unwrap();
     let supertyp = args[1].clone();
     if ! supertyp.is_abs_type() { panic!() }
-    let field_names = args[2..].iter().map(|s| s.get_string().unwrap()).collect();
+    let field_names = varvals.iter().map(|s| s.get_string().unwrap()).collect();
     itp.create_record_type(name, Some(supertyp), field_names)
 }
 
@@ -105,6 +105,11 @@ pub fn supertype(itp: &mut Interpreter, args: Vec<ValueRef>, _: Vec<ValueRef>)
 pub fn isa(itp: &mut Interpreter, args: Vec<ValueRef>, _: Vec<ValueRef>)
            -> ValueRef {
     Rc::new(Value::Bool(itp.isa(args[0].clone(), args[1].clone())))
+}
+
+pub fn egal(itp: &mut Interpreter, args: Vec<ValueRef>, _: Vec<ValueRef>)
+            -> ValueRef {
+    Rc::new(Value::Bool(args[0] == args[1]))
 }
 
 pub fn apply(itp: &mut Interpreter, args: Vec<ValueRef>, varvals: Vec<ValueRef>)
