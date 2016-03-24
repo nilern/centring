@@ -1,9 +1,9 @@
 (centring.sf/do
   (centring.sf/def fact
     (centring.sf/fn (n) (Int)
-      (centring.sf/letfn ((f (n acc) (Int Int)
-                             (if (< n 1)
+      (centring.sf/letfn ((f (m acc) (Int Int)
+                             (if (< m 1)
                                1
-                               (f (- n 1) (* acc n)))))
+                               (f (- m 1) (* acc m)))))
         (f n 1))))
   (fact 5))
