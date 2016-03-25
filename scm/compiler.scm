@@ -5,8 +5,11 @@
   (use (only matchable match match-let)
        (only (srfi 69)
              make-hash-table
+             alist->hash-table
              hash-table-set!
-             hash-table-ref/default)
+             hash-table-ref
+             hash-table-ref/default
+             hash-table-exists?)
        (only data-structures identity constantly))
 
   ;;;; CPS AST
@@ -23,6 +26,11 @@
   (define-record Fix
     bindings
     body)
+
+  (define-record Def
+    name
+    val
+    cont)
 
   (define-record App
     callee
@@ -43,8 +51,29 @@
                                  (cps-k then app-k)
                                  (cps-k else app-k)))))))
 
+      (`(centring.sf/fn ,formals ,types ,body)
+       (let ((f (gensym 'f)))
+         (cps-k `(centring.sf/letfn ((,f ,formals ,types ,body)) ,f) c)))
+
       (`(centring.sf/letfn ,bindings ,body)
        (make-Fix (cps-bindings bindings) (cps-k body c)))
+
+      (`(centring.sf/def ,name ,expr)
+       (cps-k expr (lambda (e)
+                     (make-Def name e
+                               (cps-k '(centring.lang/Tuple) c)))))
+      
+      (`(centring.sf/do . ,stmts)
+       (letrec ((monadize (lambda (stmts)
+                            (match stmts
+                              ('() '(centring.lang/Tuple))
+                              ((stmt) stmt)
+                              ((stmt . rstmts)
+                               (let ((_ (gensym '_)))
+                                 `((centring.sf/fn (,_) (centring.lang/Any)
+                                     ,(monadize rstmts))
+                                   ,stmt)))))))
+         (cps-k (monadize stmts) c)))
       
       (`(,callee . ,args)
        (cps-k callee (lambda (f)
@@ -91,8 +120,9 @@
                           `(,name ,formals ,types ,(f body))))
                       defns)
                  (f body)))
+      (($ Def name val cont) (make-Def name (f val) (f cont)))
       (($ App callee args) (make-App (f callee) (map f args)))
-      (_ ast)))
+      ((or (? Var?) (? Const?)) ast)))
 
   (define (walk inner outer ast)
     (outer (fmap inner ast)))
@@ -102,6 +132,29 @@
 
   (define (prewalk f ast)
     (walk (cute prewalk f <>) identity (f ast)))
+
+  (define (fold-leaves f acc ast)
+    (match ast
+      (($ If cond tcont fcont)
+       (let* ((acc* (fold-leaves f acc cond))
+              (acc** (fold-leaves f acc* tcont)))
+         (fold-leaves f acc** fcont)))
+      
+      (($ Fix defns body)
+       (let ((acc* (foldl (lambda (acc defn)
+                            (fold-leaves f acc (cadddr defn)))
+                          acc defns)))
+         (fold-leaves f acc* body)))
+
+      (($ Def name val cont)
+       (let ((acc* (fold-leaves f acc val)))
+         (fold-leaves f acc* cont)))
+      
+      (($ App callee args)
+       (let ((acc* (fold-leaves f acc callee)))
+         (foldl (lambda (acc arg) (fold-leaves f acc arg)) acc* args)))
+       
+      ((or (? Var?) (? Const?)) (f acc ast))))
 
   ;;;; Debugging utilities
 
@@ -117,15 +170,29 @@
                    `(,name ,args ,types ,(cps->sexp bbody))))
                bindings)
          ,(cps->sexp body)))
+      (($ Def name val cont)
+       `(centring.sf/def ,name ,(cps->sexp val) ,(cps->sexp cont)))
       (($ App callee args) `(,(cps->sexp callee) ,@(map cps->sexp args)))
       (($ Var name) name)
       (($ Const val) val)))
 
   ;;;; Utility Passes
 
+  (define (count-uses varnames ast)
+    (letrec ((c-u (lambda (acc node)
+                    (match node
+                      (($ Var name) (map (lambda (count varname)
+                                           (if (eq? varname name)
+                                             (+ count 1)
+                                             count))
+                                         acc
+                                         varnames))
+                      ((? Const?) acc)))))
+      (fold-leaves c-u (map (constantly 0) varnames) ast)))
+
   (define (replace-var-uses replacements ast)
     (match ast
-      (($ Var name) (make-Var (hash-table-ref/default replacements name name)))
+      (($ Var name) (hash-table-ref/default replacements name ast))
       (_ ast)))
 
   ;;;; Eta-Contraction
@@ -140,24 +207,25 @@
                      (`((,formal . ,rformals) (,($ Var arg) . ,rargs))
                       (and (eq? formal arg) (formals=args? rformals rargs)))
                      (_ #f))))
-                (handle-defns
-                 (lambda (defns)
-                   (match defns
-                     ;; TODO: confirm that the formal-types of name and callee
-                     ;; are the same and that name isn't one of the formals:
-                     (`(,(and defn
-                              `(,name ,formals ,_ ,($ App ($ Var callee) args)))
-                        . ,rdefns)
-                      (when (formals=args? formals args)
-                        (hash-table-set! replacements name callee))
-                      (cons defn (handle-defns rdefns)))
-                     (`(,defn . ,rdefns) (cons defn (handle-defns rdefns)))
-                     ('() '())))))
-         (make-Fix (handle-defns defns) body)))
+                (handle-defn
+                 (lambda (defn)
+                   (match-let ((`(,name ,formals ,types ,body) defn))
+                      ;; Replacing the body here lets us contract chains of
+                      ;; eta-redexes in one pass of `eta-contract`:
+                      (let ((body* (postwalk
+                                    (cute replace-var-uses replacements <>)
+                                    body)))
+                        (match body*
+                          ;; TODO: confirm that the formal-types of name and callee
+                          ;; are the same and that name isn't one of the formals:
+                          (($ App callee args)
+                           (when (formals=args? formals args)
+                             (hash-table-set! replacements name callee)))
+                          (_))
+                        `(,name ,formals ,types ,body*))))))
+         (make-Fix (map handle-defn defns) body)))
       (_ ast)))
 
-  ;; TODO: Make this cascade all the way down in a reasonable number of passes
-  ;; (one?), (maybe the generic walk can't do that?):
   (define (eta-contract ast)
     (let ((replacements (make-hash-table)))
       (prewalk (lambda (node)
@@ -165,32 +233,45 @@
                                     (eta-defn-replacements replacements node)))
                ast)))
 
+  ;;;; Beta-Contraction
+
+  (define (add-inlinables! inlinables node)
+    (match node
+      (($ Fix defns body)
+       ;; FIXME: If the only use is recursive, this will result in infinite
+       ;; expansion! Just leave those alone (they will be removed anyway).
+       (let ((uses (count-uses (map car defns) node)))
+         (map (lambda (usecount defn)
+                (when (= usecount 1)
+                  (hash-table-set! inlinables (car defn) (cdr defn))))
+              uses defns)))
+      (_)))
+
+  (define (inline inlinables node)
+    (match node
+      (($ App ($ Var callee) args)
+       ;; TODO: check that there can be no type errors from this call:
+       (if (hash-table-exists? inlinables callee)
+         (match-let (((formals _ body) (hash-table-ref inlinables callee)))
+           (if (= (length formals) (length args))
+             (let* ((f-as (alist->hash-table
+                           (map (lambda (formal arg) (cons formal arg))
+                                formals args)))
+                    (body* (postwalk (cute replace-var-uses f-as <>) body)))
+               body*)
+             node))
+         node))
+      (_ node)))
+       
+  (define (beta-contract ast)
+    (let ((inlinables (make-hash-table)))
+      (prewalk (lambda (node)
+                 (add-inlinables! inlinables node)
+                 (inline inlinables node))
+               ast)))
+
   ;;;; Elimination of Unused Variables
 
-  ;; Isn't this actually some sort of fold?
-  (define (count-uses varnames ast)
-    (let ((zeros (map (constantly 0) varnames)))
-      (match ast
-        (($ If cond tcont fcont) (map +
-                                      (count-uses varnames cond)
-                                      (count-uses varnames tcont)
-                                      (count-uses varnames fcont)))
-        (($ Fix defns body) (map +
-                                 (foldl
-                                  (lambda (acc defn)
-                                    (map + acc (count-uses varnames (cadddr defn))))
-                                  zeros defns)
-                                 (count-uses varnames body)))
-        (($ App callee args) (map +
-                                  (count-uses varnames callee)
-                                  (foldl (lambda (acc arg)
-                                           (map + acc (count-uses varnames arg)))
-                                         zeros args)))
-        (($ Var name) (map (lambda (varname) (if (eq? name varname) 1 0))
-                           varnames))
-        (($ Const _) zeros))))
-
-  ;; OPTIMIZE: this is probably slow since count-uses is used so much:
   (define (remove-unuseds ast)
     (postwalk
      (lambda (node)
