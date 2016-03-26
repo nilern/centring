@@ -19,6 +19,13 @@
       ('() #t)
       ((v . vs) (and (pred? v) (every? pred? vs)))))
 
+  (define (every-2? pred? ls1 ls2)
+    (cond
+     ((null? ls1) (null? ls2))
+     ((null? ls2) #f)
+     (else (and (pred? (car ls1) (car ls2))
+                (every-2? pred? (cdr ls1) (cdr ls2))))))
+
   ;;;; CPS AST
 
   (define-record Var name)
@@ -127,14 +134,14 @@
        (let ((r (gensym 'r)))
          (cons `(,name ,(cons r formals) ,(cons 'centring.lang/Any types)
                        ,(cps-k body (lambda (v)
-                                (make-App (make-Var r) (list v)))))
+                                      (make-App (make-Var r) (list v)))))
                (cps-bindings bindings))))
       ('() '())))
 
   ;;;; CPS AST Traversal
 
-  (define (fmap f ast)
-    (match ast
+  (define (fmap f node)
+    (match node
       (($ If cond tcont fcont) (make-If (f cond) (f tcont) (f fcont)))
       (($ Fix defns body)
        (make-Fix (map (lambda (defn)
@@ -146,7 +153,7 @@
       (($ App callee args) (make-App (f callee) (map f args)))
       (($ Primop op args results cont) (make-Primop op (map f args)
                                                     results (f cont)))
-      ((or (? Var?) (? Const?)) ast)))
+      ((or (? Var?) (? Const?)) node)))
 
   (define (walk inner outer ast)
     (outer (fmap inner ast)))
@@ -165,8 +172,7 @@
          (fold-leaves f acc** fcont)))
       
       (($ Fix defns body)
-       (let ((acc* (foldl (lambda (acc defn)
-                            (fold-leaves f acc (cadddr defn)))
+       (let ((acc* (foldl (lambda (acc defn) (fold-leaves f acc (cadddr defn)))
                           acc defns)))
          (fold-leaves f acc* body)))
 
@@ -176,7 +182,7 @@
       
       (($ App callee args)
        (let ((acc* (fold-leaves f acc callee)))
-         (foldl (lambda (acc arg) (fold-leaves f acc arg)) acc* args)))
+         (foldl (cute fold-leaves f <> <>) acc* args)))
       
       (($ Primop op args results cont)
        (let ((acc* (foldl (cute fold-leaves f <> <>) acc args)))
@@ -223,41 +229,39 @@
                       ((? Const?) acc)))))
       (fold-leaves c-u (map (constantly 0) varnames) ast)))
 
-  (define (replace-var-uses replacements ast)
-    (match ast
-      (($ Var name) (hash-table-ref/default replacements name ast))
-      (_ ast)))
+  (define (replace-var-uses replacements node)
+    (match node
+      (($ Var name) (hash-table-ref/default replacements name node))
+      (_ node)))
 
   ;;;; Eta-Contraction
 
-  (define (eta-defn-replacements replacements ast)
-    (match ast
+  (define (eta-defn-replacements replacements node)
+    (match node
       (($ Fix defns body)
-       (letrec ((formals=args?
-                 (lambda (formals args)
-                   (match `(,formals ,args)
-                     ('(() ()) #t)
-                     (`((,formal . ,rformals) (,($ Var arg) . ,rargs))
-                      (and (eq? formal arg) (formals=args? rformals rargs)))
-                     (_ #f))))
-                (handle-defn
-                 (lambda (defn)
-                   (match-let ((`(,name ,formals ,types ,body) defn))
-                      ;; Replacing the body here lets us contract chains of
-                      ;; eta-redexes in one pass of `eta-contract`:
-                      (let ((body* (postwalk
-                                    (cute replace-var-uses replacements <>)
-                                    body)))
-                        (match body*
-                          ;; TODO: confirm that the formal-types of name and callee
-                          ;; are the same and that name isn't one of the formals:
-                          (($ App callee args)
-                           (when (formals=args? formals args)
-                             (hash-table-set! replacements name callee)))
-                          (_))
-                        `(,name ,formals ,types ,body*))))))
+       (let* ((formals=args?
+               (cute every-2? (lambda (formal arg)
+                                (match arg
+                                  (($ Var argname) (eq? formal argname))
+                                  (_ #f))) <> <>))
+              (handle-defn
+               (lambda (defn)
+                 (match-let ((`(,name ,formals ,types ,body) defn))
+                   ;; Replacing the body here lets us contract chains of
+                   ;; eta-redexes in one pass of `eta-contract`:
+                   (let ((body* (postwalk
+                                 (cute replace-var-uses replacements <>)
+                                 body)))
+                     (match body*
+                       ;; TODO: confirm that the formal-types of name and callee
+                       ;; are the same and that name isn't one of the formals:
+                       (($ App callee args)
+                        (when (formals=args? formals args)
+                          (hash-table-set! replacements name callee)))
+                       (_))
+                     `(,name ,formals ,types ,body*))))))
          (make-Fix (map handle-defn defns) body)))
-      (_ ast)))
+      (_ node)))
 
   (define (eta-contract ast)
     (let ((replacements (make-hash-table)))
@@ -287,15 +291,15 @@
        (if (hash-table-exists? inlinables callee)
          (match-let (((formals _ body) (hash-table-ref inlinables callee)))
            (if (= (length formals) (length args))
-             (let* ((f-as (alist->hash-table
-                           (map (lambda (formal arg) (cons formal arg))
-                                formals args)))
+             (let* ((f-as (alist->hash-table (map cons formals args)))
                     (body* (postwalk (cute replace-var-uses f-as <>) body)))
                body*)
              node))
          node))
       (_ node)))
-       
+
+  ;; need to run `romove-unuseds` immediately after this to keep the ast
+  ;; 'alphatized':
   (define (beta-contract ast)
     (let ((inlinables (make-hash-table)))
       (prewalk (lambda (node)
@@ -324,9 +328,8 @@
                 (make-Fix defns* body)))))
          (($ Primop op args results cont)
           ;; TODO: don't eliminate anything side-effecting
-          (let ((uses (count-uses results cont)))
-            (if (every? zero? uses)
-              cont
-              node)))
+          (if (every? zero? (count-uses results cont))
+            cont
+            node))
          (_ node)))
      ast)))
