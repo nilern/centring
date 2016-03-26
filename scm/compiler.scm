@@ -12,6 +12,13 @@
              hash-table-exists?)
        (only data-structures identity constantly))
 
+  ;;;; Utils
+
+  (define (every? pred? ls)
+    (match ls
+      ('() #t)
+      ((v . vs) (and (pred? v) (every? pred? vs)))))
+
   ;;;; CPS AST
 
   (define-record Var name)
@@ -35,6 +42,12 @@
   (define-record App
     callee
     args)
+
+  (define-record Primop
+    op
+    args
+    results
+    cont)
 
   ;;;; CPS Conversion
 
@@ -61,12 +74,14 @@
       (`(centring.sf/def ,name ,expr)
        (cps-k expr (lambda (e)
                      (make-Def name e
-                               (cps-k '(centring.lang/Tuple) c)))))
+                               (cps-k '(centring.primops/make-singleton
+                                        centring.lang/Tuple) c)))))
       
       (`(centring.sf/do . ,stmts)
        (letrec ((monadize (lambda (stmts)
                             (match stmts
-                              ('() '(centring.lang/Tuple))
+                              ('() '(centring.primops/make-singleton
+                                     centring.lang/Tuple))
                               ((stmt) stmt)
                               ((stmt . rstmts)
                                (let ((_ (gensym '_)))
@@ -74,6 +89,13 @@
                                      ,(monadize rstmts))
                                    ,stmt)))))))
          (cps-k (monadize stmts) c)))
+
+      ;; TODO: Make this deal with everything in centring.primops:
+      (`(centring.primops/make-singleton ,type)
+       (cps-k type (lambda (t)
+                     (let ((v (gensym 'v)))
+                       (make-Primop 'centring.primops/make-singleton `(,t)
+                                    `(,v) (c (make-Var v)))))))
       
       (`(,callee . ,args)
        (cps-k callee (lambda (f)
@@ -122,6 +144,8 @@
                  (f body)))
       (($ Def name val cont) (make-Def name (f val) (f cont)))
       (($ App callee args) (make-App (f callee) (map f args)))
+      (($ Primop op args results cont) (make-Primop op (map f args)
+                                                    results (f cont)))
       ((or (? Var?) (? Const?)) ast)))
 
   (define (walk inner outer ast)
@@ -153,6 +177,10 @@
       (($ App callee args)
        (let ((acc* (fold-leaves f acc callee)))
          (foldl (lambda (acc arg) (fold-leaves f acc arg)) acc* args)))
+      
+      (($ Primop op args results cont)
+       (let ((acc* (foldl (cute fold-leaves f <> <>) acc args)))
+         (fold-leaves f acc* cont)))
        
       ((or (? Var?) (? Const?)) (f acc ast))))
 
@@ -173,6 +201,11 @@
       (($ Def name val cont)
        `(centring.sf/def ,name ,(cps->sexp val) ,(cps->sexp cont)))
       (($ App callee args) `(,(cps->sexp callee) ,@(map cps->sexp args)))
+      (($ Primop op args results cont)
+       `(,op ,@(map cps->sexp args)
+             (centring.sf/fn ,results ,(map (constantly 'centring.lang/Any)
+                                            results)
+               ,(cps->sexp cont))))
       (($ Var name) name)
       (($ Const val) val)))
 
@@ -289,5 +322,11 @@
               (if (null? defns*)
                 body
                 (make-Fix defns* body)))))
+         (($ Primop op args results cont)
+          ;; TODO: don't eliminate anything side-effecting
+          (let ((uses (count-uses results cont)))
+            (if (every? zero? uses)
+              cont
+              node)))
          (_ node)))
      ast)))
