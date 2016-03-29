@@ -1,15 +1,23 @@
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Bytecode {
-    Arg(usize),
-    Closed(usize),
-    Const(usize),
+    Const(u32),
+    Local(u32),
 
-    Brf(usize),
-
-    Fn(usize, usize),
+    AddI(u8, u8),
+    SubI(u8, u8),
+    MulI(u8, u8),
+    DivI(u8, u8)
     
-    Call(usize)
+    // Arg(usize),
+    // Closed(usize),
+    // Const(usize),
+
+    // Brf(usize),
+
+    // Fn(usize, usize),
+    
+    // Call(usize)
 }
 
 pub use self::Bytecode::*;

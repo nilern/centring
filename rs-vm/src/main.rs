@@ -11,31 +11,53 @@
 // use vm::{VM, CodeObject};
 
 mod gc;
+mod bytecode;
+mod vm;
 
-use gc::{Value, GcHeap};
+use bytecode::Bytecode::{Const, AddI, SubI, MulI, DivI};
+use vm::{VM, DeflatedProcedure, DeflatedValue};
 
 fn main() {
-    let mut heap = GcHeap::with_capacity(256);
+    // let mut heap = GcHeap::with_capacity(256);
 
-    let n = Value::Int(-3);
-    let m = Value::Int(5);
-    let nref = heap.alloc(n);
-    let mref = heap.alloc(m);
-    let tupref1 = heap.alloc(Value::Tuple(&[nref, mref]));
-    let tupref2 = heap.alloc(Value::Tuple(&[mref, nref, tupref1]));
+    // let n = Value::Int(-3);
+    // let m = Value::Int(5);
+    // let nref = heap.alloc(n);
+    // let mref = heap.alloc(m);
+    // let tupref1 = heap.alloc(Value::Tuple(&[nref, mref]));
+    // let tupref2 = heap.alloc(Value::Tuple(&[mref, nref, tupref1]));
 
-    let mut roots = [tupref2, tupref1];
-    heap = heap.collect(&mut roots);
+    // let mut roots = [tupref2, tupref1];
+    // heap = heap.collect(&mut roots);
 
-    for rootref in &roots {
-        if let Value::Tuple(vrefs) = heap.deref(*rootref) {
-            for vref in vrefs {
-                println!("{:?}", heap.deref(*vref));
-            }
-        }
-    }
+    // for rootref in &roots {
+    //     if let Value::Tuple(vrefs) = heap.deref(*rootref) {
+    //         for vref in vrefs {
+    //             println!("{:?}", heap.deref(*vref));
+    //         }
+    //     }
+    // }
     
-    println!("{:?}", heap);
+    // println!("{:?}", heap);
+
+    let addition = DeflatedProcedure {
+        instrs: vec![Const(0),
+                     Const(1),
+                     AddI(0, 1),
+                     Const(2),
+                     SubI(3, 0),
+                     MulI(2, 4),
+                     SubI(0, 1),
+                     DivI(5, 6)],
+        consts: vec![DeflatedValue::Int(2), DeflatedValue::Int(3),
+                     DeflatedValue::Int(6)],
+        codeobjs: vec![],
+        clover_count: 0
+    };
+
+    let vm = VM::new();
+    let mut vmproc = vm.spawn(&addition); // 'inflates' the bytecode
+    println!("\n{:?}isize", vmproc.run().unwrap().get_int().unwrap());
     
     // let mull = Rc::new(CodeObject {
     //     instrs: vec![Closed(0), // *

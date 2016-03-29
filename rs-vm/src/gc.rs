@@ -1,3 +1,5 @@
+use vm::{VMError, VMResult};
+
 // TODO:
 // - Add more Value variants
 // - Implement a growth strategy for the semispaces
@@ -10,7 +12,9 @@ const IMMEDIACY_BITS: usize = 0x03;
 const INT_BITS: usize = 0x01;
 
 const REF_SHIFT: usize = 2;
-const INT_SHIFT: usize = 1;
+pub const INT_SHIFT: usize = 1;
+
+pub const INT_TAG: usize = 1;
 
 const TUPLE_TAG: usize = 0x0100_0000_0000_0000;
 
@@ -40,12 +44,58 @@ pub struct GcHeap {
 // Behaviour
 
 impl ValueRef {
+    pub fn new(data: usize) -> ValueRef {
+        ValueRef(data)
+    }
+    
     pub fn is_immediate(&self) -> bool {
         self.0 & IMMEDIACY_BITS != 0
     }
 
     fn from_index(i: usize) -> ValueRef {
         ValueRef(i << REF_SHIFT)
+    }
+
+    pub fn get_int(&self) -> Option<isize> {
+        if self.0 & INT_BITS == INT_TAG {
+            Some(self.0 as isize >> INT_SHIFT)
+        } else {
+            None
+        }
+    }
+
+    pub fn addi(self, other: ValueRef) -> VMResult {
+        if let (INT_TAG, INT_TAG) = (self.0 & INT_BITS, other.0 & INT_BITS) {
+            Ok(ValueRef((self.0 as isize + other.0 as isize - 1) as usize))
+        } else {
+            Err(VMError::TypeMismatch)
+        }
+    }
+
+    pub fn subi(self, other: ValueRef) -> VMResult {
+        if let (INT_TAG, INT_TAG) = (self.0 & INT_BITS, other.0 & INT_BITS) {
+            Ok(ValueRef((self.0 as isize - other.0 as isize + 1) as usize))
+        } else {
+            Err(VMError::TypeMismatch)
+        }
+    }
+
+    pub fn muli(self, other: ValueRef) -> VMResult {
+        if let (INT_TAG, INT_TAG) = (self.0 & INT_BITS, other.0 & INT_BITS) {
+            Ok(ValueRef(((self.0 as isize - 1)*(other.0 as isize - 1)/2 + 1)
+                        as usize))
+        } else {
+            Err(VMError::TypeMismatch)
+        }
+    }
+
+    pub fn divi(self, other: ValueRef) -> VMResult {
+        if let (INT_TAG, INT_TAG) = (self.0 & INT_BITS, other.0 & INT_BITS) {
+            Ok(ValueRef(((self.0 as isize - 1)/(other.0 as isize - 1)*2 + 1)
+                        as usize))
+        } else {
+            Err(VMError::TypeMismatch)
+        }
     }
 }
 
@@ -59,7 +109,7 @@ impl GcHeap {
     
     pub fn alloc(&mut self, val: Value) -> ValueRef {
         match val {
-            Value::Int(i) => ValueRef((i << INT_SHIFT) as usize | INT_BITS),
+            Value::Int(i) => ValueRef((i << INT_SHIFT) as usize | INT_TAG),
 
             Value::Tuple(vals) => {
                 let start = self.fromspace.len();
@@ -74,8 +124,8 @@ impl GcHeap {
     }
 
     pub fn deref(&self, vref: ValueRef) -> Value {
-        match vref.0 & 1 {
-            1 => Value::Int((vref.0 as isize) >> 1),
+        match vref.0 & INT_BITS {
+            INT_TAG => Value::Int((vref.0 as isize) >> INT_SHIFT),
             0 => {
                 let start = vref.0 >> REF_SHIFT;
                 let header = self.fromspace[start].0;
