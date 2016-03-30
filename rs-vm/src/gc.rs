@@ -1,3 +1,6 @@
+use std::slice;
+use std::mem::transmute;
+
 use vm::{VMError, VMResult};
 
 // TODO:
@@ -14,23 +17,17 @@ const INT_BITS: usize = 0x01;
 const REF_SHIFT: usize = 2;
 pub const INT_SHIFT: usize = 1;
 
+const BYTEBLOCK_BIT: usize =  0x4000_0000_0000_0000;
+const FORWARDING_BIT: usize = 0x8000_0000_0000_0000;
+const TYPE_BITS: usize =      0x0F00_0000_0000_0000;
+const LENGTH_BITS: usize =    0x00FF_FFFF_FFFF_FFFF;
+
 pub const INT_TAG: usize = 1;
 
-const TUPLE_TAG: usize = 0x0100_0000_0000_0000;
-
-const TYPE_BITS: usize = 0x0F00_0000_0000_0000;
-const LENGTH_BITS: usize = 0x00FF_FFFF_FFFF_FFFF;
-
-const LEFTMOST_SHIFT: usize = 63;
+const TUPLE_TAG: usize =  0x0100_0000_0000_0000;
+const BUFFER_TAG: usize = 0x0200_0000_0000_0000;
 
 // Types
-
-#[derive(Debug)]
-pub enum Value<'a> {
-    Int(isize),
-
-    Tuple(&'a [ValueRef])
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct ValueRef(usize);
@@ -40,6 +37,27 @@ pub struct GcHeap {
     fromspace: Vec<ValueRef>,
     tospace: Vec<ValueRef>
 }
+
+#[derive(Debug)]
+pub enum Value<'a> {
+    Int(isize),
+
+    Tuple(&'a [ValueRef]),
+
+    Buffer(&'a [u8]),
+
+    Procedure(Procedure<'a>)
+}
+
+#[derive(Debug)]
+struct Procedure<'a> {
+    instrs: &'a [Bytecode], // <= Buffer
+    consts: &'a [ValueRef], // <= Tuple
+    codeobjs: &'a [ValueRef] // <= Tuple
+}
+
+#[derive(Debug)]
+struct Bytecode(usize);
 
 // Behaviour
 
@@ -115,11 +133,30 @@ impl GcHeap {
                 let start = self.fromspace.len();
                 let header = TUPLE_TAG | vals.len();
                 self.fromspace.push(ValueRef(header));
-                for val in vals {
-                    self.fromspace.push(val.clone());
-                }
+
+                self.fromspace.extend_from_slice(vals);
+                
                 ValueRef::from_index(start)
-            }
+            },
+
+           Value::Buffer(bytes) => {
+               let start = self.fromspace.len();
+               let bc = bytes.len();
+               
+               let header = BYTEBLOCK_BIT | BUFFER_TAG | bc;
+               self.fromspace.push(ValueRef(header));
+
+               let wc = if bc % 8 == 0 { bc/8 } else { bc/8 + 1 };
+               let words = unsafe {
+                   let ptr = transmute(bytes.as_ptr());
+                   slice::from_raw_parts(ptr, wc)
+               };
+               self.fromspace.extend_from_slice(words);
+               
+               ValueRef::from_index(start)
+           },
+
+            _ => panic!()
         }
     }
 
@@ -134,6 +171,16 @@ impl GcHeap {
                         let len = header & LENGTH_BITS;
                         Value::Tuple(&self.fromspace[start+1..start+1+len])
                     },
+
+                    BUFFER_TAG => {
+                        let bc = header & LENGTH_BITS;
+                        let bsl = unsafe {
+                            let ptr = transmute(&self.fromspace[start+1]);
+                            slice::from_raw_parts(ptr, bc)
+                        };
+                        Value::Buffer(&bsl)
+                    },
+                    
                     _ => panic!()
                 }
             },
@@ -152,9 +199,11 @@ impl GcHeap {
             let data_len = header & LENGTH_BITS;
             let start = scan + 1;
             scan = start + data_len;
-            for i in start..scan {
-                let old = self.tospace[i];
-                self.tospace[i] = self.copy(old);
+            if header & BYTEBLOCK_BIT == 0 {
+                for i in start..scan {
+                    let old = self.tospace[i];
+                    self.tospace[i] = self.copy(old);
+                }
             }
         }
 
@@ -177,13 +226,18 @@ impl GcHeap {
             let oldstart = vref.0 >> REF_SHIFT;
             {
                 let header = self.fromspace[oldstart].0;
-                let data_len = header & LENGTH_BITS;
+                let data_len = if header & BYTEBLOCK_BIT == 0 {
+                    header & LENGTH_BITS
+                } else {
+                    let bc = header & LENGTH_BITS;
+                    if bc % 8 == 0 { bc/8 } else { bc/8 + 1 }
+                };
                 let data = &self.fromspace[oldstart..oldstart+data_len+1];
                 self.tospace.extend_from_slice(data);
             }
 
             self.fromspace[oldstart] =
-                ValueRef(1 << LEFTMOST_SHIFT | newstart);
+                ValueRef(FORWARDING_BIT | newstart);
 
             ValueRef::from_index(newstart)
         }
@@ -195,7 +249,7 @@ impl GcHeap {
         }
 
         let header = self.fromspace[vref.0 >> REF_SHIFT].0;
-        if header >> LEFTMOST_SHIFT == 0 {
+        if header & FORWARDING_BIT == 0 {
             None
         } else {
             // This will also shift out the leftmost forwarding bit:
