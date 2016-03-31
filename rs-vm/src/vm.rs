@@ -1,6 +1,5 @@
 use gc::ValueRef;
-use bytecode::Bytecode;
-use bytecode::Bytecode::{Const, Local, AddI, SubI, MulI, DivI};
+use bytecode::{Bytecode, CONST, LOCAL, ADDI, SUBI, MULI, DIVI};
 
 // Types
 
@@ -43,6 +42,54 @@ impl VM {
         VM
     }
 
+
+// #[derive(Debug, Clone, Copy)]
+// pub enum Bytecode {
+//     Const(u32),
+//     Local(u32),
+
+//     AddI(u8, u8),
+//     SubI(u8, u8),
+//     MulI(u8, u8),
+//     DivI(u8, u8)
+    
+//     // Arg(usize),
+//     // Closed(usize),
+//     // Const(usize),
+
+//     // Brf(usize),
+
+//     // Fn(usize, usize),
+    
+//     // Call(usize)
+// }
+
+// pub use self::Bytecode::*;
+
+
+// #[derive(Debug, Clone, Copy)]
+// pub enum Bytecode {
+//     Const(u32),
+//     Local(u32),
+
+//     AddI(u8, u8),
+//     SubI(u8, u8),
+//     MulI(u8, u8),
+//     DivI(u8, u8)
+    
+//     // Arg(usize),
+//     // Closed(usize),
+//     // Const(usize),
+
+//     // Brf(usize),
+
+//     // Fn(usize, usize),
+    
+//     // Call(usize)
+// }
+
+// pub use self::Bytecode::*;
+
     pub fn spawn<'a>(&'a self, inflatee: &'a DeflatedProcedure) -> VMProcess {
         VMProcess {
             ip: 0,
@@ -56,50 +103,59 @@ impl VM {
 impl<'a> VMProcess<'a> {
     pub fn run(&mut self) -> VMResult {
         while self.ip < self.instrs.len() {
-            match self.instrs[self.ip] {
-                Const(i) => {
-                    println!("const  {}   {:?}", i, self.stack);
+            let instr = self.instrs[self.ip];
+            match instr.op() {
+                CONST => {
+                    let i = instr.arg();
+                    println!("const {}   {:?}", i, self.stack);
                     
-                    self.stack.push(self.consts[i as usize].clone());
+                    self.stack.push(self.consts[i].clone());
                 },
-                Local(i) => {
-                    println!("local  {}   {:?}", i, self.stack);
+                LOCAL => {
+                    let i = instr.arg();
+                    println!("local {}   {:?}", i, self.stack);
 
-                    let vref = self.stack[i as usize];
+                    let vref = self.stack[i];
                     self.stack.push(vref);
                 },
 
-                AddI(i, j) => {
-                    println!("addi   {} {} {:?}", i, j, self.stack);
+                ADDI => {
+                    let (i, j) = instr.args();
+                    println!("addi  {} {} {:?}", i, j, self.stack);
 
-                    let a = self.stack[i as usize];
-                    let b = self.stack[j as usize];
+                    let a = self.stack[i];
+                    let b = self.stack[j];
                     self.stack.push(try!(a.addi(b)));
                 },
 
-                SubI(i, j) => {
-                    println!("subi   {} {} {:?}", i, j, self.stack);
+                SUBI => {
+                    let (i, j) = instr.args();
+                    println!("subi  {} {} {:?}", i, j, self.stack);
 
-                    let a = self.stack[i as usize];
-                    let b = self.stack[j as usize];
+                    let a = self.stack[i];
+                    let b = self.stack[j];
                     self.stack.push(try!(a.subi(b)));
                 },
 
-                MulI(i, j) => {
-                    println!("muli   {} {} {:?}", i, j, self.stack);
+                MULI => {
+                    let (i, j) = instr.args();
+                    println!("muli  {} {} {:?}", i, j, self.stack);
 
-                    let a = self.stack[i as usize];
-                    let b = self.stack[j as usize];
+                    let a = self.stack[i];
+                    let b = self.stack[j];
                     self.stack.push(try!(a.muli(b)));
                 },
 
-                DivI(i, j) => {
-                    println!("divi   {} {} {:?}", i, j, self.stack);
+                DIVI => {
+                    let (i, j) = instr.args();
+                    println!("divi  {} {} {:?}", i, j, self.stack);
 
-                    let a = self.stack[i as usize];
-                    let b = self.stack[j as usize];
+                    let a = self.stack[i];
+                    let b = self.stack[j];
                     self.stack.push(try!(a.divi(b)));
                 },
+
+                op => panic!("Unrecognized bytecode {:x}", op)
             }
             self.ip += 1;
         }

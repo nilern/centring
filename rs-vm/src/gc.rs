@@ -46,18 +46,15 @@ pub enum Value<'a> {
 
     Buffer(&'a [u8]),
 
-    Procedure(Procedure<'a>)
+    Procedure(Procedure)
 }
 
 #[derive(Debug)]
-struct Procedure<'a> {
-    instrs: &'a [Bytecode], // <= Buffer
-    consts: &'a [ValueRef], // <= Tuple
-    codeobjs: &'a [ValueRef] // <= Tuple
+struct Procedure {
+    instrs: ValueRef,
+    consts: ValueRef,
+    codeobjs: ValueRef
 }
-
-#[derive(Debug)]
-struct Bytecode(usize);
 
 // Behaviour
 

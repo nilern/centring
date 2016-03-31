@@ -17,7 +17,7 @@ mod bytecode;
 mod vm;
 
 // use gc::{GcHeap, Value};
-use bytecode::Bytecode::{Const, AddI, SubI, MulI, DivI};
+use bytecode::Bytecode;
 use vm::{VM, DeflatedProcedure, DeflatedValue};
 
 fn main() {
@@ -45,14 +45,14 @@ fn main() {
     // println!("{:?}", heap);
 
     let addition = DeflatedProcedure {
-        instrs: vec![Const(0),
-                     Const(1),
-                     AddI(0, 1),
-                     Const(2),
-                     SubI(3, 0),
-                     MulI(2, 4),
-                     SubI(0, 1),
-                     DivI(5, 6)],
+        instrs: vec![Bytecode::cnst(0),     // 2
+                     Bytecode::cnst(1),     // 3
+                     Bytecode::addi(0, 1),  // 2 + 3 = 5
+                     Bytecode::cnst(2),     // 6
+                     Bytecode::subi(3, 0),  // 6 - 2 = 4
+                     Bytecode::muli(2, 4),  // 5*4 = 20
+                     Bytecode::subi(0, 1),  // 2 - 3 = -1
+                     Bytecode::divi(5, 6)], // 20/-1 = -20
         consts: vec![DeflatedValue::Int(2), DeflatedValue::Int(3),
                      DeflatedValue::Int(6)],
         codeobjs: vec![],
