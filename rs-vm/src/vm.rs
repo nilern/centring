@@ -1,4 +1,4 @@
-use gc::{GcHeap, ValueRef};
+use gc::ValueRef;
 use bytecode::Bytecode;
 use bytecode::Bytecode::{Const, Local, AddI, SubI, MulI, DivI};
 
@@ -6,11 +6,13 @@ use bytecode::Bytecode::{Const, Local, AddI, SubI, MulI, DivI};
 
 pub struct VM;
 
-pub struct VMProcess {
+pub struct VMProcess<'a> {
     ip: usize,
 
-    procedure: Procedure,
-    clovers: Vec<ValueRef>,
+    instrs: &'a [Bytecode],
+    consts: Vec<ValueRef>,
+    // codeobjs: &'a [ValueRef],
+    // clovers: Vec<ValueRef>,
 
     stack: Vec<ValueRef>
 }
@@ -22,13 +24,6 @@ pub enum VMError {
 }
 
 pub type VMResult = Result<ValueRef, VMError>;
-
-pub struct Procedure {
-    instrs: Vec<Bytecode>,
-    consts: Vec<ValueRef>,
-    codeobjs: Vec<Procedure>,
-    clover_count: usize
-}
 
 pub struct DeflatedProcedure {
     pub instrs: Vec<Bytecode>,
@@ -48,27 +43,24 @@ impl VM {
         VM
     }
 
-    pub fn spawn(&self, inflatee: &DeflatedProcedure) -> VMProcess {
-        let mut heap = GcHeap::with_capacity(256);
-        let inflated = inflatee.inflate(&mut heap);
-        
+    pub fn spawn<'a>(&'a self, inflatee: &'a DeflatedProcedure) -> VMProcess {
         VMProcess {
             ip: 0,
-            procedure: inflated,
-            clovers: vec![],
+            instrs: inflatee.instrs.as_slice(),
+            consts: inflatee.consts.iter().map(DeflatedValue::inflate).collect(),
             stack: vec![]
         }
     }
 }
 
-impl VMProcess {
+impl<'a> VMProcess<'a> {
     pub fn run(&mut self) -> VMResult {
-        while self.ip < self.procedure.instrs.len() {
-            match self.procedure.instrs[self.ip] {
+        while self.ip < self.instrs.len() {
+            match self.instrs[self.ip] {
                 Const(i) => {
                     println!("const  {}   {:?}", i, self.stack);
                     
-                    self.stack.push(self.procedure.consts[i as usize].clone());
+                    self.stack.push(self.consts[i as usize].clone());
                 },
                 Local(i) => {
                     println!("local  {}   {:?}", i, self.stack);
@@ -113,18 +105,6 @@ impl VMProcess {
         }
         
         Ok(self.stack.pop().unwrap())
-    }
-}
-
-impl DeflatedProcedure {
-    fn inflate(&self, heap: &mut GcHeap) -> Procedure {
-        Procedure {
-            instrs: self.instrs.clone(),
-            consts: self.consts.iter().map(DeflatedValue::inflate).collect(),
-            codeobjs: self.codeobjs.iter()
-                .map(|cob| cob.inflate(heap)).collect(),
-            clover_count: self.clover_count
-        }
     }
 }
 

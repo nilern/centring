@@ -16,52 +16,52 @@ mod gc;
 mod bytecode;
 mod vm;
 
-use gc::{GcHeap, Value};
-// use bytecode::Bytecode::{Const, AddI, SubI, MulI, DivI};
-// use vm::{VM, DeflatedProcedure, DeflatedValue};
+// use gc::{GcHeap, Value};
+use bytecode::Bytecode::{Const, AddI, SubI, MulI, DivI};
+use vm::{VM, DeflatedProcedure, DeflatedValue};
 
 fn main() {
-    let mut heap = GcHeap::with_capacity(256);
+    // let mut heap = GcHeap::with_capacity(256);
 
-    let nref = heap.alloc(Value::Int(-3));
-    let mref = heap.alloc(Value::Int(5));
-    let tupref1 = heap.alloc(Value::Tuple(&[nref, mref]));
-    let tupref2 = heap.alloc(Value::Tuple(&[mref, nref, tupref1]));
-    let bref = heap.alloc(Value::Buffer(&[1,2,3,4,5,6,7,8,9,10]));
+    // let nref = heap.alloc(Value::Int(-3));
+    // let mref = heap.alloc(Value::Int(5));
+    // let tupref1 = heap.alloc(Value::Tuple(&[nref, mref]));
+    // let tupref2 = heap.alloc(Value::Tuple(&[mref, nref, tupref1]));
+    // let bref = heap.alloc(Value::Buffer(&[1,2,3,4,5,6,7,8,9,10]));
 
-    let mut roots = [tupref2, tupref1, bref];
-    heap = heap.collect(&mut roots);
+    // let mut roots = [tupref2, tupref1, bref];
+    // heap = heap.collect(&mut roots);
 
-    for rootref in &roots {
-        if let Value::Tuple(vrefs) = heap.deref(*rootref) {
-            for vref in vrefs {
-                println!("{:?}", heap.deref(*vref));
-            }
-        } else {
-            println!("{:?}", heap.deref(*rootref));
-        }
-    }
+    // for rootref in &roots {
+    //     if let Value::Tuple(vrefs) = heap.deref(*rootref) {
+    //         for vref in vrefs {
+    //             println!("{:?}", heap.deref(*vref));
+    //         }
+    //     } else {
+    //         println!("{:?}", heap.deref(*rootref));
+    //     }
+    // }
     
-    println!("{:?}", heap);
+    // println!("{:?}", heap);
 
-    // let addition = DeflatedProcedure {
-    //     instrs: vec![Const(0),
-    //                  Const(1),
-    //                  AddI(0, 1),
-    //                  Const(2),
-    //                  SubI(3, 0),
-    //                  MulI(2, 4),
-    //                  SubI(0, 1),
-    //                  DivI(5, 6)],
-    //     consts: vec![DeflatedValue::Int(2), DeflatedValue::Int(3),
-    //                  DeflatedValue::Int(6)],
-    //     codeobjs: vec![],
-    //     clover_count: 0
-    // };
+    let addition = DeflatedProcedure {
+        instrs: vec![Const(0),
+                     Const(1),
+                     AddI(0, 1),
+                     Const(2),
+                     SubI(3, 0),
+                     MulI(2, 4),
+                     SubI(0, 1),
+                     DivI(5, 6)],
+        consts: vec![DeflatedValue::Int(2), DeflatedValue::Int(3),
+                     DeflatedValue::Int(6)],
+        codeobjs: vec![],
+        clover_count: 0
+    };
 
-    // let vm = VM::new();
-    // let mut vmproc = vm.spawn(&addition); // 'inflates' the bytecode
-    // println!("\n{:?}isize", vmproc.run().unwrap().get_int().unwrap());
+    let vm = VM::new();
+    let mut vmproc = vm.spawn(&addition); // 'inflates' the bytecode
+    println!("\n{:?}isize", vmproc.run().unwrap().get_int().unwrap());
 
     // unsafe {
     //     println!("\n{:?}", transmute::<[u32; 2], [u8; 8]>([0xFFFF_FFFF, 0]));
