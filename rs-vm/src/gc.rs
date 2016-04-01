@@ -122,8 +122,8 @@ impl GcHeap {
         }
     }
     
-    pub fn alloc(&mut self, val: Value) -> ValueRef {
-        match val {
+    pub fn alloc(&mut self, val: &Value) -> ValueRef {
+        match *val {
             Value::Int(i) => ValueRef((i << INT_SHIFT) as usize | INT_TAG),
 
             Value::Tuple(vals) => {

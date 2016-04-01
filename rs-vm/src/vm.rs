@@ -1,4 +1,7 @@
-use gc::ValueRef;
+use std::mem::size_of;
+use std::slice;
+
+use gc::{GcHeap, Value, ValueRef};
 use bytecode::{Bytecode, CONST, LOCAL, ADDI, SUBI, MULI, DIVI};
 
 // Types
@@ -6,14 +9,17 @@ use bytecode::{Bytecode, CONST, LOCAL, ADDI, SUBI, MULI, DIVI};
 pub struct VM;
 
 pub struct VMProcess<'a> {
-    ip: usize,
+    vm: &'a VM,           // The parent VM of this process
+    heap: GcHeap,         // The GC'ed memory for this process
+    stack: Vec<ValueRef>, // Workspace
 
-    instrs: &'a [Bytecode],
-    consts: Vec<ValueRef>,
-    // codeobjs: &'a [ValueRef],
-    // clovers: Vec<ValueRef>,
-
-    stack: Vec<ValueRef>
+    // These slices point into the GcHeap:
+    instrs: &'a [Bytecode],      // Instructions of the current Fn
+    consts: &'a [ValueRef],      // Constants of the current Fn
+    // codeobjs: &'a [ValueRef], // Inner Procedures of the current Fn
+    // clovers: &'a [ValueRef],  // Closed-over values of the current Fn
+        
+    ip: usize // Index of the next instruction to run
 }
 
 #[derive(Debug)]
@@ -24,15 +30,11 @@ pub enum VMError {
 
 pub type VMResult = Result<ValueRef, VMError>;
 
-pub struct DeflatedProcedure {
+pub struct DeflatedProcedure<'a> {
     pub instrs: Vec<Bytecode>,
-    pub consts: Vec<DeflatedValue>,
-    pub codeobjs: Vec<DeflatedProcedure>,
+    pub consts: Vec<Value<'a>>,
+    pub codeobjs: Vec<DeflatedProcedure<'a>>,
     pub clover_count: usize
-}
-
-pub enum DeflatedValue {
-    Int(isize)
 }
 
 // Behaviour
@@ -42,61 +44,42 @@ impl VM {
         VM
     }
 
-
-// #[derive(Debug, Clone, Copy)]
-// pub enum Bytecode {
-//     Const(u32),
-//     Local(u32),
-
-//     AddI(u8, u8),
-//     SubI(u8, u8),
-//     MulI(u8, u8),
-//     DivI(u8, u8)
-    
-//     // Arg(usize),
-//     // Closed(usize),
-//     // Const(usize),
-
-//     // Brf(usize),
-
-//     // Fn(usize, usize),
-    
-//     // Call(usize)
-// }
-
-// pub use self::Bytecode::*;
-
-
-// #[derive(Debug, Clone, Copy)]
-// pub enum Bytecode {
-//     Const(u32),
-//     Local(u32),
-
-//     AddI(u8, u8),
-//     SubI(u8, u8),
-//     MulI(u8, u8),
-//     DivI(u8, u8)
-    
-//     // Arg(usize),
-//     // Closed(usize),
-//     // Const(usize),
-
-//     // Brf(usize),
-
-//     // Fn(usize, usize),
-    
-//     // Call(usize)
-// }
-
-// pub use self::Bytecode::*;
-
     pub fn spawn<'a>(&'a self, inflatee: &'a DeflatedProcedure) -> VMProcess {
-        VMProcess {
-            ip: 0,
-            instrs: inflatee.instrs.as_slice(),
-            consts: inflatee.consts.iter().map(DeflatedValue::inflate).collect(),
-            stack: vec![]
+        let mut vmproc = VMProcess {
+            vm: self,
+            heap: GcHeap::with_capacity(256),
+            stack: Vec::with_capacity(256),
+            instrs: &[],
+            consts: &[],
+            ip: 0
+        };
+        
+        let ic = inflatee.instrs.len();
+        let bc = ic * size_of::<u32>();
+        let instrref = vmproc.heap.alloc(&Value::Buffer(unsafe {
+            slice::from_raw_parts(inflatee.instrs.as_ptr() as *const _, bc)
+        }));
+        if let Value::Buffer(bufbytes) = vmproc.heap.deref(instrref) {
+            vmproc.instrs = unsafe {
+                slice::from_raw_parts(bufbytes.as_ptr() as *const _, ic)
+            };
+        } else {
+            panic!();
         }
+
+        let constrefs: Vec<ValueRef> = inflatee.consts.iter()
+            .map(|v| vmproc.heap.alloc(v)).collect();
+        let consttupref = vmproc.heap.alloc(&Value::Tuple(constrefs.as_slice()));
+        if let Value::Tuple(const_ref_slice) = vmproc.heap.deref(consttupref) {
+            vmproc.consts = unsafe {
+                slice::from_raw_parts(const_ref_slice.as_ptr(),
+                                      const_ref_slice.len())
+            };
+        } else {
+            panic!();
+        }
+        
+        vmproc
     }
 }
 
@@ -161,14 +144,6 @@ impl<'a> VMProcess<'a> {
         }
         
         Ok(self.stack.pop().unwrap())
-    }
-}
-
-impl DeflatedValue {
-    fn inflate(&self) -> ValueRef {
-        match *self {
-            DeflatedValue::Int(i) => ValueRef::new((i << 1) as usize | 1)
-        }
     }
 }
 

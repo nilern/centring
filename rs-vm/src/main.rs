@@ -16,9 +16,9 @@ mod gc;
 mod bytecode;
 mod vm;
 
-// use gc::{GcHeap, Value};
+use gc::Value;
 use bytecode::Bytecode;
-use vm::{VM, DeflatedProcedure, DeflatedValue};
+use vm::{VM, DeflatedProcedure};
 
 fn main() {
     // let mut heap = GcHeap::with_capacity(256);
@@ -53,8 +53,7 @@ fn main() {
                      Bytecode::muli(2, 4),  // 5*4 = 20
                      Bytecode::subi(0, 1),  // 2 - 3 = -1
                      Bytecode::divi(5, 6)], // 20/-1 = -20
-        consts: vec![DeflatedValue::Int(2), DeflatedValue::Int(3),
-                     DeflatedValue::Int(6)],
+        consts: vec![Value::Int(2), Value::Int(3), Value::Int(6)],
         codeobjs: vec![],
         clover_count: 0
     };
