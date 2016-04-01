@@ -3,3 +3,4 @@ rs-vm/target
 clj/.nrepl-*
 git_stats
 scm/syntax
+cvm/cvm
