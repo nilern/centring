@@ -16,9 +16,9 @@ mod gc;
 mod bytecode;
 mod vm;
 
-use gc::Value;
+use gc::{Value, DeflatedProcedure};
 use bytecode::Bytecode;
-use vm::{VM, DeflatedProcedure};
+use vm::VM;
 
 fn main() {
     // let mut heap = GcHeap::with_capacity(256);

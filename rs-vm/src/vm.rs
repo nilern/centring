@@ -1,7 +1,7 @@
 use std::mem::size_of;
 use std::slice;
 
-use gc::{GcHeap, Value, ValueRef};
+use gc::{GcHeap, Value, ValueRef, DeflatedProcedure};
 use bytecode::{Bytecode, CONST, LOCAL, ADDI, SUBI, MULI, DIVI};
 
 // Types
@@ -29,13 +29,6 @@ pub enum VMError {
 }
 
 pub type VMResult = Result<ValueRef, VMError>;
-
-pub struct DeflatedProcedure<'a> {
-    pub instrs: Vec<Bytecode>,
-    pub consts: Vec<Value<'a>>,
-    pub codeobjs: Vec<DeflatedProcedure<'a>>,
-    pub clover_count: usize
-}
 
 // Behaviour
 

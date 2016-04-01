@@ -1,7 +1,8 @@
 use std::slice;
-use std::mem::transmute;
+use std::mem::{size_of, transmute};
 
 use vm::{VMError, VMResult};
+use bytecode::Bytecode;
 
 // TODO:
 // - Add more Value variants
@@ -54,6 +55,13 @@ struct Procedure {
     instrs: ValueRef,
     consts: ValueRef,
     codeobjs: ValueRef
+}
+
+pub struct DeflatedProcedure<'a> {
+    pub instrs: Vec<Bytecode>,
+    pub consts: Vec<Value<'a>>,
+    pub codeobjs: Vec<DeflatedProcedure<'a>>,
+    pub clover_count: usize
 }
 
 // Behaviour
