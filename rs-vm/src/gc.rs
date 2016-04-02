@@ -50,14 +50,14 @@ pub enum Value<'a> {
 
     Buffer(&'a [u8]),
 
-    Closure(Closure),
+    Closure(Closure<'a>),
     Procedure(Procedure)
 }
 
 #[derive(Debug)]
-pub struct Closure {
+pub struct Closure<'a> {
     pub codeobj: ValueRef,
-    pub clovers: ValueRef
+    pub clovers: &'a [ValueRef]
 }
 
 #[derive(Debug)]
@@ -188,11 +188,11 @@ impl GcHeap {
 
             Value::Closure(ref fun) => {
                 let start = self.fromspace.len();
-                let header = FN_TAG | 2;
+                let header = FN_TAG | 1 + fun.clovers.len();
 
                 self.fromspace.push(ValueRef(header));
                 self.fromspace.push(fun.codeobj);
-                self.fromspace.push(fun.clovers);
+                self.fromspace.extend_from_slice(fun.clovers);
 
                 ValueRef::from_index(start)
             }
@@ -228,33 +228,37 @@ impl GcHeap {
             0 => {
                 let start = vref.0 >> REF_SHIFT;
                 let header = self.fromspace[start].0;
+                let data_start = start + 1;
                 match header & TYPE_BITS {
                     TUPLE_TAG => {
                         let len = header & LENGTH_BITS;
-                        Value::Tuple(&self.fromspace[start+1..start+1+len])
+                        Value::Tuple(&self.fromspace[data_start..data_start+len])
                     },
 
                     BUFFER_TAG => {
                         let bc = header & LENGTH_BITS;
                         let bsl = unsafe {
-                            let ptr = transmute(&self.fromspace[start+1]);
+                            let ptr = transmute(&self.fromspace[data_start]);
                             slice::from_raw_parts(ptr, bc)
                         };
                         Value::Buffer(&bsl)
                     },
 
                     COB_TAG => Value::Procedure(Procedure {
-                        instrs: self.fromspace[start + 1],
-                        consts: self.fromspace[start + 2],
-                        codeobjs: self.fromspace[start + 3],
-                        clover_count: self.fromspace[start + 4]
+                        instrs: self.fromspace[data_start],
+                        consts: self.fromspace[data_start + 1],
+                        codeobjs: self.fromspace[data_start + 2],
+                        clover_count: self.fromspace[data_start + 3]
                             .get_int().unwrap() as usize
                     }),
 
-                    FN_TAG => Value::Closure(Closure {
-                        codeobj: self.fromspace[start + 1],
-                        clovers: self.fromspace[start + 2]
-                    }),
+                    FN_TAG => {
+                        let len = header & LENGTH_BITS;
+                        Value::Closure(Closure {
+                            codeobj: self.fromspace[data_start],
+                            clovers: &self.fromspace[data_start+1..data_start+len]
+                        })
+                    },
                     
                     _ => panic!()
                 }

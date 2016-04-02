@@ -62,7 +62,7 @@ impl VM {
 }
 
 impl<'a> VMProcess<'a> {
-    pub fn run(&mut self) -> VMResult {
+    pub fn run(&'a mut self) -> VMResult {
         while self.ip < self.instrs.len() {
             let instr = self.instrs[self.ip];
             self.ip += 1;
@@ -135,11 +135,9 @@ impl<'a> VMProcess<'a> {
                         let len = self.stack.len();
                         let crefs = self.stack.split_off(
                             len - vmproc.clover_count);
-                        let clovers = self.heap.alloc(
-                            &Value::Tuple(crefs.as_slice()));
                         let fnref = self.heap.alloc(&Value::Closure(Closure {
                             codeobj: cob,
-                            clovers: clovers
+                            clovers: crefs.as_slice()
                         }));
                         
                         self.stack.push(fnref);
@@ -160,14 +158,18 @@ impl<'a> VMProcess<'a> {
                     self.stack.truncate(n);
 
                     let fnref = self.stack[0];
-                    match self.heap.deref(fnref) {
-                        Value::Closure(cls) => {
-                            self.fetch_proc(cls.codeobj);
-                            self.fetch_clovers(cls.clovers);
-                            self.ip = 0;
-                        },
+                    let (cob, cls) = match self.heap.deref(fnref) {
+                        Value::Closure(cls) => (
+                            cls.codeobj,
+                            unsafe {
+                                slice::from_raw_parts(cls.clovers.as_ptr(),
+                                                      cls.clovers.len())
+                            }),
                         _ => panic!()
-                    }
+                    };
+                    self.fetch_proc(cob);
+                    self.clovers = cls;
+                    self.ip = 0;
                 }
             }
         }
@@ -212,17 +214,6 @@ impl<'a> VMProcess<'a> {
             self.codeobjs = unsafe {
                 slice::from_raw_parts(cob_ref_slice.as_ptr(),
                                       cob_ref_slice.len())
-            };
-        } else {
-            panic!();
-        }
-    }
-
-    fn fetch_clovers(&mut self, clsref: ValueRef) {
-        if let Value::Tuple(clv_ref_slice) = self.heap.deref(clsref) {
-            self.clovers = unsafe {
-                slice::from_raw_parts(clv_ref_slice.as_ptr(),
-                                      clv_ref_slice.len())
             };
         } else {
             panic!();
