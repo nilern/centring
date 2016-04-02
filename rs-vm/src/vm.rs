@@ -48,30 +48,17 @@ impl VM {
         };
         
         let ic = inflatee.instrs.len();
-        let bc = ic * size_of::<u32>();
+        let bc = ic * size_of::<Bytecode>();
         let instrref = vmproc.heap.alloc(&Value::Buffer(unsafe {
             slice::from_raw_parts(inflatee.instrs.as_ptr() as *const _, bc)
         }));
-        if let Value::Buffer(bufbytes) = vmproc.heap.deref(instrref) {
-            vmproc.instrs = unsafe {
-                slice::from_raw_parts(bufbytes.as_ptr() as *const _, ic)
-            };
-        } else {
-            panic!();
-        }
 
         let constrefs: Vec<ValueRef> = inflatee.consts.iter()
             .map(|v| vmproc.heap.alloc(v)).collect();
         let consttupref = vmproc.heap.alloc(&Value::Tuple(constrefs.as_slice()));
-        if let Value::Tuple(const_ref_slice) = vmproc.heap.deref(consttupref) {
-            vmproc.consts = unsafe {
-                slice::from_raw_parts(const_ref_slice.as_ptr(),
-                                      const_ref_slice.len())
-            };
-        } else {
-            panic!();
-        }
         
+        vmproc.fetch_instrs(instrref);
+        vmproc.fetch_consts(consttupref);
         vmproc
     }
 }
@@ -137,6 +124,28 @@ impl<'a> VMProcess<'a> {
         }
         
         Ok(self.stack.pop().unwrap())
+    }
+
+    fn fetch_instrs(&mut self, bufref: ValueRef) {
+        if let Value::Buffer(bufbytes) = self.heap.deref(bufref) {
+            self.instrs = unsafe {
+                slice::from_raw_parts(bufbytes.as_ptr() as *const _,
+                                      bufbytes.len() / size_of::<Bytecode>())
+            };
+        } else {
+            panic!();
+        }
+    }
+
+    fn fetch_consts(&mut self, constsref: ValueRef) {
+        if let Value::Tuple(const_ref_slice) = self.heap.deref(constsref) {
+            self.consts = unsafe {
+                slice::from_raw_parts(const_ref_slice.as_ptr(),
+                                      const_ref_slice.len())
+            };
+        } else {
+            panic!();
+        }
     }
 }
 
