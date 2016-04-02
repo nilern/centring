@@ -9,6 +9,7 @@ use bytecode::Bytecode;
 // - Implement a growth strategy for the semispaces
 // - Support mutation (Value::Ref, Value::Array, Value::Buffer ???)
 // - Use raw pointers
+// - Make generational
 
 // Constants
 
@@ -28,6 +29,7 @@ pub const INT_TAG: usize = 1;
 const TUPLE_TAG: usize =  0x0100_0000_0000_0000;
 const BUFFER_TAG: usize = 0x0200_0000_0000_0000;
 const COB_TAG: usize = 0x0300_0000_0000_0000;
+const FN_TAG: usize = 0x0400_0000_0000_0000;
 
 // Types
 
@@ -48,7 +50,14 @@ pub enum Value<'a> {
 
     Buffer(&'a [u8]),
 
+    Closure(Closure),
     Procedure(Procedure)
+}
+
+#[derive(Debug)]
+pub struct Closure {
+    pub codeobj: ValueRef,
+    pub clovers: ValueRef
 }
 
 #[derive(Debug)]
@@ -175,6 +184,17 @@ impl GcHeap {
                 self.fromspace.push(ccref);
 
                 ValueRef::from_index(start)
+            },
+
+            Value::Closure(ref fun) => {
+                let start = self.fromspace.len();
+                let header = FN_TAG | 2;
+
+                self.fromspace.push(ValueRef(header));
+                self.fromspace.push(fun.codeobj);
+                self.fromspace.push(fun.clovers);
+
+                ValueRef::from_index(start)
             }
         }
     }
@@ -229,6 +249,11 @@ impl GcHeap {
                         codeobjs: self.fromspace[start + 3],
                         clover_count: self.fromspace[start + 4]
                             .get_int().unwrap() as usize
+                    }),
+
+                    FN_TAG => Value::Closure(Closure {
+                        codeobj: self.fromspace[start + 1],
+                        clovers: self.fromspace[start + 2]
                     }),
                     
                     _ => panic!()

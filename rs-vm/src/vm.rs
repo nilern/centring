@@ -1,8 +1,12 @@
 use std::mem::size_of;
 use std::slice;
 
-use gc::{GcHeap, Value, ValueRef, DeflatedProcedure};
-use bytecode::{Bytecode, CONST, LOCAL, ADDI, SUBI, MULI, DIVI};
+use gc::{GcHeap, Value, ValueRef, DeflatedProcedure, Closure};
+use bytecode::{Bytecode, Opcode};
+
+// TODO:
+// - Make GC work
+// - let stack grow somewhat before 'renormalizing' it
 
 // Types
 
@@ -14,10 +18,10 @@ pub struct VMProcess<'a> {
     stack: Vec<ValueRef>, // Workspace
 
     // These slices point into the GcHeap:
-    instrs: &'a [Bytecode],      // Instructions of the current Fn
-    consts: &'a [ValueRef],      // Constants of the current Fn
+    instrs: &'a [Bytecode],   // Instructions of the current Fn
+    consts: &'a [ValueRef],   // Constants of the current Fn
     codeobjs: &'a [ValueRef], // Inner Procedures of the current Fn
-    // clovers: &'a [ValueRef],  // Closed-over values of the current Fn
+    clovers: &'a [ValueRef],  // Closed-over values of the current Fn
         
     ip: usize // Index of the next instruction to run
 }
@@ -45,6 +49,7 @@ impl VM {
             instrs: &[],
             consts: &[],
             codeobjs: &[],
+            clovers: &[],
             ip: 0
         };
 
@@ -60,60 +65,111 @@ impl<'a> VMProcess<'a> {
     pub fn run(&mut self) -> VMResult {
         while self.ip < self.instrs.len() {
             let instr = self.instrs[self.ip];
+            self.ip += 1;
             match instr.op() {
-                CONST => {
+                Opcode::Const => {
                     let i = instr.arg();
-                    println!("const {}   {:?}", i, self.stack);
+                    println!("const  {}   {:?}", i, self.stack);
                     
                     self.stack.push(self.consts[i].clone());
                 },
-                LOCAL => {
+                
+                Opcode::Local => {
                     let i = instr.arg();
-                    println!("local {}   {:?}", i, self.stack);
+                    println!("local  {}   {:?}", i, self.stack);
 
                     let vref = self.stack[i];
                     self.stack.push(vref);
                 },
+                
+                Opcode::Clover => {
+                    let i = instr.arg();
+                    println!("clover {}   {:?}", i, self.stack);
 
-                ADDI => {
+                    let vref = self.clovers[i];
+                    self.stack.push(vref);
+                },
+
+                Opcode::AddI => {
                     let (i, j) = instr.args();
-                    println!("addi  {} {} {:?}", i, j, self.stack);
+                    println!("addi   {} {} {:?}", i, j, self.stack);
 
                     let a = self.stack[i];
                     let b = self.stack[j];
                     self.stack.push(try!(a.addi(b)));
                 },
 
-                SUBI => {
+                Opcode::SubI => {
                     let (i, j) = instr.args();
-                    println!("subi  {} {} {:?}", i, j, self.stack);
+                    println!("subi   {} {} {:?}", i, j, self.stack);
 
                     let a = self.stack[i];
                     let b = self.stack[j];
                     self.stack.push(try!(a.subi(b)));
                 },
 
-                MULI => {
+                Opcode::MulI => {
                     let (i, j) = instr.args();
-                    println!("muli  {} {} {:?}", i, j, self.stack);
+                    println!("muli   {} {} {:?}", i, j, self.stack);
 
                     let a = self.stack[i];
                     let b = self.stack[j];
                     self.stack.push(try!(a.muli(b)));
                 },
 
-                DIVI => {
+                Opcode::DivI => {
                     let (i, j) = instr.args();
-                    println!("divi  {} {} {:?}", i, j, self.stack);
+                    println!("divi   {} {} {:?}", i, j, self.stack);
 
                     let a = self.stack[i];
                     let b = self.stack[j];
                     self.stack.push(try!(a.divi(b)));
-                }
+                },
 
-                op => panic!("Unrecognized bytecode {:x}", op)
+                Opcode::Fn => {
+                    let i = instr.arg();
+                    println!("fn     {}   {:?}", i, self.stack);
+
+                    let cob = self.codeobjs[i];
+                    if let Value::Procedure(vmproc) = self.heap.deref(cob) {
+                        let len = self.stack.len();
+                        let crefs = self.stack.split_off(
+                            len - vmproc.clover_count);
+                        let clovers = self.heap.alloc(
+                            &Value::Tuple(crefs.as_slice()));
+                        let fnref = self.heap.alloc(&Value::Closure(Closure {
+                            codeobj: cob,
+                            clovers: clovers
+                        }));
+                        
+                        self.stack.push(fnref);
+                    } else {
+                        panic!();
+                    }
+                },
+
+                Opcode::Call => {
+                    let mut n = instr.arg();
+                    println!("call   {}   {:?}", n, self.stack);
+
+                    n += 1;
+                    let start = self.stack.len() - n;
+                    for i in 0..n {
+                        self.stack[i] = self.stack[start + i].clone()
+                    }
+                    self.stack.truncate(n);
+
+                    let fnref = self.stack[0];
+                    match self.heap.deref(fnref) {
+                        Value::Closure(cls) => {
+                            self.fetch_proc(cls.codeobj);
+                            self.fetch_clovers(cls.clovers);
+                            self.ip = 0;
+                        },
+                        _ => panic!()
+                    }
+                }
             }
-            self.ip += 1;
         }
         
         Ok(self.stack.pop().unwrap())
@@ -161,152 +217,15 @@ impl<'a> VMProcess<'a> {
             panic!();
         }
     }
+
+    fn fetch_clovers(&mut self, clsref: ValueRef) {
+        if let Value::Tuple(clv_ref_slice) = self.heap.deref(clsref) {
+            self.clovers = unsafe {
+                slice::from_raw_parts(clv_ref_slice.as_ptr(),
+                                      clv_ref_slice.len())
+            };
+        } else {
+            panic!();
+        }
+    }
 }
-
-// use std::rc::Rc;
-// use std::collections::HashMap;
-
-// use value::{Value, ValueRef, Closure, NativeFn};
-// use environment::EnvRef;
-// use bytecode::{Bytecode, Arg, Const, Closed, Brf, Call, Fn};
-
-// // Types
-
-// pub struct VM {
-//     modules: HashMap<String, EnvRef>
-// }
-
-// pub struct VMProcess {
-//     ip: usize,
-    
-//     codeobj: Rc<CodeObject>,
-//     clovers: Rc<Vec<ValueRef>>,
-    
-//     stack: Vec<ValueRef>
-// }
-
-// #[derive(Debug)]
-// pub struct CodeObject {
-//     pub instrs: Vec<Bytecode>,
-//     pub consts: Vec<ValueRef>,
-//     pub codeobjs: Vec<Rc<CodeObject>>
-// }
-
-// #[derive(Debug)]
-// pub enum VMError {
-//     ArgcMismatch(usize, usize)
-// }
-
-// pub type VMResult = Result<ValueRef, VMError>;
-
-// // Behaviour
-
-// impl VM {
-//     pub fn new() -> VM {
-//         VM {
-//             modules: HashMap::new()
-//         }
-//     }
-
-//     pub fn spawn(&self, closure: ValueRef, args: Vec<ValueRef>) -> VMProcess {
-//         VMProcess {
-//             ip: 0,
-//             codeobj: closure.unwrap_codeobj().clone(),
-//             clovers: closure.unwrap_clovers().clone(),
-//             stack: args
-//         }
-//     }
-// }
-
-// impl VMProcess {
-//     pub fn run(&mut self) -> VMResult {
-//         while self.ip < self.codeobj.instrs.len() {
-//             match self.codeobj.instrs[self.ip] {
-//                 Arg(n) => {
-//                     println!("arg    {} {:?}", n, self.stack);
-
-//                     let arg = self.arg(n);
-//                     self.stack.push(arg);
-//                     self.ip += 1;
-//                 },
-//                 Const(n) => {
-//                     println!("const  {} {:?}", n, self.stack);
-                    
-//                     self.stack.push(self.codeobj.consts[n].clone());
-//                     self.ip += 1;
-//                 },
-//                 Closed(n) => {
-//                     println!("closed {} {:?}", n, self.stack);
-                    
-//                     self.stack.push(self.clovers[n].clone());
-//                     self.ip += 1;
-//                 },
-
-//                 Brf(n) => {
-//                     println!("brf    {} {:?}", n, self.stack);
-                    
-//                     let cond = self.stack.pop().unwrap().unwrap_bool();
-//                     if !cond {
-//                         self.ip = n;
-//                     } else {
-//                         self.ip += 1;
-//                     }
-//                 },
-
-//                 Fn(i, n) => {
-//                     println!("fn     {} {} {:?}", i, n, self.stack);
-                    
-//                     let codeobj = self.codeobj.codeobjs[i].clone();
-//                     let l = self.stack.len();
-//                     let clovers = Rc::new(self.stack.split_off(l - n));
-//                     let closure = Rc::new(Value::Fn(Closure {
-//                         codeobj: codeobj,
-//                         clovers: clovers
-//                     }));
-//                     self.stack.push(closure);
-//                     self.ip += 1;
-//                 },
-
-//                 Call(n) => {
-//                     println!("call   {} {:?}", n, self.stack);
-                    
-//                     try!(self.call(n));
-//                 }
-//             }
-//         }
-//         Ok(self.stack.pop().unwrap())
-//     }
-
-//     pub fn arg(&self, n: usize) -> ValueRef {
-//         self.stack[n].clone()
-//     }
-
-//     pub fn push(&mut self, v: ValueRef) {
-//         self.stack.push(v)
-//     }
-
-//     pub fn call(&mut self, n: usize) -> VMResult {
-//         let l = self.stack.len();
-//         let start = l - n;
-//         let f = self.stack[l - n - 1].clone();
-//         for i in 0..n {
-//             self.stack[i] = self.stack[start + i].clone()
-//         }
-//         self.stack.truncate(n);
-        
-//         match *f {
-//             Value::Fn(Closure { ref codeobj, ref clovers }) => {
-//                 self.ip = 0;
-//                 self.codeobj = codeobj.clone();
-//                 self.clovers = clovers.clone();
-//             },
-//             Value::NativeFn(NativeFn { ref code }) => return code(self),
-//             _ => panic!()
-//         }
-//         Ok(Rc::new(Value::Tuple(vec![])))
-//     }
-
-//     pub fn halt(&mut self) {
-//         self.ip = self.codeobj.instrs.len()
-//     }
-// }
