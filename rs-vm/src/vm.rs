@@ -16,7 +16,7 @@ pub struct VMProcess<'a> {
     // These slices point into the GcHeap:
     instrs: &'a [Bytecode],      // Instructions of the current Fn
     consts: &'a [ValueRef],      // Constants of the current Fn
-    // codeobjs: &'a [ValueRef], // Inner Procedures of the current Fn
+    codeobjs: &'a [ValueRef], // Inner Procedures of the current Fn
     // clovers: &'a [ValueRef],  // Closed-over values of the current Fn
         
     ip: usize // Index of the next instruction to run
@@ -44,21 +44,14 @@ impl VM {
             stack: Vec::with_capacity(256),
             instrs: &[],
             consts: &[],
+            codeobjs: &[],
             ip: 0
         };
-        
-        let ic = inflatee.instrs.len();
-        let bc = ic * size_of::<Bytecode>();
-        let instrref = vmproc.heap.alloc(&Value::Buffer(unsafe {
-            slice::from_raw_parts(inflatee.instrs.as_ptr() as *const _, bc)
-        }));
 
-        let constrefs: Vec<ValueRef> = inflatee.consts.iter()
-            .map(|v| vmproc.heap.alloc(v)).collect();
-        let consttupref = vmproc.heap.alloc(&Value::Tuple(constrefs.as_slice()));
+        // Fill the slice fields:
+        let procref = vmproc.heap.inflate(inflatee);
+        vmproc.fetch_proc(procref);
         
-        vmproc.fetch_instrs(instrref);
-        vmproc.fetch_consts(consttupref);
         vmproc
     }
 }
@@ -116,7 +109,7 @@ impl<'a> VMProcess<'a> {
                     let a = self.stack[i];
                     let b = self.stack[j];
                     self.stack.push(try!(a.divi(b)));
-                },
+                }
 
                 op => panic!("Unrecognized bytecode {:x}", op)
             }
@@ -124,6 +117,16 @@ impl<'a> VMProcess<'a> {
         }
         
         Ok(self.stack.pop().unwrap())
+    }
+
+    fn fetch_proc(&mut self, procref: ValueRef) {
+        if let Value::Procedure(vmproc) = self.heap.deref(procref) {
+            self.fetch_instrs(vmproc.instrs);
+            self.fetch_consts(vmproc.consts);
+            self.fetch_subprocs(vmproc.codeobjs);
+        } else {
+            panic!()
+        }
     }
 
     fn fetch_instrs(&mut self, bufref: ValueRef) {
@@ -142,6 +145,17 @@ impl<'a> VMProcess<'a> {
             self.consts = unsafe {
                 slice::from_raw_parts(const_ref_slice.as_ptr(),
                                       const_ref_slice.len())
+            };
+        } else {
+            panic!();
+        }
+    }
+
+    fn fetch_subprocs(&mut self, cobsref: ValueRef) {
+        if let Value::Tuple(cob_ref_slice) = self.heap.deref(cobsref) {
+            self.codeobjs = unsafe {
+                slice::from_raw_parts(cob_ref_slice.as_ptr(),
+                                      cob_ref_slice.len())
             };
         } else {
             panic!();

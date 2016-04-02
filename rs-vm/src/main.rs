@@ -44,6 +44,12 @@ fn main() {
     
     // println!("{:?}", heap);
 
+    let division = DeflatedProcedure {
+        instrs: vec![Bytecode::divi(1,2)],
+        consts: vec![],
+        codeobjs: vec![],
+        clover_count: 0
+    };
     let addition = DeflatedProcedure {
         instrs: vec![Bytecode::cnst(0),     // 2
                      Bytecode::cnst(1),     // 3
@@ -54,7 +60,7 @@ fn main() {
                      Bytecode::subi(0, 1),  // 2 - 3 = -1
                      Bytecode::divi(5, 6)], // 20/-1 = -20
         consts: vec![Value::Int(2), Value::Int(3), Value::Int(6)],
-        codeobjs: vec![],
+        codeobjs: vec![division],
         clover_count: 0
     };
 

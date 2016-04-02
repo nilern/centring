@@ -27,6 +27,7 @@ pub const INT_TAG: usize = 1;
 
 const TUPLE_TAG: usize =  0x0100_0000_0000_0000;
 const BUFFER_TAG: usize = 0x0200_0000_0000_0000;
+const COB_TAG: usize = 0x0300_0000_0000_0000;
 
 // Types
 
@@ -52,9 +53,10 @@ pub enum Value<'a> {
 
 #[derive(Debug)]
 struct Procedure {
-    instrs: ValueRef,
-    consts: ValueRef,
-    codeobjs: ValueRef
+    pub instrs: ValueRef,
+    pub consts: ValueRef,
+    pub codeobjs: ValueRef,
+    pub clover_count: usize
 }
 
 pub struct DeflatedProcedure<'a> {
@@ -144,25 +146,60 @@ impl GcHeap {
                 ValueRef::from_index(start)
             },
 
-           Value::Buffer(bytes) => {
-               let start = self.fromspace.len();
-               let bc = bytes.len();
-               
-               let header = BYTEBLOCK_BIT | BUFFER_TAG | bc;
-               self.fromspace.push(ValueRef(header));
+            Value::Buffer(bytes) => {
+                let start = self.fromspace.len();
+                let bc = bytes.len();
+                
+                let header = BYTEBLOCK_BIT | BUFFER_TAG | bc;
+                self.fromspace.push(ValueRef(header));
 
-               let wc = if bc % 8 == 0 { bc/8 } else { bc/8 + 1 };
-               let words = unsafe {
-                   let ptr = transmute(bytes.as_ptr());
-                   slice::from_raw_parts(ptr, wc)
-               };
-               self.fromspace.extend_from_slice(words);
-               
-               ValueRef::from_index(start)
-           },
+                let wc = if bc % 8 == 0 { bc/8 } else { bc/8 + 1 };
+                let words = unsafe {
+                    let ptr = transmute(bytes.as_ptr());
+                    slice::from_raw_parts(ptr, wc)
+                };
+                self.fromspace.extend_from_slice(words);
+                
+                ValueRef::from_index(start)
+            },
 
-            _ => panic!()
+            Value::Procedure(ref cob) => {
+                let start = self.fromspace.len();
+                let header = COB_TAG | 3;
+
+                let ccref = self.alloc(&Value::Int(cob.clover_count as isize));
+                self.fromspace.push(ValueRef(header));
+                self.fromspace.push(cob.instrs);
+                self.fromspace.push(cob.consts);
+                self.fromspace.push(cob.codeobjs);
+                self.fromspace.push(ccref);
+
+                ValueRef::from_index(start)
+            }
         }
+    }
+
+    pub fn inflate(&mut self, inflatee: &DeflatedProcedure) -> ValueRef {
+        let ic = inflatee.instrs.len();
+        let bc = ic * size_of::<Bytecode>();
+        let instrref = self.alloc(&Value::Buffer(unsafe {
+            slice::from_raw_parts(inflatee.instrs.as_ptr() as *const _, bc)
+        }));
+
+        let constrefs: Vec<ValueRef> = inflatee.consts.iter()
+            .map(|v| self.alloc(v)).collect();
+        let consttupref = self.alloc(&Value::Tuple(constrefs.as_slice()));
+
+        let cobrefs: Vec<ValueRef> = inflatee.codeobjs.iter()
+            .map(|v| self.inflate(v)).collect();
+        let cobtupref = self.alloc(&Value::Tuple(cobrefs.as_slice()));
+
+        self.alloc(&Value::Procedure(Procedure {
+            instrs: instrref,
+            consts: consttupref,
+            codeobjs: cobtupref,
+            clover_count: inflatee.clover_count
+        }))
     }
 
     pub fn deref(&self, vref: ValueRef) -> Value {
@@ -185,6 +222,14 @@ impl GcHeap {
                         };
                         Value::Buffer(&bsl)
                     },
+
+                    COB_TAG => Value::Procedure(Procedure {
+                        instrs: self.fromspace[start + 1],
+                        consts: self.fromspace[start + 2],
+                        codeobjs: self.fromspace[start + 3],
+                        clover_count: self.fromspace[start + 4]
+                            .get_int().unwrap() as usize
+                    }),
                     
                     _ => panic!()
                 }
