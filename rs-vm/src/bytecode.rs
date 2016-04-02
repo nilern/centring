@@ -21,10 +21,10 @@ pub enum Opcode {
     Clover,
     // Global,
 
-    AddI,
-    SubI,
-    MulI,
-    DivI,
+    Add,
+    Sub,
+    Mul,
+    Div,
 
     // Brf,
 
@@ -58,10 +58,10 @@ bytecode_ctor!(cnst, Opcode::Const, i);
 bytecode_ctor!(local, Opcode::Local, i);
 bytecode_ctor!(clover, Opcode::Clover, i);
 
-bytecode_ctor!(addi, Opcode::AddI, a, b);
-bytecode_ctor!(subi, Opcode::SubI, a, b);
-bytecode_ctor!(muli, Opcode::MulI, a, b);
-bytecode_ctor!(divi, Opcode::DivI, a, b);
+bytecode_ctor!(addi, Opcode::Add, a, b);
+bytecode_ctor!(subi, Opcode::Sub, a, b);
+bytecode_ctor!(muli, Opcode::Mul, a, b);
+bytecode_ctor!(divi, Opcode::Div, a, b);
 
 bytecode_ctor!(fun, Opcode::Fn, i);
 bytecode_ctor!(call, Opcode::Call, n);

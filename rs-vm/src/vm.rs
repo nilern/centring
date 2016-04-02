@@ -90,40 +90,40 @@ impl<'a> VMProcess<'a> {
                     self.stack.push(vref);
                 },
 
-                Opcode::AddI => {
+                Opcode::Add => {
                     let (i, j) = instr.args();
-                    println!("addi   {} {} {:?}", i, j, self.stack);
+                    println!("add    {} {} {:?}", i, j, self.stack);
 
                     let a = self.stack[i];
                     let b = self.stack[j];
-                    self.stack.push(try!(a.addi(b)));
+                    self.stack.push(try!(a.add(b)));
                 },
 
-                Opcode::SubI => {
+                Opcode::Sub => {
                     let (i, j) = instr.args();
-                    println!("subi   {} {} {:?}", i, j, self.stack);
+                    println!("sub    {} {} {:?}", i, j, self.stack);
 
                     let a = self.stack[i];
                     let b = self.stack[j];
-                    self.stack.push(try!(a.subi(b)));
+                    self.stack.push(try!(a.sub(b)));
                 },
 
-                Opcode::MulI => {
+                Opcode::Mul => {
                     let (i, j) = instr.args();
-                    println!("muli   {} {} {:?}", i, j, self.stack);
+                    println!("mul    {} {} {:?}", i, j, self.stack);
 
                     let a = self.stack[i];
                     let b = self.stack[j];
-                    self.stack.push(try!(a.muli(b)));
+                    self.stack.push(try!(a.mul(b)));
                 },
 
-                Opcode::DivI => {
+                Opcode::Div => {
                     let (i, j) = instr.args();
-                    println!("divi   {} {} {:?}", i, j, self.stack);
+                    println!("div    {} {} {:?}", i, j, self.stack);
 
                     let a = self.stack[i];
                     let b = self.stack[j];
-                    self.stack.push(try!(a.divi(b)));
+                    self.stack.push(try!(a.div(b)));
                 },
 
                 Opcode::Fn => {
@@ -132,14 +132,12 @@ impl<'a> VMProcess<'a> {
 
                     let cob = self.codeobjs[i];
                     if let Value::Procedure(vmproc) = self.heap.deref(cob) {
-                        let len = self.stack.len();
-                        let crefs = self.stack.split_off(
-                            len - vmproc.clover_count);
+                        let new_len = self.stack.len() - vmproc.clover_count;
                         let fnref = self.heap.alloc(&Value::Closure(Closure {
                             codeobj: cob,
-                            clovers: crefs.as_slice()
+                            clovers: &self.stack[new_len..]
                         }));
-                        
+                        self.stack.truncate(new_len);
                         self.stack.push(fnref);
                     } else {
                         panic!();
@@ -153,7 +151,7 @@ impl<'a> VMProcess<'a> {
                     n += 1;
                     let start = self.stack.len() - n;
                     for i in 0..n {
-                        self.stack[i] = self.stack[start + i].clone()
+                        self.stack[i] = self.stack[start + i].clone();
                     }
                     self.stack.truncate(n);
 

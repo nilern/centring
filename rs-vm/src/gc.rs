@@ -61,7 +61,7 @@ pub struct Closure<'a> {
 }
 
 #[derive(Debug)]
-struct Procedure {
+pub struct Procedure {
     pub instrs: ValueRef,
     pub consts: ValueRef,
     pub codeobjs: ValueRef,
@@ -78,10 +78,6 @@ pub struct DeflatedProcedure<'a> {
 // Behaviour
 
 impl ValueRef {
-    pub fn new(data: usize) -> ValueRef {
-        ValueRef(data)
-    }
-    
     pub fn is_immediate(&self) -> bool {
         self.0 & IMMEDIACY_BITS != 0
     }
@@ -90,32 +86,36 @@ impl ValueRef {
         ValueRef(i << REF_SHIFT)
     }
 
+    pub fn is_int(&self) -> bool {
+        self.0 & INT_BITS == INT_TAG
+    }
+
     pub fn get_int(&self) -> Option<isize> {
-        if self.0 & INT_BITS == INT_TAG {
+        if self.is_int() {
             Some(self.0 as isize >> INT_SHIFT)
         } else {
             None
         }
     }
 
-    pub fn addi(self, other: ValueRef) -> VMResult {
-        if let (INT_TAG, INT_TAG) = (self.0 & INT_BITS, other.0 & INT_BITS) {
+    pub fn add(self, other: ValueRef) -> VMResult {
+        if self.is_int() && other.is_int() {
             Ok(ValueRef((self.0 as isize + other.0 as isize - 1) as usize))
         } else {
             Err(VMError::TypeMismatch)
         }
     }
 
-    pub fn subi(self, other: ValueRef) -> VMResult {
-        if let (INT_TAG, INT_TAG) = (self.0 & INT_BITS, other.0 & INT_BITS) {
+    pub fn sub(self, other: ValueRef) -> VMResult {
+        if self.is_int() && other.is_int() {
             Ok(ValueRef((self.0 as isize - other.0 as isize + 1) as usize))
         } else {
             Err(VMError::TypeMismatch)
         }
     }
 
-    pub fn muli(self, other: ValueRef) -> VMResult {
-        if let (INT_TAG, INT_TAG) = (self.0 & INT_BITS, other.0 & INT_BITS) {
+    pub fn mul(self, other: ValueRef) -> VMResult {
+        if self.is_int() && other.is_int() {
             Ok(ValueRef(((self.0 as isize - 1)*(other.0 as isize - 1)/2 + 1)
                         as usize))
         } else {
@@ -123,8 +123,8 @@ impl ValueRef {
         }
     }
 
-    pub fn divi(self, other: ValueRef) -> VMResult {
-        if let (INT_TAG, INT_TAG) = (self.0 & INT_BITS, other.0 & INT_BITS) {
+    pub fn div(self, other: ValueRef) -> VMResult {
+        if self.is_int() && other.is_int() {
             Ok(ValueRef(((self.0 as isize - 1)/(other.0 as isize - 1)*2 + 1)
                         as usize))
         } else {
@@ -173,10 +173,10 @@ impl GcHeap {
             },
 
             Value::Procedure(ref cob) => {
+                let ccref = self.alloc(&Value::Int(cob.clover_count as isize));
                 let start = self.fromspace.len();
                 let header = COB_TAG | 3;
-
-                let ccref = self.alloc(&Value::Int(cob.clover_count as isize));
+                
                 self.fromspace.push(ValueRef(header));
                 self.fromspace.push(cob.instrs);
                 self.fromspace.push(cob.consts);
