@@ -37,45 +37,34 @@ pub struct Bytecode(u32);
 
 // Behaviour
 
-pub fn cnst(i: u16) -> Bytecode {
-    Bytecode((i as u32) << ARG0_SHIFT | Opcode::Const as u32)
+macro_rules! bytecode_ctor {
+    ($name:ident, $opcode:path, $a:ident) => {
+        pub fn $name(i: u16) -> Bytecode {
+            Bytecode((i as u32) << ARG0_SHIFT
+                     | $opcode as u32)
+        }
+    };
+
+    ($name:ident, $opcode:path, $a:ident, $b:ident) => {
+        pub fn $name(i: u8, j: u8) -> Bytecode {
+            Bytecode((j as u32) << ARG1_SHIFT
+                     | (i as u32) << ARG0_SHIFT
+                     | $opcode as u32)
+        }
+    };
 }
 
-pub fn local(i: u16) -> Bytecode {
-    Bytecode((i as u32) << ARG0_SHIFT | Opcode::Local as u32)
-}
+bytecode_ctor!(cnst, Opcode::Const, i);
+bytecode_ctor!(local, Opcode::Local, i);
+bytecode_ctor!(clover, Opcode::Clover, i);
 
-pub fn clover(i: u16) -> Bytecode {
-    Bytecode((i as u32) << ARG0_SHIFT | Opcode::Clover as u32)
-}
+bytecode_ctor!(addi, Opcode::AddI, a, b);
+bytecode_ctor!(subi, Opcode::SubI, a, b);
+bytecode_ctor!(muli, Opcode::MulI, a, b);
+bytecode_ctor!(divi, Opcode::DivI, a, b);
 
-pub fn addi(i: u8, j: u8) -> Bytecode {
-    Bytecode((j as u32) << ARG1_SHIFT | (i as u32) << ARG0_SHIFT
-             | Opcode::AddI as u32)
-}
-
-pub fn subi(i: u8, j: u8) -> Bytecode {
-    Bytecode((j as u32) << ARG1_SHIFT | (i as u32) << ARG0_SHIFT
-             | Opcode::SubI as u32)
-}
-
-pub fn muli(i: u8, j: u8) -> Bytecode {
-    Bytecode((j as u32) << ARG1_SHIFT | (i as u32) << ARG0_SHIFT
-             | Opcode::MulI as u32)
-}
-
-pub fn divi(i: u8, j: u8) -> Bytecode {
-    Bytecode((j as u32) << ARG1_SHIFT | (i as u32) << ARG0_SHIFT
-             | Opcode::DivI as u32)
-}
-
-pub fn fun(i: u16) -> Bytecode {
-    Bytecode((i as u32) << ARG0_SHIFT | Opcode::Fn as u32)
-}
-
-pub fn call(i: u16) -> Bytecode {
-    Bytecode((i as u32) << ARG0_SHIFT | Opcode::Call as u32)
-}
+bytecode_ctor!(fun, Opcode::Fn, i);
+bytecode_ctor!(call, Opcode::Call, n);
 
 impl Bytecode {
     pub fn op(&self) -> Opcode {
