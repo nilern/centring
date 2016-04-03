@@ -2,7 +2,7 @@ use std::mem::size_of;
 use std::slice;
 
 use gc::{GcHeap, Value, ValueRef, DeflatedProcedure, Closure};
-use bytecode::{Bytecode, Opcode};
+use bytecode::{Bytecode, Opcode, Arg, Domain};
 
 // TODO:
 // - Make GC work
@@ -69,67 +69,43 @@ impl<'a> VMProcess<'a> {
             match instr.op() {
                 Opcode::Const => {
                     let i = instr.arg();
-                    println!("const  {}   {:?}", i, self.stack);
-                    
                     self.stack.push(self.consts[i].clone());
                 },
                 
                 Opcode::Local => {
                     let i = instr.arg();
-                    println!("local  {}   {:?}", i, self.stack);
-
                     let vref = self.stack[i];
                     self.stack.push(vref);
                 },
                 
                 Opcode::Clover => {
                     let i = instr.arg();
-                    println!("clover {}   {:?}", i, self.stack);
-
                     let vref = self.clovers[i];
                     self.stack.push(vref);
                 },
 
                 Opcode::Add => {
-                    let (i, j) = instr.args();
-                    println!("add    {} {} {:?}", i, j, self.stack);
-
-                    let a = self.stack[i];
-                    let b = self.stack[j];
+                    let (a, b) = self.fetch_args(instr);
                     self.stack.push(try!(a.add(b)));
                 },
 
                 Opcode::Sub => {
-                    let (i, j) = instr.args();
-                    println!("sub    {} {} {:?}", i, j, self.stack);
-
-                    let a = self.stack[i];
-                    let b = self.stack[j];
+                    let (a, b) = self.fetch_args(instr);
                     self.stack.push(try!(a.sub(b)));
                 },
 
                 Opcode::Mul => {
-                    let (i, j) = instr.args();
-                    println!("mul    {} {} {:?}", i, j, self.stack);
-
-                    let a = self.stack[i];
-                    let b = self.stack[j];
+                    let (a, b) = self.fetch_args(instr);
                     self.stack.push(try!(a.mul(b)));
                 },
 
                 Opcode::Div => {
-                    let (i, j) = instr.args();
-                    println!("div    {} {} {:?}", i, j, self.stack);
-
-                    let a = self.stack[i];
-                    let b = self.stack[j];
+                    let (a, b) = self.fetch_args(instr);
                     self.stack.push(try!(a.div(b)));
                 },
 
                 Opcode::Fn => {
                     let i = instr.arg();
-                    println!("fn     {}   {:?}", i, self.stack);
-
                     let cob = self.codeobjs[i];
                     if let Value::Procedure(vmproc) = self.heap.deref(cob) {
                         let new_len = self.stack.len() - vmproc.clover_count;
@@ -145,10 +121,7 @@ impl<'a> VMProcess<'a> {
                 },
 
                 Opcode::Call => {
-                    let mut n = instr.arg();
-                    println!("call   {}   {:?}", n, self.stack);
-
-                    n += 1;
+                    let n = instr.arg() + 1; // argc + (1 for callee)
                     let start = self.stack.len() - n;
                     for i in 0..n {
                         self.stack[i] = self.stack[start + i].clone();
@@ -173,6 +146,19 @@ impl<'a> VMProcess<'a> {
         }
         
         Ok(self.stack.pop().unwrap())
+    }
+
+    fn fetch_args(&self, instr: Bytecode) -> (ValueRef, ValueRef) {
+        (self.fetch_arg(instr.arg0()), self.fetch_arg(instr.arg1()))
+    }
+
+    fn fetch_arg(&self, i: Arg) -> ValueRef {
+        match i.domain() {
+            Domain::Local => self.stack[i.index()],
+            Domain::Clover => self.clovers[i.index()],
+            Domain::Const => self.consts[i.index()],
+            // Domain::Global => ...
+        }
     }
 
     fn fetch_proc(&mut self, procref: ValueRef) {
