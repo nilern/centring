@@ -4,10 +4,6 @@ use std::slice;
 use gc::{GcHeap, Value, ValueRef, DeflatedProcedure, Closure};
 use bytecode::{Bytecode, Opcode, Arg, Domain};
 
-// TODO:
-// - Make GC work
-// - let stack grow somewhat before 'renormalizing' it
-
 // Types
 
 pub struct VM;
@@ -66,10 +62,12 @@ impl<'a> VMProcess<'a> {
         while self.ip < self.instrs.len() {
             let instr = self.instrs[self.ip];
             self.ip += 1;
+            println!("{:?}", instr.op());
             match instr.op() {
                 Opcode::Const => {
                     let i = instr.arg();
-                    self.stack.push(self.consts[i].clone());
+                    let vref = self.consts[i];
+                    self.stack.push(vref);
                 },
                 
                 Opcode::Local => {
@@ -121,25 +119,22 @@ impl<'a> VMProcess<'a> {
                 },
 
                 Opcode::Call => {
+                    // TODO: Only clean up stack & heap when necessary
+                    
+                    // Throw away stack items we don't need anymore:
                     let n = instr.arg() + 1; // argc + (1 for callee)
                     let start = self.stack.len() - n;
                     for i in 0..n {
-                        self.stack[i] = self.stack[start + i].clone();
+                        self.stack[i] = self.stack[start + i];
                     }
                     self.stack.truncate(n);
 
+                    // Release unreachable objects:
+                    self.heap.collect(self.stack.as_mut_slice());
+
+                    // Set things up and jump to the callee:
                     let fnref = self.stack[0];
-                    let (cob, cls) = match self.heap.deref(fnref) {
-                        Value::Closure(cls) => (
-                            cls.codeobj,
-                            unsafe {
-                                slice::from_raw_parts(cls.clovers.as_ptr(),
-                                                      cls.clovers.len())
-                            }),
-                        _ => panic!()
-                    };
-                    self.fetch_proc(cob);
-                    self.clovers = cls;
+                    self.fetch_closure(fnref);
                     self.ip = 0;
                 }
             }
@@ -159,6 +154,20 @@ impl<'a> VMProcess<'a> {
             Domain::Const => self.consts[i.index()],
             // Domain::Global => ...
         }
+    }
+
+    fn fetch_closure(&mut self, fnref: ValueRef) {
+        let (cob, cls) = match self.heap.deref(fnref) {
+            Value::Closure(cls) => (
+                cls.codeobj,
+                unsafe {
+                    slice::from_raw_parts(cls.clovers.as_ptr(),
+                                          cls.clovers.len())
+                }),
+            _ => panic!()
+        };
+        self.fetch_proc(cob);
+        self.clovers = cls;
     }
 
     fn fetch_proc(&mut self, procref: ValueRef) {

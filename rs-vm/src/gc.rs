@@ -1,5 +1,5 @@
 use std::slice;
-use std::mem::{size_of, transmute};
+use std::mem::{size_of, transmute, swap};
 
 use vm::{VMError, VMResult};
 use bytecode::Bytecode;
@@ -86,6 +86,10 @@ impl ValueRef {
         ValueRef(i << REF_SHIFT)
     }
 
+    fn to_index(self) -> usize {
+        self.0 >> REF_SHIFT
+    }
+
     pub fn is_int(&self) -> bool {
         self.0 & INT_BITS == INT_TAG
     }
@@ -162,7 +166,7 @@ impl GcHeap {
                 let header = BYTEBLOCK_BIT | BUFFER_TAG | bc;
                 self.fromspace.push(ValueRef(header));
 
-                let wc = if bc % 8 == 0 { bc/8 } else { bc/8 + 1 };
+                let wc = wc_from_bc(bc);
                 let words = unsafe {
                     let ptr = transmute(bytes.as_ptr());
                     slice::from_raw_parts(ptr, wc)
@@ -175,7 +179,7 @@ impl GcHeap {
             Value::Procedure(ref cob) => {
                 let ccref = self.alloc(&Value::Int(cob.clover_count as isize));
                 let start = self.fromspace.len();
-                let header = COB_TAG | 3;
+                let header = COB_TAG | 4;
                 
                 self.fromspace.push(ValueRef(header));
                 self.fromspace.push(cob.instrs);
@@ -267,72 +271,85 @@ impl GcHeap {
         }
     }
 
-    pub fn collect(mut self, roots: &mut [ValueRef]) -> GcHeap {
+    pub fn collect(&mut self, roots: &mut [ValueRef]) {
+        // Relocate roots:
         for i in 0..roots.len() {
-            roots[i] = self.copy(roots[i]);
+            roots[i] = self.relocate(roots[i]);
         }
-        
+
+        // Copy live objects breadth-first ('Cheney algorithm'):
         let mut scan = 0;
         while scan < self.tospace.len() {
             let header = self.tospace[scan].0;
-            let data_len = header & LENGTH_BITS;
-            let start = scan + 1;
-            scan = start + data_len;
+            let data_len = data_wlen(header);
+            let data_start = scan + 1;
+            scan = data_start + data_len; // Index of next object header
+            // Skip over byteblocks, they don't contain (GC'd) pointers:
             if header & BYTEBLOCK_BIT == 0 {
-                for i in start..scan {
+                // Relocate the children of this object:
+                for i in data_start..scan {
                     let old = self.tospace[i];
-                    self.tospace[i] = self.copy(old);
+                    self.tospace[i] = self.relocate(old);
                 }
             }
         }
 
         self.fromspace.clear();
-        
-        GcHeap {
-            fromspace: self.tospace,
-            tospace: self.fromspace
-        }
+
+        swap(&mut self.fromspace, &mut self.tospace);
     }
 
-    fn copy(&mut self, vref: ValueRef) -> ValueRef {
-        if let Some(fwref) = self.get_fwd(vref) {
-            fwref
-        } else if vref.is_immediate() {
-            vref
+    fn relocate(&mut self, vref: ValueRef) -> ValueRef {
+        if vref.is_immediate() {
+            vref // Not a heap index => no change necessary
+        } else if let Some(fwref) = self.get_fwd(vref) {
+            fwref // Has already been moved to this location
         } else {
             let newstart = self.tospace.len();
-            
-            let oldstart = vref.0 >> REF_SHIFT;
+
+            // Copy object:
+            let oldstart = vref.to_index();
             {
                 let header = self.fromspace[oldstart].0;
-                let data_len = if header & BYTEBLOCK_BIT == 0 {
-                    header & LENGTH_BITS
-                } else {
-                    let bc = header & LENGTH_BITS;
-                    if bc % 8 == 0 { bc/8 } else { bc/8 + 1 }
-                };
+                let data_len = data_wlen(header);
                 let data = &self.fromspace[oldstart..oldstart+data_len+1];
                 self.tospace.extend_from_slice(data);
             }
 
-            self.fromspace[oldstart] =
-                ValueRef(FORWARDING_BIT | newstart);
+            // Replace the header in fromspace with a forward:
+            self.fromspace[oldstart] = ValueRef(FORWARDING_BIT | newstart);
 
-            ValueRef::from_index(newstart)
+            ValueRef::from_index(newstart) // Here's where we moved it
         }
     }
 
     fn get_fwd(&self, vref: ValueRef) -> Option<ValueRef> {
         if vref.is_immediate() {
-            return None
-        }
-
-        let header = self.fromspace[vref.0 >> REF_SHIFT].0;
-        if header & FORWARDING_BIT == 0 {
             None
         } else {
-            // This will also shift out the leftmost forwarding bit:
-            Some(ValueRef::from_index(header))
+            let header = self.fromspace[vref.to_index()].0;
+            if header & FORWARDING_BIT == 0 {
+                None
+            } else {
+                // This will simultaneously shift out FORWARDING_BIT:
+                Some(ValueRef::from_index(header))
+            }
         }
+    }
+}
+
+fn data_wlen(header: usize) -> usize {
+    if header & BYTEBLOCK_BIT == 0 {
+        header & LENGTH_BITS
+    } else {
+        wc_from_bc(header & LENGTH_BITS)
+    }
+}
+
+fn wc_from_bc(bc: usize) -> usize {
+    if bc % size_of::<ValueRef>() == 0 {
+        bc / size_of::<ValueRef>()
+    } else {
+        bc / size_of::<ValueRef>() + 1
     }
 }

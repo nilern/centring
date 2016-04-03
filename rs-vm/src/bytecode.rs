@@ -20,6 +20,7 @@ const CONST_TAG: u32 = 0x200;
 #[derive(Debug, Clone, Copy)]
 pub struct Bytecode(u32);
 
+#[derive(Debug)]
 #[repr(u32)]
 pub enum Opcode {
     Const,
