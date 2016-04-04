@@ -6,10 +6,12 @@
        (only (srfi 69)
              make-hash-table
              alist->hash-table
+             hash-table->alist
              hash-table-set!
              hash-table-ref
              hash-table-ref/default
              hash-table-exists?)
+       (only (srfi 13) string-prefix? string-index)
        (only data-structures identity constantly))
 
   ;;;; Utils
@@ -25,6 +27,14 @@
      ((null? ls2) #f)
      (else (and (pred? (car ls1) (car ls2))
                 (every-2? pred? (cdr ls1) (cdr ls2))))))
+
+  (define (intrinsic? sym)
+    (and (symbol? sym)
+         (string-prefix? "centring.intr/" (symbol->string sym))))
+
+  (define (name sym)
+    (let ((symstr (symbol->string sym)))
+      (string->symbol (substring symstr (add1 (string-index symstr #\/))))))
 
   ;;;; CPS AST
 
@@ -81,14 +91,12 @@
       (`(centring.sf/def ,name ,expr)
        (cps-k expr (lambda (e)
                      (make-Def name e
-                               (cps-k '(centring.primops/make-singleton
-                                        centring.lang/Tuple) c)))))
+                               (cps-k '(centring.intr/make-void) c)))))
       
       (`(centring.sf/do . ,stmts)
        (letrec ((monadize (lambda (stmts)
                             (match stmts
-                              ('() '(centring.primops/make-singleton
-                                     centring.lang/Tuple))
+                              ('() '(centring.intr/make-void))
                               ((stmt) stmt)
                               ((stmt . rstmts)
                                (let ((_ (gensym '_)))
@@ -96,13 +104,12 @@
                                      ,(monadize rstmts))
                                    ,stmt)))))))
          (cps-k (monadize stmts) c)))
-
-      ;; TODO: Make this deal with everything in centring.primops:
-      (`(centring.primops/make-singleton ,type)
-       (cps-k type (lambda (t)
+      
+      (`(,(and op (? intrinsic?)) . ,args)
+       (cps-list args (lambda (as)
                      (let ((v (gensym 'v)))
-                       (make-Primop 'centring.primops/make-singleton `(,t)
-                                    `(,v) (c (make-Var v)))))))
+                        (make-Primop (name op) as
+                                     `(,v) (c (make-Var v)))))))
       
       (`(,callee . ,args)
        (cps-k callee (lambda (f)
@@ -145,8 +152,8 @@
       (($ If cond tcont fcont) (make-If (f cond) (f tcont) (f fcont)))
       (($ Fix defns body)
        (make-Fix (map (lambda (defn)
-                        (match-let ((`(,name ,formals ,types ,body) defn))
-                          `(,name ,formals ,types ,(f body))))
+                        (match-let ((`(,name ,formals ,types ,dbody) defn))
+                          `(,name ,formals ,types ,(f dbody))))
                       defns)
                  (f body)))
       (($ Def name val cont) (make-Def name (f val) (f cont)))
@@ -194,24 +201,23 @@
 
   (define (cps->sexp ast)
     (match ast
-      (($ If cond tcont fcont) `(centring.sf/if ,(cps->sexp cond)
-                                                ,(cps->sexp tcont)
-                                                ,(cps->sexp fcont)))
+      (($ If cond tcont fcont) `($if ,(cps->sexp cond)
+                                     ,(cps->sexp tcont)
+                                     ,(cps->sexp fcont)))
       (($ Fix bindings body)
-       `(centring.sf/letfn
+       `($letfn
          ,(map (lambda (b)
                  (match-let ((`(,name ,args ,types ,bbody) b))
-                   `(,name ,args ,types ,(cps->sexp bbody))))
+                            `(,name ,args ,types ,(cps->sexp bbody))))
                bindings)
          ,(cps->sexp body)))
       (($ Def name val cont)
-       `(centring.sf/def ,name ,(cps->sexp val) ,(cps->sexp cont)))
+       `($def ,name ,(cps->sexp val) ,(cps->sexp cont)))
       (($ App callee args) `(,(cps->sexp callee) ,@(map cps->sexp args)))
       (($ Primop op args results cont)
-       `(,op ,@(map cps->sexp args)
-             (centring.sf/fn ,results ,(map (constantly 'centring.lang/Any)
-                                            results)
-               ,(cps->sexp cont))))
+       `($let ((,results (,(string->symbol (string-append "%" (symbol->string op)))
+                          ,@(map cps->sexp args))))
+          ,(cps->sexp cont)))
       (($ Var name) name)
       (($ Const val) val)))
 
@@ -272,6 +278,9 @@
 
   ;;;; Beta-Contraction
 
+  ;; TODO: Figure out other cases where inlining does not bypass an argument
+  ;; type error and is thus permitted
+
   (define (add-inlinables! inlinables node)
     (match node
       (($ Fix defns body)
@@ -279,7 +288,9 @@
        ;; expansion! Just leave those alone (they will be removed anyway).
        (let ((uses (count-uses (map car defns) node)))
          (map (lambda (usecount defn)
-                (when (= usecount 1)
+                (when (and (= usecount 1)
+                           (every? (lambda (t) (eq? t 'centring.lang/Any))
+                                   (caddr defn)))
                   (hash-table-set! inlinables (car defn) (cdr defn))))
               uses defns)))
       (_)))
@@ -287,7 +298,6 @@
   (define (inline inlinables node)
     (match node
       (($ App ($ Var callee) args)
-       ;; TODO: check that there can be no type errors from this call:
        (if (hash-table-exists? inlinables callee)
          (match-let (((formals _ body) (hash-table-ref inlinables callee)))
            (if (= (length formals) (length args))
@@ -303,8 +313,9 @@
   (define (beta-contract ast)
     (let ((inlinables (make-hash-table)))
       (prewalk (lambda (node)
-                 (add-inlinables! inlinables node)
-                 (inline inlinables node))
+                 (let ((node* (inline inlinables node)))
+                   (add-inlinables! inlinables node*)
+                   (inline inlinables node*)))
                ast)))
 
   ;;;; Elimination of Unused Variables
