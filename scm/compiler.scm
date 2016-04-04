@@ -12,7 +12,9 @@
              hash-table-ref/default
              hash-table-exists?)
        (only (srfi 13) string-prefix? string-index)
-       (only data-structures identity constantly))
+       (only vector-lib vector-index)
+       (only data-structures identity constantly)
+       (only miscmacros push!))
 
   ;;;; Utils
 
@@ -343,4 +345,55 @@
             cont
             node))
          (_ node)))
-     ast)))
+     ast))
+
+  ;;;; Code Generation
+
+  (define-record CodeObject
+    (setter instrs)
+    (setter consts)
+    (setter localnames))
+  
+  (define (collect-const constants node)
+    (match node
+      (($ Const v) (if (memq v constants) constants (cons v constants)))
+      (_ constants)))
+  
+  (define (collect-local constants node)
+    (match node
+      (($ Var name) (if (memq name constants) constants (cons name constants)))
+      (_ constants)))
+
+  (define (collect-constants ast)
+    (list->vector (reverse (fold-leaves collect-const '() ast))))
+
+  (define (collect-locals ast)
+    (list->vector (reverse (fold-leaves collect-local '() ast))))
+
+  (define (emit ast)
+    (let ((codeobj (make-CodeObject '() '() '()))
+          (locals (collect-locals ast))
+          (constants (collect-constants ast)))
+      (letrec ((node-instr
+                (lambda (node)
+                  (match node
+                    (($ Primop op args)
+                     `(,op ,@(map node-instr args)))
+                    (($ Var name)
+                     `(local ,(vector-index (lambda (v) (eq? v name)) locals)))
+                    (($ Const val)
+                     `(const ,(vector-index (lambda (v) (= v val)) constants)))
+                    (_ (void)))))
+               (node-emit
+                (lambda (node)
+                  (match node
+                    (($ Primop op args _ cont)
+                     (push! (node-instr node) (CodeObject-instrs codeobj))
+                     (node-emit cont))
+                    (_ (push! (node-instr node) (CodeObject-instrs codeobj)))))))
+        (node-emit ast)
+        (set! (CodeObject-instrs codeobj)
+              (list->vector (reverse (CodeObject-instrs codeobj))))
+        (set! (CodeObject-consts codeobj) constants)
+        (set! (CodeObject-localnames codeobj) locals)
+        codeobj))))
