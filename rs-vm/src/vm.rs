@@ -65,19 +65,19 @@ impl<'a> VMProcess<'a> {
             println!("{:?}", instr.op());
             match instr.op() {
                 Opcode::Const => {
-                    let i = instr.arg();
+                    let i = instr.index();
                     let vref = self.consts[i];
                     self.stack.push(vref);
                 },
                 
                 Opcode::Local => {
-                    let i = instr.arg();
+                    let i = instr.index();
                     let vref = self.stack[i];
                     self.stack.push(vref);
                 },
                 
                 Opcode::Clover => {
-                    let i = instr.arg();
+                    let i = instr.index();
                     let vref = self.clovers[i];
                     self.stack.push(vref);
                 },
@@ -102,8 +102,13 @@ impl<'a> VMProcess<'a> {
                     self.stack.push(try!(a.div(b)));
                 },
 
+                Opcode::Halt => {
+                    let a = self.fetch_arg(instr.arg());
+                    return Ok(a);
+                },
+
                 Opcode::Fn => {
-                    let i = instr.arg();
+                    let i = instr.index();
                     let cob = self.codeobjs[i];
                     if let Value::Procedure(vmproc) = self.heap.deref(cob) {
                         let new_len = self.stack.len() - vmproc.clover_count;
@@ -122,7 +127,7 @@ impl<'a> VMProcess<'a> {
                     // TODO: Only clean up stack & heap when necessary
                     
                     // Throw away stack items we don't need anymore:
-                    let n = instr.arg() + 1; // argc + (1 for callee)
+                    let n = instr.index() + 1; // argc + (1 for callee)
                     let start = self.stack.len() - n;
                     for i in 0..n {
                         self.stack[i] = self.stack[start + i];
