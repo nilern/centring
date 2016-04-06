@@ -34,6 +34,7 @@ pub enum Opcode {
     Div,
 
     // Brf,
+    Halt,
 
     Fn,
     Call
@@ -54,7 +55,7 @@ pub enum Domain {
 
 macro_rules! bytecode_ctor {
     ($name:ident, $opcode:path, $a:ident) => {
-        pub fn $name(i: u16) -> Bytecode {
+        pub fn $name(i: u32) -> Bytecode {
             Bytecode((i as u32) << ARG0_SHIFT
                      | $opcode as u32)
         }
@@ -73,13 +74,14 @@ bytecode_ctor!(cnst, Opcode::Const, i);
 bytecode_ctor!(local, Opcode::Local, i);
 bytecode_ctor!(clover, Opcode::Clover, i);
 
-bytecode_ctor!(addi, Opcode::Add, a, b);
-bytecode_ctor!(subi, Opcode::Sub, a, b);
-bytecode_ctor!(muli, Opcode::Mul, a, b);
-bytecode_ctor!(divi, Opcode::Div, a, b);
+bytecode_ctor!(add, Opcode::Add, a, b);
+bytecode_ctor!(sub, Opcode::Sub, a, b);
+bytecode_ctor!(mul, Opcode::Mul, a, b);
+bytecode_ctor!(div, Opcode::Div, a, b);
 
 bytecode_ctor!(fun, Opcode::Fn, i);
 bytecode_ctor!(call, Opcode::Call, n);
+bytecode_ctor!(halt, Opcode::Halt, a);
 
 pub fn l(i: u8) -> u32 { LOCAL_TAG | i as u32 }
 pub fn f(i: u8) -> u32 { CLOVER_TAG | i as u32 }
@@ -91,8 +93,12 @@ impl Bytecode {
         unsafe { transmute(self.0 & OP_BITS) }
     }
 
-    pub fn arg(self) -> usize {
+    pub fn index(self) -> usize {
         (self.0 >> ARG0_SHIFT) as usize
+    }
+
+    pub fn arg(self) -> Arg {
+        Arg(self.0 >> ARG0_SHIFT)
     }
 
     pub fn arg0(self) -> Arg {

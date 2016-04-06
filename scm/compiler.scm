@@ -2,7 +2,7 @@
   *
 
   (import scheme chicken)
-  (use (only matchable match match-let)
+  (use (only matchable match match-let match-lambda)
        (only (srfi 69)
              make-hash-table
              alist->hash-table
@@ -12,9 +12,10 @@
              hash-table-ref/default
              hash-table-exists?)
        (only (srfi 13) string-prefix? string-index)
-       (only vector-lib vector-index)
+       (only vector-lib vector-index vector-for-each)
        (only data-structures identity constantly)
-       (only miscmacros push!))
+       (only miscmacros push!)
+       (only format format))
 
   ;;;; Utils
 
@@ -67,6 +68,9 @@
     args
     results
     cont)
+
+  (define-record Halt
+    res)
 
   ;;;; CPS Conversion
 
@@ -162,6 +166,7 @@
       (($ App callee args) (make-App (f callee) (map f args)))
       (($ Primop op args results cont) (make-Primop op (map f args)
                                                     results (f cont)))
+      (($ Halt res) (make-Halt (f res)))
       ((or (? Var?) (? Const?)) node)))
 
   (define (walk inner outer ast)
@@ -196,6 +201,8 @@
       (($ Primop op args results cont)
        (let ((acc* (foldl (cute fold-leaves f <> <>) acc args)))
          (fold-leaves f acc* cont)))
+
+      (($ Halt res) (fold-leaves f acc res))
        
       ((or (? Var?) (? Const?)) (f acc ast))))
 
@@ -220,6 +227,7 @@
        `($let ((,results (,(string->symbol (string-append "%" (symbol->string op)))
                           ,@(map cps->sexp args))))
           ,(cps->sexp cont)))
+      (($ Halt res) `($halt ,(cps->sexp res)))
       (($ Var name) name)
       (($ Const val) val)))
 
@@ -353,6 +361,30 @@
     (setter instrs)
     (setter consts)
     (setter localnames))
+
+  (define (display-codeobj port cob)
+    (define (argf arg)
+      (match arg
+        (`(local ,i) "l~4A")
+        (`(clover ,i) "f~4A")
+        (`(const ,i) "c~4A")
+        (`(global ,i) "g~4A")))
+    (format port ".instructions:~%")
+    (vector-for-each
+     (lambda (i instr)
+       (match instr
+         ((opcode arg)
+          (format port "~A: ~6A ~?~%" i opcode (argf arg) (cdr arg)))
+         ((opcode arg0 arg1)
+          (format port "~A: ~6A ~? ~?~%" i opcode
+                   (argf arg0) (cdr arg0) (argf arg1) (cdr arg1)))))
+     (CodeObject-instrs cob))
+    (format port "~%.constants:~%")
+    (vector-for-each (lambda (i const) (format port "~A: ~S~%" i const))
+                     (CodeObject-consts cob))
+    (format port "~%.localnames:~%")
+    (vector-for-each (lambda (i name) (format port "~A: ~A~%" i name))
+                     (CodeObject-localnames cob)))
   
   (define (collect-const constants node)
     (match node
@@ -379,6 +411,7 @@
                   (match node
                     (($ Primop op args)
                      `(,op ,@(map node-instr args)))
+                    (($ Halt res) `(halt ,(node-instr res)))
                     (($ Var name)
                      `(local ,(vector-index (lambda (v) (eq? v name)) locals)))
                     (($ Const val)

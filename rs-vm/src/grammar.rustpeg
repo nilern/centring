@@ -1,0 +1,26 @@
+use compiler::{Sexpr, Symbol};
+
+#[pub]
+expr -> Sexpr
+     = symbol
+     / list
+     / int
+
+list -> Sexpr
+     = "(" elems:expr ** ws ")" { Sexpr::List(elems) }
+
+symbol -> Sexpr
+       = m:modname "/" n:name { Sexpr::Symbol(Symbol(Some(m), n)) }
+       / n:name { Sexpr::Symbol(Symbol(None, n)) }
+
+modname -> String
+        = [a-zA-Z] [a-zA-Z0-9]* { match_str.to_string() }
+
+name -> String
+     = [a-zA-Z+\-*/] [a-zA-Z0-9+\-*/]* { match_str.to_string() }
+
+int -> Sexpr
+    = [0-9]+ { Sexpr::Int(match_str.parse().unwrap()) }
+
+ws -> ()
+   = [ \t\r\n]*
