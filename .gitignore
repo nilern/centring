@@ -4,3 +4,6 @@ clj/.nrepl-*
 git_stats
 scm/syntax
 cvm/cvm
+hs/ctrc
+*.hi
+*.o
