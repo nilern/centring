@@ -21,6 +21,27 @@ data CPS = Def Symbol CPS CPS
          | Var Symbol
          deriving Show
 
+-- Tools
+
+mapCps :: (CPS -> CPS) -> CPS -> CPS
+mapCps f (Def name v k) = Def name (f v) (f k)
+mapCps f (If cond conseq alt) = If (f cond) (f conseq) (f alt)
+mapCps f (Fix defns body) = Fix mappedDefns (f body)
+  where mappedDefns = map (\(n, fs, ts, b) -> (n, fs, ts, (f b))) defns
+mapCps f (App callee args) = App (f callee) (map f args)
+mapCps f (Primop name args ress k) = Primop name (map f args) ress (f k)
+mapCps f (c @ (Const _)) = f c
+mapCps f (v @ (Var _)) = f v
+
+walk :: (CPS -> CPS) -> (CPS -> CPS) -> CPS -> CPS
+walk inner outer cexp = outer $ mapCps inner cexp
+
+postWalk :: (CPS -> CPS) -> CPS -> CPS
+postWalk f cexp = walk (postWalk f) f cexp
+
+preWalk :: (CPS -> CPS) -> CPS -> CPS
+preWalk f cexp = walk (preWalk f) id (f cexp)
+
 -- Read
 
 parseExpr :: Parser Sexpr
@@ -71,9 +92,9 @@ cps (List (callee:args)) k = cps callee
     (cpsList args (\as -> App f (Var r:as))))
 
 cpsSpecial :: String -> [Sexpr] -> (CPS -> CPS) -> CPS
-cpsSpecial "def" ((Id (name @ (Symbol Nothing _))):expr:[]) k = cps expr
+cpsSpecial "def" [(Id (name @ (Symbol Nothing _))), expr] k = cps expr
   (\v -> Def name v (cpsIntrinsic "make-void" [] k))
-cpsSpecial "if" (cond:conseq:alt:[]) c =
+cpsSpecial "if" [cond, conseq, alt] c =
   cps cond (\cast ->
              let k = Symbol Nothing "k"
                  v = Symbol Nothing "v"
@@ -81,9 +102,9 @@ cpsSpecial "if" (cond:conseq:alt:[]) c =
                  any = Symbol (Just "centring.lang") "Any" in
              Fix [(k, [v], [any], c (Var v))]
              (If cast (cps conseq appCont) (cps alt appCont)))
-cpsSpecial "letfn" (List defns:body:[]) c =
+cpsSpecial "letfn" [List defns, body] c =
   Fix (map cpsDefn defns) (cps body c)
-  where cpsDefn (List ((Id name):(List formals):(List types):body:[])) =
+  where cpsDefn (List [(Id name), (List formals), (List types), body]) =
           let r = Symbol Nothing "r"
               any = Symbol (Just "centring.lang") "Any"
               retCont v = App (Var r) [v]
