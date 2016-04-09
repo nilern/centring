@@ -1,12 +1,21 @@
 import System.Environment
-import Text.ParserCombinators.Parsec
+import Text.ParserCombinators.Parsec hiding (State)
 import Control.Monad
+import Control.Monad.State
 import Text.Show.Pretty (ppShow)
 
 -- General
 
 data Symbol = Symbol (Maybe String) String
             deriving Show
+
+getCounter :: State Int Int
+getCounter = state $ \c -> (c, c)
+
+gensym :: String -> State Int Symbol
+gensym s = do c <- get
+              put (c + 1)
+              return $ Symbol Nothing (s ++ show c)
 
 -- Read into Sexpr
 
