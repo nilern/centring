@@ -1,48 +1,19 @@
 import System.Environment
 import Text.ParserCombinators.Parsec
 import Control.Monad
+import Text.Show.Pretty (ppShow)
 
--- Types
+-- General
+
+data Symbol = Symbol (Maybe String) String
+            deriving Show
+
+-- Read into Sexpr
 
 data Sexpr = Int Int
            | Id Symbol
            | List [Sexpr]
            deriving Show
-
-data Symbol = Symbol (Maybe String) String
-            deriving Show
-
-data CPS = Def Symbol CPS CPS
-         | If CPS CPS CPS
-         | Fix [(Symbol, [Symbol], [Symbol], CPS)] CPS
-         | App CPS [CPS]
-         | Primop String [CPS] [Symbol] CPS
-         | Const Sexpr
-         | Var Symbol
-         deriving Show
-
--- Tools
-
-mapCps :: (CPS -> CPS) -> CPS -> CPS
-mapCps f (Def name v k) = Def name (f v) (f k)
-mapCps f (If cond conseq alt) = If (f cond) (f conseq) (f alt)
-mapCps f (Fix defns body) = Fix mappedDefns (f body)
-  where mappedDefns = map (\(n, fs, ts, b) -> (n, fs, ts, (f b))) defns
-mapCps f (App callee args) = App (f callee) (map f args)
-mapCps f (Primop name args ress k) = Primop name (map f args) ress (f k)
-mapCps f (c @ (Const _)) = f c
-mapCps f (v @ (Var _)) = f v
-
-walk :: (CPS -> CPS) -> (CPS -> CPS) -> CPS -> CPS
-walk inner outer cexp = outer $ mapCps inner cexp
-
-postWalk :: (CPS -> CPS) -> CPS -> CPS
-postWalk f cexp = walk (postWalk f) f cexp
-
-preWalk :: (CPS -> CPS) -> CPS -> CPS
-preWalk f cexp = walk (preWalk f) id (f cexp)
-
--- Read
 
 parseExpr :: Parser Sexpr
 parseExpr = parseSymbol <|> parseInt <|> parseList
@@ -75,6 +46,15 @@ parseName = do head <- letter <|> oneOf ".+-*/"
 
 -- TODO: gensym, alpha conversion, error handling
 -- maybe CPS could be made a monad just to get do-notation?
+
+data CPS = Def Symbol CPS CPS
+         | If CPS CPS CPS
+         | Fix [(Symbol, [Symbol], [Symbol], CPS)] CPS
+         | App CPS [CPS]
+         | Primop String [CPS] [Symbol] CPS
+         | Const Sexpr
+         | Var Symbol
+         deriving Show
 
 cps :: Sexpr -> (CPS -> CPS) -> CPS
 cps sexp @ (Int _) k = k (Const sexp)
@@ -136,13 +116,49 @@ cpsList args k = cpsl args []
   where cpsl (arg:args) res = cps arg (\v -> cpsl args (v:res))
         cpsl [] res = k $ reverse res
 
--- Main
+-- Work with CPS
 
--- TODO: pretty-print
+mapCps :: (CPS -> CPS) -> CPS -> CPS
+mapCps f (Def name v k) = Def name (f v) (f k)
+mapCps f (If cond conseq alt) = If (f cond) (f conseq) (f alt)
+mapCps f (Fix defns body) = Fix mappedDefns (f body)
+  where mappedDefns = map (\(n, fs, ts, b) -> (n, fs, ts, (f b))) defns
+mapCps f (App callee args) = App (f callee) (map f args)
+mapCps f (Primop name args ress k) = Primop name (map f args) ress (f k)
+mapCps f (c @ (Const _)) = f c
+mapCps f (v @ (Var _)) = f v
+
+walk :: (CPS -> CPS) -> (CPS -> CPS) -> CPS -> CPS
+walk inner outer cexp = outer $ mapCps inner cexp
+
+postWalk :: (CPS -> CPS) -> CPS -> CPS
+postWalk f cexp = walk (postWalk f) f cexp
+
+preWalk :: (CPS -> CPS) -> CPS -> CPS
+preWalk f cexp = walk (preWalk f) id (f cexp)
+
+foldLeaves :: (a -> CPS -> a) -> a -> CPS -> a
+foldLeaves f acc (Def name v k) = let acc' = foldLeaves f acc v in
+  foldLeaves f acc' k
+foldLeaves f acc (If cond conseq alt) = let acc' = foldLeaves f acc cond
+                                            acc'' = foldLeaves f acc' conseq in
+                                        foldLeaves f acc'' alt
+foldLeaves f acc (Fix defns body) =
+  let acc' = foldl (\acc (_, _, _, b) -> foldLeaves f acc b) acc defns in
+  foldLeaves f acc' body
+foldLeaves f acc (App callee args) = let acc' = foldLeaves f acc callee in
+  foldl (foldLeaves f) acc' args
+foldLeaves f acc (Primop name args ress k) =
+  let acc' = foldl (foldLeaves f) acc args in
+  foldLeaves f acc' k
+foldLeaves f acc (c @ (Const _)) = f acc c
+foldLeaves f acc (v @ (Var _)) = f acc v
+
+-- Main
 
 main :: IO ()
 main = do
   (expr:_) <- getArgs
-  putStrLn $ show $ fmap (\sexp -> cps sexp haltCont)
+  putStrLn $ ppShow $ fmap (\sexp -> cps sexp haltCont)
     $ parse parseExpr "centring" expr
   where haltCont v = App (Var (Symbol (Just "centring.intr") "halt")) [v]
