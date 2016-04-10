@@ -6,7 +6,8 @@ import Text.Show.Pretty (ppShow)
 
 -- General
 
-data Symbol = Symbol (Maybe String) String
+data Symbol = Symbol String
+            | ModQSymbol String String
             deriving Show
 
 type GensymState a = State Int a
@@ -17,7 +18,10 @@ getCounter = state $ \c -> (c, c)
 gensym :: String -> GensymState Symbol
 gensym s = do c <- get
               put (c + 1)
-              return $ Symbol Nothing (s ++ show c)
+              return $ Symbol (s ++ show c)
+
+ctrAny :: Symbol
+ctrAny = ModQSymbol "centring.lang" "Any"
 
 -- Read into Sexpr
 
@@ -41,7 +45,9 @@ parseSymbol = do modname <- optionMaybe $ try $
                       char '/'
                       return modname
                  name <- parseName
-                 return $ Id $ Symbol modname name
+                 return $ Id (case modname of
+                   Just md -> ModQSymbol md name
+                   Nothing -> Symbol name)
 
 parseModname :: Parser String
 parseModname = do head <- letter
@@ -49,14 +55,13 @@ parseModname = do head <- letter
                   return $ head:tail
 
 parseName :: Parser String
-parseName = do head <- letter <|> oneOf ".+-*/"
-               tail <- many $ alphaNum <|> oneOf ".+-*/"
+parseName = do head <- letter <|> oneOf ".+-*/_"
+               tail <- many $ alphaNum <|> oneOf ".+-*/_"
                return $ head:tail
 
 -- CPS transform
 
 -- TODO: gensym, alpha conversion, error handling
--- maybe CPS could be made a monad just to get do-notation?
 
 data CPS = Def Symbol CPS CPS
          | If CPS CPS CPS
@@ -70,23 +75,22 @@ data CPS = Def Symbol CPS CPS
 cps :: Sexpr -> (GensymState CPS -> GensymState CPS) -> GensymState CPS
 cps sexp @ (Int _) k = k $ return (Const sexp)
 cps (Id sym) k = k $ return (Var sym)
-cps (List (Id (Symbol (Just "centring.sf") name):args)) k =
+cps (List (Id (ModQSymbol "centring.sf" name):args)) k =
   cpsSpecial name args k
-cps (List (Id (Symbol (Just "centring.intr") name):args)) k =
+cps (List (Id (ModQSymbol "centring.intr" name):args)) k =
   cpsIntrinsic name args k
 cps (List (callee:args)) k = cps callee
   (\mf ->
     do f <- mf
        r <- gensym "r"
        v <-gensym "v"
-       let any = Symbol (Just "centring.lang") "Any"
        defnBody <- k $ return (Var v)
        body <- cpsList args $ liftM (\as -> App f (Var r:as))
-       return $ Fix [(r, [v], [any], defnBody)] body)
+       return $ Fix [(r, [v], [ctrAny], defnBody)] body)
 
 cpsSpecial :: String -> [Sexpr] -> (GensymState CPS -> GensymState CPS)
            -> GensymState CPS
-cpsSpecial "def" [(Id (name @ (Symbol Nothing _))), expr] k = cps expr
+cpsSpecial "def" [(Id (name @ (Symbol _))), expr] k = cps expr
   (\mv -> do v <- mv
              cont <- cpsIntrinsic "make-void" [] k
              return $ Def name v cont)
@@ -95,12 +99,11 @@ cpsSpecial "if" [cond, conseq, alt] c =
                          k <- gensym "k"
                          v <- gensym "v"
                          let appCont = liftM $ \v -> App (Var k) [v]
-                             any = Symbol (Just "centring.lang") "Any"
                          conseq <- cps conseq appCont
                          alt <- cps alt appCont
                          defnBody <- c $ return (Var v)
                          let body = If cast conseq alt
-                         return $ Fix [(k, [v], [any], defnBody)] body)
+                         return $ Fix [(k, [v], [ctrAny], defnBody)] body)
 cpsSpecial "letfn" [List defns, body] c =
   do defns <- cpsDefns defns []
      body <- cps body c
@@ -108,27 +111,27 @@ cpsSpecial "letfn" [List defns, body] c =
   where cpsDefns (defn:defns) res =
           let (List [(Id name), (List formals), (List types), body]) = defn in
           do r <- gensym "r"
-             let any = Symbol (Just "centring.lang") "Any"
-                 retCont = liftM $ \v -> App (Var r) [v]
+             let retCont = liftM $ \v -> App (Var r) [v]
                  unwrapSym (Id sym) = sym
              body <- cps body retCont
              cpsDefns defns ((name, r:map unwrapSym formals,
-                              any:map unwrapSym types, body):res)
+                              ctrAny:map unwrapSym types, body):res)
         cpsDefns [] res = return $ reverse res
-cpsSpecial "fn" args c = cps (giveName args) c
-  where giveName args = List [Id $ Symbol (Just "centring.sf") "letfn",
-                              List [List (f:args)], f]
-          where unwrapSym (Id sym) = sym
-                f = Id $ Symbol Nothing "f"
-cpsSpecial "do" stmts c = cps (monadize stmts) c
-  where monadize [] = List [Id $ Symbol (Just "centring.intr") "make-void"]
-        monadize [stmt] = stmt
+cpsSpecial "fn" args c = do f <- fmap Id $ gensym "f"
+                            let giveName =
+                                  List [Id $ ModQSymbol "centring.sf" "letfn",
+                                        List [List (f:args)], f]
+                            cps giveName c
+cpsSpecial "do" stmts c = do sexp <- monadize stmts
+                             cps sexp c
+  where monadize [] = return $ List [Id $ ModQSymbol "centring.intr" "make-void"]
+        monadize [stmt] = return stmt
         monadize (stmt:stmts) =
-          List [(List [(Id $ Symbol (Just "centring.fn") "fn"),
-                       (List [Id usc]), (List [Id any]), monadize stmts]),
-                stmt]
-          where usc = Symbol Nothing "_"
-                any = Symbol (Just "centring.lang") "Any"
+          do usc <- gensym "_"
+             stmts <- monadize stmts
+             return $ List [(List [(Id $ ModQSymbol "centring.sf" "fn"),
+                                   (List [Id usc]), (List [Id ctrAny]), stmts]),
+                            stmt]
 
 cpsIntrinsic :: String -> [Sexpr] -> (GensymState CPS -> GensymState CPS)
              -> GensymState CPS
@@ -187,8 +190,8 @@ foldLeaves f acc (v @ (Var _)) = f acc v
 
 main :: IO ()
 main = do (expr:_) <- getArgs
-          let haltCont = liftM $ \v -> App (Var (Symbol (Just "centring.intr")
-                                                 "halt")) [v]
+          let haltCont = liftM $ \v ->
+                App (Var (ModQSymbol "centring.intr" "halt")) [v]
               sexpRes = parse parseExpr "centring" expr
               cexpRes = fmap (\sexp -> evalStateT (cps sexp haltCont) 0) sexpRes
           putStrLn $ ppShow cexpRes
