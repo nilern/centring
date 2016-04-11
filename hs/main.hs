@@ -2,13 +2,16 @@ import System.Environment
 import Text.ParserCombinators.Parsec hiding (State)
 import Control.Monad
 import Control.Monad.State
+import qualified Data.Map.Strict as Map
+import Data.Map.Strict (Map)
+import Data.Maybe (fromMaybe)
 import Text.Show.Pretty (ppShow)
 
 -- General
 
 data Symbol = Symbol String
             | ModQSymbol String String
-            deriving Show
+            deriving (Show, Eq, Ord)
 
 type GensymState a = State Int a
 
@@ -161,7 +164,7 @@ mapCps f (c @ (Const _)) = f c
 mapCps f (v @ (Var _)) = f v
 
 walk :: (CPS -> CPS) -> (CPS -> CPS) -> CPS -> CPS
-walk inner outer cexp = outer $ mapCps inner cexp
+walk inner outer cexp = (outer . mapCps inner) cexp
 
 postWalk :: (CPS -> CPS) -> CPS -> CPS
 postWalk f cexp = walk (postWalk f) f cexp
@@ -186,6 +189,21 @@ foldLeaves f acc (Primop name args ress k) =
 foldLeaves f acc (c @ (Const _)) = f acc c
 foldLeaves f acc (v @ (Var _)) = f acc v
 
+-- Utility Passes
+
+countUses :: [Symbol] -> CPS -> [Int]
+countUses varNames cexp = foldLeaves uses (fmap (const 0) varNames) cexp
+  where uses acc (Const _) = acc
+        uses acc (Var name) = fmap updateCount (zip acc varNames)
+          where updateCount (count, varName)
+                  | varName == name = count + 1
+                  | otherwise = count
+
+replaceUse :: Map Symbol CPS -> CPS -> CPS
+replaceUse replacements (node @ (Var name)) =
+  fromMaybe node (Map.lookup name replacements)
+replaceUse _ node = node
+
 -- Main
 
 main :: IO ()
@@ -193,5 +211,5 @@ main = do (expr:_) <- getArgs
           let haltCont = liftM $ \v ->
                 App (Var (ModQSymbol "centring.intr" "halt")) [v]
               sexpRes = parse parseExpr "centring" expr
-              cexpRes = fmap (\sexp -> evalStateT (cps sexp haltCont) 0) sexpRes
+              cexpRes = fmap (\sexp -> evalState (cps sexp haltCont) 0) sexpRes
           putStrLn $ ppShow cexpRes
