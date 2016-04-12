@@ -433,18 +433,25 @@
 
 ;;;; Main
 
-(import centring.compiler)
+(include "expand.scm")
+(include "coreast.scm")
+ 
 (use (only matchable match)
      (only extras read-file pretty-print))
+
+(import centring.compiler centring.expand)
+(import (prefix centring.coreast cast:))
 
 (define (main arglist)
   (let* ((sexp (match (cdr arglist)
                  (("-e" estr) (with-input-from-string estr read))
-                 ((filename)  (read-file filename))
+                 ((filename)  `(do ,@(read-file filename)))
                  (_ (exit 1))))
-         (converted (cps-k sexp make-Halt))
+         (expanded (ctr-expand-all sexp))
+         (converted (cps-k expanded make-Halt))
          (optimize (compose remove-unuseds beta-contract eta-contract)))
     (match (car arglist)
+      ("--cast" (pretty-print (cast:core->sexp (cast:analyze expanded))))
       ("--icps" (pretty-print (cps->sexp converted)))
       ("--fcps" (pretty-print (cps->sexp (optimize converted))))
       ("--asm"  (display-codeobj #t (emit (optimize converted))))
