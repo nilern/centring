@@ -430,3 +430,26 @@
         (set! (CodeObject-consts codeobj) constants)
         (set! (CodeObject-localnames codeobj) locals)
         codeobj))))
+
+;;;; Main
+
+(import centring.compiler)
+(use (only matchable match)
+     (only extras read-file pretty-print))
+
+(define (main arglist)
+  (let* ((sexp (match (cdr arglist)
+                 (("-e" estr) (with-input-from-string estr read))
+                 ((filename)  (read-file filename))
+                 (_ (exit 1))))
+         (converted (cps-k sexp make-Halt))
+         (optimize (compose remove-unuseds beta-contract eta-contract)))
+    (match (car arglist)
+      ("--icps" (pretty-print (cps->sexp converted)))
+      ("--fcps" (pretty-print (cps->sexp (optimize converted))))
+      ("--asm"  (display-codeobj #t (emit (optimize converted))))
+      (_ (exit 2))))
+  (exit 0))
+
+#+compiling
+(main (command-line-arguments))
