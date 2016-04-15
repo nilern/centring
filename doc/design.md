@@ -1,5 +1,20 @@
 # Datatypes
 
+## Built-In Types
+
+### Immediate
+
+* Int (31-bit signed integer)
+* Bool (Bool.True and Bool.False)
+* Char (28-bit codepoint)
+* Void (void/()/nil, used by e.g. `(do)`)
+
+### Composite
+
+* Tuple (immutable anonymous product type)
+* Array (mutable anonymous product type)
+* Buffer (just a bunch of bytes, mostly for FFI)
+
 ## Product Types
 
 ### With Indexed Fields
@@ -29,6 +44,12 @@ You can define new Record types with named fields:
     (defrecord (Point x y))
     ;; Setter
     (fmap .x (list (Point 2 3) (Point 3 4))) ;=> '(2 3)
+
+If you wish, some fields can be made mutable:
+
+   (defrecord (Box (mut val)))
+   (def counter (Box 0))
+   (set! (.x counter) (inc (.x counter))) ; counter.x is now 1
 
 Singletons are useful for some things, especially implementing enums:
 
