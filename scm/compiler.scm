@@ -442,6 +442,8 @@
 (import centring.compiler centring.expand)
 (import (prefix centring.coreast cast:))
 
+(keyword-style #:prefix)
+
 (define (main arglist)
   (let* ((sexp (match (cdr arglist)
                  (("-e" estr) (with-input-from-string estr read))
