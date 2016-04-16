@@ -33,11 +33,15 @@
   (define (ctr-expand-1 sexp)
     (match sexp
       (('def (name . formals) body) `(def ,name (fn ,formals ,body)))
-      
+           
+      (('do) `(centring.intr/void))
+      (('do stmt) stmt)
+      (('do stmt . stmts) `((fn (,(gensym '_)) (do ,@stmts)) ,stmt))
+      (('fn formals body) (let ((f (gensym 'f)))
+                            `(letfn ((,f ,formals ,body)) ,f)))
+
+      ;; 
       (('if cond then else) `(centring.sf/if ,cond ,then ,else))
-      (('do . stmts) `(centring.sf/do ,@stmts))
-      (('fn formals body) (receive (names types) (analyze-formals formals)
-                            `(centring.sf/fn ,names ,types ,body)))
       (('letfn defns body)
        (let ((defns (map (lambda (defn)
                            (receive (names types) (analyze-formals (cadr defn))
@@ -46,7 +50,6 @@
          `(centring.sf/letfn ,defns ,body)))
       (('def name val) `(centring.sf/def ,name ,val))
       (('quote val) `(centring.sf/quote ,val))
-      (('halt val) `(centring.sf/halt ,val))
            
       (_ sexp)))     
 

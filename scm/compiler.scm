@@ -41,36 +41,14 @@
 
   ;;;; CPS AST
 
-  (define-record Var name)
+  (define-record If cond tcont fcont)
+  (define-record Fix bindings body)
+  (define-record Def name val cont)
+  (define-record Primop op args results conts)
+  (define-record App callee args)
   
+  (define-record Var name)
   (define-record Const val)
-
-  (define-record If
-    cond
-    tcont
-    fcont)
-
-  (define-record Fix
-    bindings
-    body)
-
-  (define-record Def
-    name
-    val
-    cont)
-
-  (define-record App
-    callee
-    args)
-
-  (define-record Primop
-    op
-    args
-    results
-    cont)
-
-  (define-record Halt
-    res)
 
   ;;;; CPS Conversion
 
@@ -87,36 +65,18 @@
                                  (cps-k then app-k)
                                  (cps-k else app-k)))))))
 
-      (`(centring.sf/fn ,formals ,types ,body)
-       (let ((f (gensym 'f)))
-         (cps-k `(centring.sf/letfn ((,f ,formals ,types ,body)) ,f) c)))
-
       (`(centring.sf/letfn ,bindings ,body)
        (make-Fix (cps-bindings bindings) (cps-k body c)))
-
       (`(centring.sf/def ,name ,expr)
        (cps-k expr (lambda (e)
                      (make-Def name e
                                (cps-k '(centring.intr/make-void) c)))))
       
-      (`(centring.sf/do . ,stmts)
-       (letrec ((monadize (lambda (stmts)
-                            (match stmts
-                              ('() '(centring.intr/make-void))
-                              ((stmt) stmt)
-                              ((stmt . rstmts)
-                               (let ((_ (gensym '_)))
-                                 `((centring.sf/fn (,_) (centring.lang/Any)
-                                     ,(monadize rstmts))
-                                   ,stmt)))))))
-         (cps-k (monadize stmts) c)))
-      
       (`(,(and op (? intrinsic?)) . ,args)
        (cps-list args (lambda (as)
                      (let ((v (gensym 'v)))
                         (make-Primop (name op) as
-                                     `(,v) (c (make-Var v)))))))
-      
+                                     `(,v) `(,(c (make-Var v))))))))
       (`(,callee . ,args)
        (cps-k callee (lambda (f)
                        (let* ((r (gensym 'r))
@@ -164,9 +124,9 @@
                  (f body)))
       (($ Def name val cont) (make-Def name (f val) (f cont)))
       (($ App callee args) (make-App (f callee) (map f args)))
-      (($ Primop op args results cont) (make-Primop op (map f args)
-                                                    results (f cont)))
-      (($ Halt res) (make-Halt (f res)))
+      (($ Primop op args results conts) (make-Primop op (map f args)
+                                                     results (map f conts)))
+      
       ((or (? Var?) (? Const?)) node)))
 
   (define (walk inner outer ast)
@@ -198,11 +158,9 @@
        (let ((acc* (fold-leaves f acc callee)))
          (foldl (cute fold-leaves f <> <>) acc* args)))
       
-      (($ Primop op args results cont)
+      (($ Primop op args results conts)
        (let ((acc* (foldl (cute fold-leaves f <> <>) acc args)))
-         (fold-leaves f acc* cont)))
-
-      (($ Halt res) (fold-leaves f acc res))
+         (foldl (cute fold-leaves f <> <>) acc* conts)))
        
       ((or (? Var?) (? Const?)) (f acc ast))))
 
@@ -223,11 +181,12 @@
       (($ Def name val cont)
        `($def ,name ,(cps->sexp val) ,(cps->sexp cont)))
       (($ App callee args) `(,(cps->sexp callee) ,@(map cps->sexp args)))
-      (($ Primop op args results cont)
-       `($let ((,results (,(string->symbol (string-append "%" (symbol->string op)))
-                          ,@(map cps->sexp args))))
+      (($ Primop 'halt (v) '() '()) `(%halt ,(cps->sexp v)))
+      (($ Primop op args (result) (cont))
+       `($let ((,result (,(string->symbol (string-append "%" (symbol->string op)))
+                         ,@(map cps->sexp args))))
           ,(cps->sexp cont)))
-      (($ Halt res) `($halt ,(cps->sexp res)))
+      
       (($ Var name) name)
       (($ Const val) val)))
 
@@ -347,11 +306,8 @@
               (if (null? defns*)
                 body
                 (make-Fix defns* body)))))
-         (($ Primop op args results cont)
-          ;; TODO: don't eliminate anything side-effecting
-          (if (every? zero? (count-uses results cont))
-            cont
-            node))
+         ;; TODO: (($ Primop op args results conts) ...) ; only if fully pure
+         ;; (halt is not pure, kills a VMProcess, iadd could overflow, ...)
          (_ node)))
      ast))
 
@@ -409,9 +365,8 @@
       (letrec ((node-instr
                 (lambda (node)
                   (match node
-                    (($ Primop op args)
+                    (($ Primop op args _ _)
                      `(,op ,@(map node-instr args)))
-                    (($ Halt res) `(halt ,(node-instr res)))
                     (($ Var name)
                      `(local ,(vector-index (lambda (v) (eq? v name)) locals)))
                     (($ Const val)
@@ -420,7 +375,9 @@
                (node-emit
                 (lambda (node)
                   (match node
-                    (($ Primop op args _ cont)
+                    (($ Primop op args _ '())
+                     (push! (node-instr node) (CodeObject-instrs codeobj)))
+                    (($ Primop op args _ (cont))
                      (push! (node-instr node) (CodeObject-instrs codeobj))
                      (node-emit cont))
                     (_ (push! (node-instr node) (CodeObject-instrs codeobj)))))))
@@ -450,7 +407,7 @@
                  ((filename)  `(do ,@(read-file filename)))
                  (_ (exit 1))))
          (expanded (ctr-expand-all sexp))
-         (converted (cps-k expanded make-Halt))
+         (converted (cps-k expanded (lambda (v) (make-Primop 'halt `(,v) '() '()))))
          (optimize (compose remove-unuseds beta-contract eta-contract)))
     (match (car arglist)
       ("--cast" (pretty-print (cast:core->sexp (cast:analyze expanded))))

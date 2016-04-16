@@ -18,14 +18,11 @@
   
   ;;;; AST
 
-  (define-record Def name val)
   (define-record If cond then else)
-  (define-record Do stmts)
-  (define-record Fn formals types body)
   (define-record Fix defns body)
+  (define-record Def name val)
   (define-record Primop op args)
   (define-record App callee args)
-  (define-record Halt val)
 
   (define-record Var name)
   (define-record Const val)
@@ -62,16 +59,12 @@
       (('if cond then else) (make-If (analyze cond)
                                      (analyze then)
                                      (analyze else)))
-      (('do . stmts) (make-Do (map analyze stmts)))
       
-      (('fn formals types body) (make-Fn formals types
-                                         (analyze body)))
       (('letfn defns body)
        (make-Fix (map (cute update-defnbody analyze <>) defns) (analyze body)))
       (('def name val) (make-Def name (analyze val)))
 
       (('quote val) (make-Const val))
-      (('halt val) (make-Halt (analyze val)))
       
       (form (error "invalid special form" form))))
 
@@ -89,10 +82,7 @@
       (($ If cond then else) `($if ,(core->sexp cond)
                                    ,(core->sexp then)
                                    ,(core->sexp else)))
-      (($ Do stmts) `($do ,@(map core->sexp stmts)))
       
-      (($ Fn formals types body) `($fn ,formals ,types
-                                       ,(core->sexp body)))
       (($ Fix defns body)
        `($letfn ,(map (cute update-defnbody core->sexp <>) defns)
                 ,(core->sexp body)))
@@ -102,8 +92,6 @@
        `(,(string->symbol (string-append "%" (symbol->string op)))
          ,@(map core->sexp args)))
       (($ App callee args) `(,(core->sexp callee) ,@(map core->sexp args)))
-
-      (($ Halt val) `($halt ,(core->sexp val)))
       
       (($ Var name) name)
       (($ Const val) val))))
