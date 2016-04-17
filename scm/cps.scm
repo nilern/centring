@@ -1,126 +1,382 @@
-(use matchable
-     (only extras pretty-print)
-     (only (srfi 13) string-prefix? string-suffix?))
+(module centring.cps
+  *
 
-(define (primitive? ast)
-  (if (symbol? ast)
-    (let ((s (symbol->string ast)))
-      (and (string-prefix? "__" s) (string-suffix? "__" s)))
-    #f))
+  (import scheme chicken)
+  (use (only matchable match match-let match-lambda)
+       (only (srfi 69)
+             make-hash-table
+             alist->hash-table
+             hash-table->alist
+             hash-table-set!
+             hash-table-ref
+             hash-table-ref/default
+             hash-table-exists?)
+       (only (srfi 13) string-prefix? string-index)
+       (only vector-lib vector-index vector-for-each)
+       (only data-structures identity constantly)
+       (only miscmacros push!)
+       (only format format))
 
-(define (atomic? ast)
-  (match ast
-    ((or ('fn (? list?) _)
-         (? symbol?)
-         (? number?)
-         (? string?)
-         (? boolean?)
-         'Nil)
-     #t)
-     (else #f)))
+  (import (prefix centring.coreast cast:))
 
-(define (cps-atomic ast)
-  (match ast
-    (('fn (and (? list?) vars) body)
-      (let (($k (gensym '$k)))
-        `(fn (,@vars ,$k) 
-           ,(cps body $k))))
+  ;;;; Utils
 
-    ('call-cc '(fn (f cc) (f (fn (x _) (cc x)) cc)))
+  (define (every? pred? ls)
+    (match ls
+      ('() #t)
+      ((v . vs) (and (pred? v) (every? pred? vs)))))
 
-    ((or (? symbol?)
-         (? number?)
-         (? string?)
-         (? boolean?)
-         'Nil)
-     ast)
+  (define (every-2? pred? ls1 ls2)
+    (cond
+     ((null? ls1) (null? ls2))
+     ((null? ls2) #f)
+     (else (and (pred? (car ls1) (car ls2))
+                (every-2? pred? (cdr ls1) (cdr ls2))))))
 
-    (else (error "Not an atomic expr!"))))
+  ;;;; CPS AST
 
-(define (cps-f ast kf)
-  (match ast
-    ((? atomic?)
-     (kf (cps-atomic ast)))
-    (('if cast tast east)
-      ; We have to reify the cont to avoid
-      ; a possible code blow-up:
-     (let* (($rv (gensym '$rv))
-            (k `(fn (,$rv) ,(kf $rv))))
-       (cps-f cast (lambda (aast)
-                     `(if ,aast 
-                        ,(cps tast k)
-                        ,(cps east k))))))
-    (('set! var expr)
-     (cps-f expr (lambda (aast) `(set-then! ,var ,aast ,(kf 'Nil)))))
-    ; WARNING: This transformation is not hygienic 
-    ; if the continuation k-ast references any of the 
-    ; bound variables!  
-    ; 
-    ; Use this transformation only on alphatized 
-    ; programs!
-    (('letrec vas ,body)
-     `(letrec (,@(map (lambda (va) (list (var va) (cps-atomic (cadr va))))
-                      vas))
-        ,(cps-f body kf)))
-    ((_ _ . ...)
-     (let* (($rv (gensym '$rv))
-            (k `(fn (,$rv) ,(kf $rv))))
-       (cps ast k)))))
+  (define-record If cond tcont fcont)
+  (define-record Fix bindings body)
+  (define-record Def name val cont)
+  (define-record Primop op args results conts)
+  (define-record App callee args)
+  
+  (define-record Var name)
+  (define-record Const val)
 
-(define (cps-inject asts kf)
-  (match asts
-    ('() (kf '()))
-    ((ast . rasts) (cps-f ast 
-                          (lambda (hd)
-                            (cps-inject rasts
-                                        (lambda (tl) (kf (cons hd tl)))))))))
+  ;;;; CPS Conversion
 
-(define (cps ast k-ast)
-  (match ast
-    ((? atomic?)
-     `(,k-ast ,(cps-atomic ast)))
-    (('do expr)
-     (cps expr k-ast))
-    (('do expr . exprs)
-     (cps-f expr (lambda (_) (cps `(do ,@exprs) k-ast))))
-    (('if cast tast east)
-      ; We have to bind the cont to avoid
-      ; a possible code blow-up:
-      (let (($k (gensym '$k)))
-        `((fn (,$k)
-            ,(cps-f cast (lambda (aast)
-                           `(if ,aast 
-                              ,(cps tast $k)
-                              ,(cps east $k)))))
-          ,k-ast)))
-    (('set! var expr)
-     (cps-f expr (lambda (aast) `(set-then! ,var ,aast (,k-ast (void))))))
-    ; WARNING: This transformation is not hygienic 
-    ; if the continuation k-ast references any of the 
-    ; bound variables!  
-    ; 
-    ; Use this transformation only on alphatized 
-    ; programs!
-    (('letrec vas ,body)
-     `(letrec (,@(map (lambda (va) (list (var va) (cps-atomic (cadr va))))
-                      vas))
-        ,(cps body k-ast)))
-    (((and p (? primitive?)) . es)
-     (cps-inject es (lambda ($es) `((cps ,p) ,@$es ,k-ast))))
-    ((f . es)
-     (cps-f f (lambda ($f)
-                (cps-inject es (lambda ($es) `(,$f ,@$es ,k-ast))))))))
+  (define (cps-k cast c)
+    (match cast
+      (($ cast:If cond then else)
+       (cps-k cond (lambda (cast)
+                     (let* ((k (gensym 'k))
+                            (v (gensym 'v))
+                            (app-k (lambda (v) (make-App (make-Var k) `(,v)))))
+                       (make-Fix
+                        `((,k (,v) (centring.lang/Any) ,(c (make-Var v))))
+                        (make-If cast
+                                 (cps-k then app-k)
+                                 (cps-k else app-k)))))))
+      (($ cast:Fix defns body)
+       (make-Fix (cps-bindings defns) (cps-k body c)))
+      (($ cast:Def name expr)
+       (cps-k expr (lambda (e)
+                     (make-Def name e
+                               (cps-k (cast:make-Primop 'void '()) c)))))
+      (($ cast:Primop op args)
+       (cps-list args (lambda (as)
+                      (let ((v (gensym 'v)))
+                        (make-Primop op as
+                                     `(,v) `(,(c (make-Var v))))))))
+      (($ cast:App callee args)
+       (cps-k callee (lambda (f)
+                       (let* ((r (gensym 'r))
+                              (v (gensym 'v)))
+                         (make-Fix
+                          `((,r (,v) (centring.lang/Any)
+                                ,(c (make-Var v))))
+                          (cps-list args
+                                    (lambda (as)
+                                      (make-App f (cons (make-Var r) as)))))))))
 
-;;;
+      (($ cast:Var name) (c (make-Var name)))
+      (($ cast:Const val) (c (make-Const val)))
+      (_ (error "cannot CPS-convert" cast))))
 
-(define (main)
-  (pretty-print (cps '((fn (< * dec)
-                         (if (< n 1)
-                           1
-                           (* n (fact (dec n)))))
-                       (fn (a b) (__lt_i64__ a b))
-                       (fn (a b) (__mul_i64__ a b))
-                       (fn (n) (__sub_i64__ n 1)))
-                     'k)))
+  (define (cps-list sexprs c)
+    (letrec ((cpsl (lambda (sexprs res)
+                     (match sexprs
+                       (`(,sexpr . ,sexprs)
+                        (cps-k sexpr
+                               (lambda (v)
+                                 (cpsl sexprs (cons v res)))))
+                       ('() (c (reverse res)))))))
+      (cpsl sexprs '())))
 
-(main)
+  (define (cps-bindings bindings)
+    (match bindings
+      (`((,name ,formals ,types ,body) . ,bindings)
+       (let ((r (gensym 'r)))
+         (cons `(,name ,(cons r formals) ,(cons 'centring.lang/Any types)
+                       ,(cps-k body (lambda (v)
+                                      (make-App (make-Var r) (list v)))))
+               (cps-bindings bindings))))
+      ('() '())))
+
+  ;;;; CPS AST Traversal
+
+  (define (fmap f node)
+    (match node
+      (($ If cond tcont fcont) (make-If (f cond) (f tcont) (f fcont)))
+      (($ Fix defns body)
+       (make-Fix (map (lambda (defn)
+                        (match-let ((`(,name ,formals ,types ,dbody) defn))
+                          `(,name ,formals ,types ,(f dbody))))
+                      defns)
+                 (f body)))
+      (($ Def name val cont) (make-Def name (f val) (f cont)))
+      (($ App callee args) (make-App (f callee) (map f args)))
+      (($ Primop op args results conts) (make-Primop op (map f args)
+                                                     results (map f conts)))
+      
+      ((or (? Var?) (? Const?)) node)))
+
+  (define (walk inner outer ast)
+    (outer (fmap inner ast)))
+
+  (define (postwalk f ast)
+    (walk (cute postwalk f <>) f ast))
+
+  (define (prewalk f ast)
+    (walk (cute prewalk f <>) identity (f ast)))
+
+  (define (fold-leaves f acc ast)
+    (match ast
+      (($ If cond tcont fcont)
+       (let* ((acc* (fold-leaves f acc cond))
+              (acc** (fold-leaves f acc* tcont)))
+         (fold-leaves f acc** fcont)))
+      
+      (($ Fix defns body)
+       (let ((acc* (foldl (lambda (acc defn) (fold-leaves f acc (cadddr defn)))
+                          acc defns)))
+         (fold-leaves f acc* body)))
+
+      (($ Def name val cont)
+       (let ((acc* (fold-leaves f acc val)))
+         (fold-leaves f acc* cont)))
+      
+      (($ App callee args)
+       (let ((acc* (fold-leaves f acc callee)))
+         (foldl (cute fold-leaves f <> <>) acc* args)))
+      
+      (($ Primop op args results conts)
+       (let ((acc* (foldl (cute fold-leaves f <> <>) acc args)))
+         (foldl (cute fold-leaves f <> <>) acc* conts)))
+       
+      ((or (? Var?) (? Const?)) (f acc ast))))
+
+  ;;;; Debugging utilities
+
+  (define (cps->sexp ast)
+    (match ast
+      (($ If cond tcont fcont) `($if ,(cps->sexp cond)
+                                     ,(cps->sexp tcont)
+                                     ,(cps->sexp fcont)))
+      (($ Fix bindings body)
+       `($letfn
+         ,(map (lambda (b)
+                 (match-let ((`(,name ,args ,types ,bbody) b))
+                            `(,name ,args ,types ,(cps->sexp bbody))))
+               bindings)
+         ,(cps->sexp body)))
+      (($ Def name val cont)
+       `($def ,name ,(cps->sexp val) ,(cps->sexp cont)))
+      (($ App callee args) `(,(cps->sexp callee) ,@(map cps->sexp args)))
+      (($ Primop 'halt (v) '() '()) `(%halt ,(cps->sexp v)))
+      (($ Primop op args (result) (cont))
+       `($let ((,result (,(string->symbol (string-append "%" (symbol->string op)))
+                         ,@(map cps->sexp args))))
+          ,(cps->sexp cont)))
+      
+      (($ Var name) name)
+      (($ Const val) val)))
+
+  ;;;; Utility Passes
+
+  (define (count-uses varnames ast)
+    (letrec ((c-u (lambda (acc node)
+                    (match node
+                      (($ Var name) (map (lambda (count varname)
+                                           (if (eq? varname name)
+                                             (+ count 1)
+                                             count))
+                                         acc
+                                         varnames))
+                      ((? Const?) acc)))))
+      (fold-leaves c-u (map (constantly 0) varnames) ast)))
+
+  (define (replace-var-uses replacements node)
+    (match node
+      (($ Var name) (hash-table-ref/default replacements name node))
+      (_ node)))
+
+  ;;;; Eta-Contraction
+
+  (define (eta-defn-replacements replacements node)
+    (match node
+      (($ Fix defns body)
+       (let* ((formals=args?
+               (cute every-2? (lambda (formal arg)
+                                (match arg
+                                  (($ Var argname) (eq? formal argname))
+                                  (_ #f))) <> <>))
+              (handle-defn
+               (lambda (defn)
+                 (match-let ((`(,name ,formals ,types ,body) defn))
+                   ;; Replacing the body here lets us contract chains of
+                   ;; eta-redexes in one pass of `eta-contract`:
+                   (let ((body* (postwalk
+                                 (cute replace-var-uses replacements <>)
+                                 body)))
+                     (match body*
+                       ;; TODO: confirm that the formal-types of name and callee
+                       ;; are the same and that name isn't one of the formals:
+                       (($ App callee args)
+                        (when (formals=args? formals args)
+                          (hash-table-set! replacements name callee)))
+                       (_))
+                     `(,name ,formals ,types ,body*))))))
+         (make-Fix (map handle-defn defns) body)))
+      (_ node)))
+
+  (define (eta-contract ast)
+    (let ((replacements (make-hash-table)))
+      (prewalk (lambda (node)
+                  (replace-var-uses replacements
+                                    (eta-defn-replacements replacements node)))
+               ast)))
+
+  ;;;; Beta-Contraction
+
+  ;; TODO: Figure out other cases where inlining does not bypass an argument
+  ;; type error and is thus permitted
+
+  (define (add-inlinables! inlinables node)
+    (match node
+      (($ Fix defns body)
+       ;; FIXME: If the only use is recursive, this will result in infinite
+       ;; expansion! Just leave those alone (they will be removed anyway).
+       (let ((uses (count-uses (map car defns) node)))
+         (map (lambda (usecount defn)
+                (when (and (= usecount 1)
+                           (every? (lambda (t) (eq? t 'centring.lang/Any))
+                                   (caddr defn)))
+                  (hash-table-set! inlinables (car defn) (cdr defn))))
+              uses defns)))
+      (_)))
+
+  (define (inline inlinables node)
+    (match node
+      (($ App ($ Var callee) args)
+       (if (hash-table-exists? inlinables callee)
+         (match-let (((formals _ body) (hash-table-ref inlinables callee)))
+           (if (= (length formals) (length args))
+             (let* ((f-as (alist->hash-table (map cons formals args)))
+                    (body* (postwalk (cute replace-var-uses f-as <>) body)))
+               body*)
+             node))
+         node))
+      (_ node)))
+
+  ;; need to run `romove-unuseds` immediately after this to keep the ast
+  ;; 'alphatized':
+  (define (beta-contract ast)
+    (let ((inlinables (make-hash-table)))
+      (prewalk (lambda (node)
+                 (let ((node* (inline inlinables node)))
+                   (add-inlinables! inlinables node*)
+                   (inline inlinables node*)))
+               ast)))
+
+  ;;;; Elimination of Unused Variables
+
+  (define (remove-unuseds ast)
+    (postwalk
+     (lambda (node)
+       (match node
+         (($ Fix defns body)
+          (letrec ((remove-udefns
+                    (lambda (defns uses)
+                      (cond
+                       ((null? defns) '())
+                       ((zero? (car uses)) (remove-udefns (cdr defns) (cdr uses)))
+                       (else (cons (car defns)
+                                   (remove-udefns (cdr defns) (cdr uses))))))))
+            (let* ((uses (count-uses (map car defns) body))
+                   (defns* (remove-udefns defns uses)))
+              (if (null? defns*)
+                body
+                (make-Fix defns* body)))))
+         ;; TODO: (($ Primop op args results conts) ...) ; only if fully pure
+         ;; (halt is not pure, kills a VMProcess, iadd could overflow, ...)
+         (_ node)))
+     ast))
+
+  ;;;; Code Generation
+
+  (define-record CodeObject
+    (setter instrs)
+    (setter consts)
+    (setter localnames))
+
+  (define (display-codeobj port cob)
+    (define (argf arg)
+      (match arg
+        (`(local ,i) "l~4A")
+        (`(clover ,i) "f~4A")
+        (`(const ,i) "c~4A")
+        (`(global ,i) "g~4A")))
+    (format port ".instructions:~%")
+    (vector-for-each
+     (lambda (i instr)
+       (match instr
+         ((opcode arg)
+          (format port "~A: ~6A ~?~%" i opcode (argf arg) (cdr arg)))
+         ((opcode arg0 arg1)
+          (format port "~A: ~6A ~? ~?~%" i opcode
+                   (argf arg0) (cdr arg0) (argf arg1) (cdr arg1)))))
+     (CodeObject-instrs cob))
+    (format port "~%.constants:~%")
+    (vector-for-each (lambda (i const) (format port "~A: ~S~%" i const))
+                     (CodeObject-consts cob))
+    (format port "~%.localnames:~%")
+    (vector-for-each (lambda (i name) (format port "~A: ~A~%" i name))
+                     (CodeObject-localnames cob)))
+  
+  (define (collect-const constants node)
+    (match node
+      (($ Const v) (if (memq v constants) constants (cons v constants)))
+      (_ constants)))
+  
+  (define (collect-local constants node)
+    (match node
+      (($ Var name) (if (memq name constants) constants (cons name constants)))
+      (_ constants)))
+
+  (define (collect-constants ast)
+    (list->vector (reverse (fold-leaves collect-const '() ast))))
+
+  (define (collect-locals ast)
+    (list->vector (reverse (fold-leaves collect-local '() ast))))
+
+  (define (emit ast)
+    (let ((codeobj (make-CodeObject '() '() '()))
+          (locals (collect-locals ast))
+          (constants (collect-constants ast)))
+      (letrec ((node-instr
+                (lambda (node)
+                  (match node
+                    (($ Primop op args _ _)
+                     `(,op ,@(map node-instr args)))
+                    (($ Var name)
+                     `(local ,(vector-index (lambda (v) (eq? v name)) locals)))
+                    (($ Const val)
+                     `(const ,(vector-index (lambda (v) (= v val)) constants)))
+                    (_ (void)))))
+               (node-emit
+                (lambda (node)
+                  (match node
+                    (($ Primop op args _ '())
+                     (push! (node-instr node) (CodeObject-instrs codeobj)))
+                    (($ Primop op args _ (cont))
+                     (push! (node-instr node) (CodeObject-instrs codeobj))
+                     (node-emit cont))
+                    (_ (push! (node-instr node) (CodeObject-instrs codeobj)))))))
+        (node-emit ast)
+        (set! (CodeObject-instrs codeobj)
+              (list->vector (reverse (CodeObject-instrs codeobj))))
+        (set! (CodeObject-consts codeobj) constants)
+        (set! (CodeObject-localnames codeobj) locals)
+        codeobj))))
