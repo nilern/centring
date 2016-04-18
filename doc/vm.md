@@ -45,6 +45,7 @@ At any given time the VMProcess is either
 * Closure
 * Procedure
 * NativeProcedure
+* Port
 
 ## Instruction Set
 
@@ -61,13 +62,13 @@ At any given time the VMProcess is either
 ### Loads
 
 ```
-local  i // stack.push(stack[i])
-global i // stack.push(curr_module[global_names[i]])
-clover i // stack.push(clovers[i])
-const  i // stack.push(consts[i])
-fn     i // let proc = codeobjs[i]
-         // fn_clovers = stack.split_off(stack.len() - proc.clover_count)
-         // stack.push(Closure(proc, fn_clovers))
+load  a // stack.push(fetch(a))
+splat a // stack.extend(multi_fetch(a))
+fn    i // let proc = codeobjs[i]
+        // fn_clovers = stack.split_off(stack.len() - proc.clover_count)
+        // stack.push(Closure(proc, fn_clovers))
+
+tuple i // stack.push(Tuple(stack.split_off(i)))
 ```
 
 ### Arithmetic
@@ -124,5 +125,5 @@ halt a   // a -> ret_chan; terminate VMProcess
 ### Calls
 
 ```
-call i
+call i // self.stack = self.stack[i..]; self.pc = 0
 ```

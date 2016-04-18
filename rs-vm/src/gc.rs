@@ -34,7 +34,7 @@ const FN_TAG: usize = 0x0400_0000_0000_0000;
 // Types
 
 #[derive(Debug, Clone, Copy)]
-pub struct ValueRef(usize);
+pub struct ValueRef(pub usize);
 
 #[derive(Debug)]
 pub struct GcHeap {
@@ -101,39 +101,17 @@ impl ValueRef {
             None
         }
     }
+}
 
-    pub fn add(self, other: ValueRef) -> VMResult {
-        if self.is_int() && other.is_int() {
-            Ok(ValueRef((self.0 as isize + other.0 as isize - 1) as usize))
-        } else {
-            Err(VMError::TypeMismatch)
-        }
+impl From<ValueRef> for usize {
+    fn from(vref: ValueRef) -> usize {
+        vref.0
     }
+}
 
-    pub fn sub(self, other: ValueRef) -> VMResult {
-        if self.is_int() && other.is_int() {
-            Ok(ValueRef((self.0 as isize - other.0 as isize + 1) as usize))
-        } else {
-            Err(VMError::TypeMismatch)
-        }
-    }
-
-    pub fn mul(self, other: ValueRef) -> VMResult {
-        if self.is_int() && other.is_int() {
-            Ok(ValueRef(((self.0 as isize - 1)*(other.0 as isize - 1)/2 + 1)
-                        as usize))
-        } else {
-            Err(VMError::TypeMismatch)
-        }
-    }
-
-    pub fn div(self, other: ValueRef) -> VMResult {
-        if self.is_int() && other.is_int() {
-            Ok(ValueRef(((self.0 as isize - 1)/(other.0 as isize - 1)*2 + 1)
-                        as usize))
-        } else {
-            Err(VMError::TypeMismatch)
-        }
+impl From<ValueRef> for isize {
+    fn from(vref: ValueRef) -> isize {
+        vref.0 as isize
     }
 }
 
@@ -269,6 +247,14 @@ impl GcHeap {
             },
             _ => panic!()
         }
+    }
+
+    pub fn deref_contents(&self, vref: ValueRef) -> &[ValueRef] {
+        let start = vref.0 >> REF_SHIFT;
+        let header = self.fromspace[start].0;
+        let data_start = start + 1;
+        let len = header & LENGTH_BITS;
+        &self.fromspace[data_start..data_start+len]
     }
 
     pub fn collect(&mut self, roots: &mut [ValueRef]) {

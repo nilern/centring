@@ -1,7 +1,7 @@
 use std::mem::size_of;
 use std::slice;
 
-use gc::{GcHeap, Value, ValueRef, DeflatedProcedure, Closure};
+use gc::{GcHeap, Value, ValueRef, DeflatedProcedure, Closure, INT_TAG};
 use bytecode::{Bytecode, Opcode, Arg, Domain};
 
 // Types
@@ -51,6 +51,7 @@ impl VM {
 
         // Fill the slice fields:
         let procref = vmproc.heap.inflate(inflatee);
+        vmproc.close_over(procref);
         vmproc.fetch_proc(procref);
         
         vmproc
@@ -63,44 +64,36 @@ impl<'a> VMProcess<'a> {
             let instr = self.instrs[self.ip];
             self.ip += 1;
             println!("{:?}", instr.op());
+
+            macro_rules! binop {
+                ($op:ident) => {{
+                    let (a, b) = self.fetch_args(instr);
+                    self.stack.push(try!(a.$op(b)));
+                }};
+            }
+            
             match instr.op() {
-                Opcode::Const => {
+                Opcode::Load => {
+                    let a = self.fetch_arg(instr.arg());
+                    self.stack.push(a);
+                },
+                Opcode::Splat => {
+                    let a = self.fetch_arg(instr.arg());
+                    let vs = self.heap.deref_contents(a);
+                    self.stack.extend_from_slice(vs);
+                },
+
+                Opcode::Tuple => {
                     let i = instr.index();
-                    let vref = self.consts[i];
-                    self.stack.push(vref);
-                },
-                
-                Opcode::Local => {
-                    let i = instr.index();
-                    let vref = self.stack[i];
-                    self.stack.push(vref);
-                },
-                
-                Opcode::Clover => {
-                    let i = instr.index();
-                    let vref = self.clovers[i];
-                    self.stack.push(vref);
+                    let tup = self.heap.alloc(&Value::Tuple(&self.stack[i..]));
+                    self.stack.truncate(i);
+                    self.stack.push(tup);
                 },
 
-                Opcode::Add => {
-                    let (a, b) = self.fetch_args(instr);
-                    self.stack.push(try!(a.add(b)));
-                },
-
-                Opcode::Sub => {
-                    let (a, b) = self.fetch_args(instr);
-                    self.stack.push(try!(a.sub(b)));
-                },
-
-                Opcode::Mul => {
-                    let (a, b) = self.fetch_args(instr);
-                    self.stack.push(try!(a.mul(b)));
-                },
-
-                Opcode::Div => {
-                    let (a, b) = self.fetch_args(instr);
-                    self.stack.push(try!(a.div(b)));
-                },
+                Opcode::IAdd => binop!(iadd),
+                Opcode::ISub => binop!(isub),
+                Opcode::IMul => binop!(imul),
+                Opcode::IDiv => binop!(idiv),
 
                 Opcode::Halt => {
                     let a = self.fetch_arg(instr.arg());
@@ -110,27 +103,18 @@ impl<'a> VMProcess<'a> {
                 Opcode::Fn => {
                     let i = instr.index();
                     let cob = self.codeobjs[i];
-                    if let Value::Procedure(vmproc) = self.heap.deref(cob) {
-                        let new_len = self.stack.len() - vmproc.clover_count;
-                        let fnref = self.heap.alloc(&Value::Closure(Closure {
-                            codeobj: cob,
-                            clovers: &self.stack[new_len..]
-                        }));
-                        self.stack.truncate(new_len);
-                        self.stack.push(fnref);
-                    } else {
-                        panic!();
-                    }
+                    self.close_over(cob);
                 },
 
                 Opcode::Call => {
                     // TODO: Only clean up stack & heap when necessary
                     
                     // Throw away stack items we don't need anymore:
-                    let n = instr.index() + 1; // argc + (1 for callee)
-                    let start = self.stack.len() - n;
-                    for i in 0..n {
-                        self.stack[i] = self.stack[start + i];
+                    let i = instr.index();
+                    let len = self.stack.len();
+                    let n = len - i;
+                    for (i, j) in (0..n).zip(i..len) {
+                        self.stack[i] = self.stack[j]
                     }
                     self.stack.truncate(n);
 
@@ -146,6 +130,20 @@ impl<'a> VMProcess<'a> {
         }
         
         Ok(self.stack.pop().unwrap())
+    }
+
+    fn close_over(&mut self, cob: ValueRef) {
+        if let Value::Procedure(vmproc) = self.heap.deref(cob) {
+            let new_len = self.stack.len() - vmproc.clover_count;
+            let fnref = self.heap.alloc(&Value::Closure(Closure {
+                codeobj: cob,
+                clovers: &self.stack[new_len..]
+            }));
+            self.stack.truncate(new_len);
+            self.stack.push(fnref);
+        } else {
+            panic!();
+        }
     }
 
     fn fetch_args(&self, instr: Bytecode) -> (ValueRef, ValueRef) {
@@ -217,4 +215,27 @@ impl<'a> VMProcess<'a> {
             panic!();
         }
     }
+}
+
+macro_rules! op_impl {
+    ($name:ident, $a:ident, $formula:expr) => {
+        pub fn $name(self) -> VMResult {
+            let $a: isize = From::from(self);
+            Ok($formula)
+        }
+    };
+    ($name:ident, $a:ident, $b:ident, $formula:expr) => {
+        pub fn $name(self, other: ValueRef) -> VMResult {
+            let $a: isize = From::from(self);
+            let $b: isize = From::from(other);
+            Ok($formula)
+        }
+    };
+}
+
+impl ValueRef {
+    op_impl!(iadd, a, b, ValueRef((a + b - 1) as usize));
+    op_impl!(isub, a, b, ValueRef((a - b + 1) as usize));
+    op_impl!(imul, a, b, ValueRef(((a - 1)*(b - 1)/2 + 1) as usize));
+    op_impl!(idiv, a, b, ValueRef(((a - 1)/(b - 1)*2 + 1) as usize));
 }

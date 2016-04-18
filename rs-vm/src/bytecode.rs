@@ -23,15 +23,15 @@ pub struct Bytecode(u32);
 #[derive(Debug)]
 #[repr(u32)]
 pub enum Opcode {
-    Const,
-    Local,
-    Clover,
-    // Global,
+    Load,
+    Splat,
 
-    Add,
-    Sub,
-    Mul,
-    Div,
+    Tuple,
+
+    IAdd,
+    ISub,
+    IMul,
+    IDiv,
 
     // Brf,
     Halt,
@@ -70,14 +70,15 @@ macro_rules! bytecode_ctor {
     };
 }
 
-bytecode_ctor!(cnst, Opcode::Const, i);
-bytecode_ctor!(local, Opcode::Local, i);
-bytecode_ctor!(clover, Opcode::Clover, i);
+bytecode_ctor!(load, Opcode::Load, a);
+bytecode_ctor!(splat, Opcode::Splat, a);
 
-bytecode_ctor!(add, Opcode::Add, a, b);
-bytecode_ctor!(sub, Opcode::Sub, a, b);
-bytecode_ctor!(mul, Opcode::Mul, a, b);
-bytecode_ctor!(div, Opcode::Div, a, b);
+bytecode_ctor!(tuple, Opcode::Tuple, i);
+
+bytecode_ctor!(iadd, Opcode::IAdd, a, b);
+bytecode_ctor!(isub, Opcode::ISub, a, b);
+bytecode_ctor!(imul, Opcode::IMul, a, b);
+bytecode_ctor!(idiv, Opcode::IDiv, a, b);
 
 bytecode_ctor!(fun, Opcode::Fn, i);
 bytecode_ctor!(call, Opcode::Call, n);

@@ -1,3 +1,14 @@
+# Pipeline
+
+1. read (with modified Chicken reader)
+2. analyze into AST
+3. alpha-convert
+4. CPS-convert
+5. optimize (eta-contract, beta-contract, eliminate dead values)
+6. closure-convert
+7. emit bytecode
+8. serialize bytecode
+
 # Pseudo-namespaces
 
 Pseudo-namespaces are specially handled by the compiler and do not exist at runtime.
