@@ -2,8 +2,11 @@
   *
   
   (import scheme chicken)
-  (use (only matchable match match-lambda)
-       (only (srfi 13) string-prefix? string-index))
+  (use (only matchable match match-let match-lambda)
+       (only (srfi 1) remove)
+       (only (srfi 13) string-prefix? string-index)
+       (only data-structures identity o)
+       (only anaphora aif))
 
   ;;;; Utils
 
@@ -25,6 +28,8 @@
   (define-record App callee args)
 
   (define-record Var name)
+  (define-record Local name)
+  (define-record Global name)
   (define-record Const val)
 
   ;;;; Analyze Sexpr
@@ -75,6 +80,27 @@
       
       (form (error "invalid intrinsic" form))))
 
+  ;;;; Traversal
+
+  (define (fmap f node)
+    (match node
+      (($ If cond then else) (make-If (f cond) (f then) (f else)))
+      (($ Fix defns body) (make-Fix (map (cute update-defnbody f <>) defns)
+                                    (f body)))
+      (($ Def name expr) (make-Def name (f expr)))
+      (($ Primop op args) (make-Primop op (map f args)))
+      (($ App callee args) (make-App (f callee) (map f args)))
+      ((or (? Var?) (? Local?) (? Global?) (? Const?)) node)))
+
+  (define (walk inner outer ast)
+    (outer (fmap inner ast)))
+
+  (define (postwalk f ast)
+    (walk (cute postwalk f <>) f ast))
+
+  (define (prewalk f ast)
+    (walk (cute prewalk f <>) identity (f ast)))
+
   ;;;; Convert Back to Sexpr (for Debugging)
 
   (define (core->sexp ast)
@@ -94,4 +120,39 @@
       (($ App callee args) `(,(core->sexp callee) ,@(map core->sexp args)))
       
       (($ Var name) name)
-      (($ Const val) val))))
+      (($ Local name) name)
+      (($ Global name) (string->symbol (string-append "^" (symbol->string name))))
+      (($ Const val) val)))
+
+  ;;;; Alphatize and Separate Locals from Globals
+  
+  (define (replace-sym replacements sym)
+    (aif (assq sym replacements) (cdr it) sym))
+  
+  (define (replacement-entry name)
+    (cons name (gensym name)))
+  
+  (define (alph&spec-defn replacements defn)
+    (match-let (((f formals types body) defn))
+      (let ((replacements* (append (map replacement-entry formals)
+                                   replacements)))
+        `(,(replace-sym replacements f)
+          ,(map (cute replace-sym replacements* <>) formals)
+          ,types
+          ,(alphatize&specialize replacements* body)))))
+
+  (define (alphatize&specialize replacements node)
+    (match node
+      (($ Fix defns body)
+       (let* ((replacements* (append (map (o replacement-entry car) defns)
+                                     replacements)))
+         (make-Fix (map (cute alph&spec-defn replacements* <>) defns)
+                   (alphatize&specialize replacements* body))))
+      ((or (? If?) (? Def?) (? Primop?) (? App?))
+       (fmap (cute alphatize&specialize replacements <>) node))
+      (($ Var name)
+       (aif (assq name replacements)
+         (make-Local (cdr it))
+         (make-Global name)))
+      ((? Const?) node))))
+            

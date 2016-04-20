@@ -3,6 +3,7 @@
 
   (import scheme chicken)
   (use (only matchable match match-let match-lambda)
+       (only anaphora aif)
        (only (srfi 69)
              make-hash-table
              alist->hash-table
@@ -37,11 +38,13 @@
 
   (define-record If cond tcont fcont)
   (define-record Fix bindings body)
+  (define-record Close bindings body)
   (define-record Def name val cont)
   (define-record Primop op args results conts)
   (define-record App callee args)
   
-  (define-record Var name)
+  (define-record Local name)
+  (define-record Global name)
   (define-record Const val)
 
   ;;;; CPS Conversion
@@ -52,9 +55,9 @@
        (cps-k cond (lambda (cast)
                      (let* ((k (gensym 'k))
                             (v (gensym 'v))
-                            (app-k (lambda (v) (make-App (make-Var k) `(,v)))))
+                            (app-k (lambda (v) (make-App (make-Local k) `(,v)))))
                        (make-Fix
-                        `((,k (,v) (centring.lang/Any) ,(c (make-Var v))))
+                        `((,k (,v) (centring.lang/Any) ,(c (make-Local v))))
                         (make-If cast
                                  (cps-k then app-k)
                                  (cps-k else app-k)))))))
@@ -68,19 +71,20 @@
        (cps-list args (lambda (as)
                       (let ((v (gensym 'v)))
                         (make-Primop op as
-                                     `(,v) `(,(c (make-Var v))))))))
+                                     `(,v) `(,(c (make-Local v))))))))
       (($ cast:App callee args)
        (cps-k callee (lambda (f)
                        (let* ((r (gensym 'r))
                               (v (gensym 'v)))
                          (make-Fix
                           `((,r (,v) (centring.lang/Any)
-                                ,(c (make-Var v))))
+                                ,(c (make-Local v))))
                           (cps-list args
                                     (lambda (as)
-                                      (make-App f (cons (make-Var r) as)))))))))
+                                      (make-App f (cons (make-Local r) as)))))))))
 
-      (($ cast:Var name) (c (make-Var name)))
+      (($ cast:Local name) (c (make-Local name)))
+      (($ cast:Global name) (c (make-Global name)))
       (($ cast:Const val) (c (make-Const val)))
       (_ (error "cannot CPS-convert" cast))))
 
@@ -100,7 +104,7 @@
        (let ((r (gensym 'r)))
          (cons `(,name ,(cons r formals) ,(cons 'centring.lang/Any types)
                        ,(cps-k body (lambda (v)
-                                      (make-App (make-Var r) (list v)))))
+                                      (make-App (make-Local r) (list v)))))
                (cps-bindings bindings))))
       ('() '())))
 
@@ -115,12 +119,17 @@
                           `(,name ,formals ,types ,(f dbody))))
                       defns)
                  (f body)))
+      (($ Close bindings body)
+       (make-Close (map (lambda (bind) (match-let ((`(,name ,label . ,cvals) bind))
+                                    `(,name ,label ,@(map f cvals))))
+                        bindings)
+                   (f body)))
       (($ Def name val cont) (make-Def name (f val) (f cont)))
       (($ App callee args) (make-App (f callee) (map f args)))
       (($ Primop op args results conts) (make-Primop op (map f args)
                                                      results (map f conts)))
       
-      ((or (? Var?) (? Const?)) node)))
+      ((or (? Local?) (? Global?) (? Const?)) node)))
 
   (define (walk inner outer ast)
     (outer (fmap inner ast)))
@@ -143,6 +152,12 @@
                           acc defns)))
          (fold-leaves f acc* body)))
 
+      (($ Close bindings body)
+       (let ((acc* (foldl (lambda (acc bind)
+                            (foldl (cute fold-leaves f <> <>) acc (cddr bind)))
+                          acc bindings)))
+         (fold-leaves f acc* body)))
+       
       (($ Def name val cont)
        (let ((acc* (fold-leaves f acc val)))
          (fold-leaves f acc* cont)))
@@ -155,7 +170,7 @@
        (let ((acc* (foldl (cute fold-leaves f <> <>) acc args)))
          (foldl (cute fold-leaves f <> <>) acc* conts)))
        
-      ((or (? Var?) (? Const?)) (f acc ast))))
+      ((or (? Local?) (? Global?) (? Const?)) (f acc ast))))
 
   ;;;; Debugging utilities
 
@@ -168,7 +183,14 @@
        `($letfn
          ,(map (lambda (b)
                  (match-let ((`(,name ,args ,types ,bbody) b))
-                            `(,name ,args ,types ,(cps->sexp bbody))))
+                   `(,name ,args ,types ,(cps->sexp bbody))))
+               bindings)
+         ,(cps->sexp body)))
+      (($ Close bindings body)
+       `($close
+         ,(map (lambda (bind)
+                 (match-let (((name label . cvals) bind))
+                   `(,name ,label ,@(map cps->sexp cvals))))
                bindings)
          ,(cps->sexp body)))
       (($ Def name val cont)
@@ -180,26 +202,27 @@
                          ,@(map cps->sexp args))))
           ,(cps->sexp cont)))
       
-      (($ Var name) name)
+      (($ Local name) name)
+      (($ Global name) (string->symbol (string-append "^" (symbol->string name))))
       (($ Const val) val)))
 
   ;;;; Utility Passes
 
-  (define (count-uses varnames ast)
+  (define (count-local-uses varnames ast)
     (letrec ((c-u (lambda (acc node)
                     (match node
-                      (($ Var name) (map (lambda (count varname)
+                      (($ Local name) (map (lambda (count varname)
                                            (if (eq? varname name)
                                              (+ count 1)
                                              count))
                                          acc
                                          varnames))
-                      ((? Const?) acc)))))
+                      ((or (? Global?) (? Const?)) acc)))))
       (fold-leaves c-u (map (constantly 0) varnames) ast)))
 
-  (define (replace-var-uses replacements node)
+  (define (replace-local-uses replacements node)
     (match node
-      (($ Var name) (hash-table-ref/default replacements name node))
+      (($ Local name) (hash-table-ref/default replacements name node))
       (_ node)))
 
   ;;;; Eta-Contraction
@@ -210,7 +233,7 @@
        (let* ((formals=args?
                (cute every-2? (lambda (formal arg)
                                 (match arg
-                                  (($ Var argname) (eq? formal argname))
+                                  (($ Local argname) (eq? formal argname))
                                   (_ #f))) <> <>))
               (handle-defn
                (lambda (defn)
@@ -218,7 +241,7 @@
                    ;; Replacing the body here lets us contract chains of
                    ;; eta-redexes in one pass of `eta-contract`:
                    (let ((body* (postwalk
-                                 (cute replace-var-uses replacements <>)
+                                 (cute replace-local-uses replacements <>)
                                  body)))
                      (match body*
                        ;; TODO: confirm that the formal-types of name and callee
@@ -234,7 +257,7 @@
   (define (eta-contract ast)
     (let ((replacements (make-hash-table)))
       (prewalk (lambda (node)
-                  (replace-var-uses replacements
+                  (replace-local-uses replacements
                                     (eta-defn-replacements replacements node)))
                ast)))
 
@@ -248,7 +271,7 @@
       (($ Fix defns body)
        ;; FIXME: If the only use is recursive, this will result in infinite
        ;; expansion! Just leave those alone (they will be removed anyway).
-       (let ((uses (count-uses (map car defns) node)))
+       (let ((uses (count-local-uses (map car defns) node)))
          (map (lambda (usecount defn)
                 (when (and (= usecount 1)
                            (every? (lambda (t) (eq? t 'centring.lang/Any))
@@ -259,18 +282,18 @@
 
   (define (inline inlinables node)
     (match node
-      (($ App ($ Var callee) args)
+      (($ App ($ Local callee) args)
        (if (hash-table-exists? inlinables callee)
          (match-let (((formals _ body) (hash-table-ref inlinables callee)))
            (if (= (length formals) (length args))
              (let* ((f-as (alist->hash-table (map cons formals args)))
-                    (body* (postwalk (cute replace-var-uses f-as <>) body)))
+                    (body* (postwalk (cute replace-local-uses f-as <>) body)))
                body*)
              node))
          node))
       (_ node)))
 
-  ;; need to run `romove-unuseds` immediately after this to keep the ast
+  ;; need to run `remove-unuseds` immediately after this to keep the ast
   ;; 'alphatized':
   (define (beta-contract ast)
     (let ((inlinables (make-hash-table)))
@@ -294,7 +317,7 @@
                        ((zero? (car uses)) (remove-udefns (cdr defns) (cdr uses)))
                        (else (cons (car defns)
                                    (remove-udefns (cdr defns) (cdr uses))))))))
-            (let* ((uses (count-uses (map car defns) body))
+            (let* ((uses (count-local-uses (map car defns) body))
                    (defns* (remove-udefns defns uses)))
               (if (null? defns*)
                 body
@@ -303,6 +326,26 @@
          ;; (halt is not pure, kills a VMProcess, iadd could overflow, ...)
          (_ node)))
      ast))
+
+  ;;;; Closure Conversion
+
+  ;;; Need to do this inside-out so we don't re-collect clovers
+
+  (define ((closure-convert replacements) ast)
+    (match ast
+      (($ Fix defns body)
+       (let* ((labels (map car defns))
+              (cl-names (map gensym labels))
+              (bindings (map list cl-names labels))
+              (replacements* (append (map cons labels cl-names) replacements))
+              (defns* (map (cute cast:update-defnbody
+                                 (closure-convert replacements) <>) defns)))
+         (make-Fix defns*
+                   (make-Close bindings ((closure-convert replacements*) body)))))
+      ((or (? If?) (? Def?) (? Primop?) (? App?))
+       (fmap (closure-convert replacements) ast))
+      (($ Local name) (aif (assq name replacements) (make-Local (cdr it)) ast))
+      ((or (? Const?) (? Global?)) ast)))
 
   ;;;; Code Generation
 
@@ -342,7 +385,7 @@
   
   (define (collect-local constants node)
     (match node
-      (($ Var name) (if (memq name constants) constants (cons name constants)))
+      (($ Local name) (if (memq name constants) constants (cons name constants)))
       (_ constants)))
 
   (define (collect-constants ast)
@@ -360,7 +403,7 @@
                   (match node
                     (($ Primop op args _ _)
                      `(,op ,@(map node-instr args)))
-                    (($ Var name)
+                    (($ Local name)
                      `(local ,(vector-index (lambda (v) (eq? v name)) locals)))
                     (($ Const val)
                      `(const ,(vector-index (lambda (v) (= v val)) constants)))

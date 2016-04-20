@@ -40,7 +40,7 @@
       (('fn formals body) (let ((f (gensym 'f)))
                             `(letfn ((,f ,formals ,body)) ,f)))
 
-      ;; 
+      ;; At the bottom, these delegate to special forms:
       (('if cond then else) `(centring.sf/if ,cond ,then ,else))
       (('letfn defns body)
        (let ((defns (map (lambda (defn)
