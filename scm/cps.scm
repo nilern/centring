@@ -2,8 +2,9 @@
   *
 
   (import scheme chicken)
-  (use (only matchable match match-let match-lambda)
+  (use (only matchable match match-let match-let* match-lambda)
        (only anaphora aif)
+       (only (srfi 1) filter)
        (only (srfi 69)
              make-hash-table
              alist->hash-table
@@ -34,6 +35,9 @@
      (else (and (pred? (car ls1) (car ls2))
                 (every-2? pred? (cdr ls1) (cdr ls2))))))
 
+  (define (lset-append ls1 ls2)
+    (append ls1 (filter (lambda (v) (member v ls1)) ls2)))
+
   ;;;; CPS AST
 
   (define-record If cond tcont fcont)
@@ -45,6 +49,7 @@
   
   (define-record Local name)
   (define-record Global name)
+  (define-record Clover index)
   (define-record Const val)
 
   ;;;; CPS Conversion
@@ -129,7 +134,7 @@
       (($ Primop op args results conts) (make-Primop op (map f args)
                                                      results (map f conts)))
       
-      ((or (? Local?) (? Global?) (? Const?)) node)))
+      ((or (? Local?) (? Global?) (? Clover?) (? Const?)) node)))
 
   (define (walk inner outer ast)
     (outer (fmap inner ast)))
@@ -170,7 +175,7 @@
        (let ((acc* (foldl (cute fold-leaves f <> <>) acc args)))
          (foldl (cute fold-leaves f <> <>) acc* conts)))
        
-      ((or (? Local?) (? Global?) (? Const?)) (f acc ast))))
+      ((or (? Local?) (? Global?) (? Clover?) (? Const?)) (f acc ast))))
 
   ;;;; Debugging utilities
 
@@ -202,9 +207,11 @@
                          ,@(map cps->sexp args))))
           ,(cps->sexp cont)))
       
-      (($ Local name) name)
+      (($ Local name) (if (symbol? name) name `(@ ,name)))
+      (($ Clover index) `(@@ ,index))
       (($ Global name) (string->symbol (string-append "^" (symbol->string name))))
-      (($ Const val) val)))
+      (($ Const val) val)
+      (_ (error "unable to display as S-expr" ast))))
 
   ;;;; Utility Passes
 
@@ -217,7 +224,7 @@
                                              count))
                                          acc
                                          varnames))
-                      ((or (? Global?) (? Const?)) acc)))))
+                      ((or (? Global?) (? Clover?) (? Const?)) acc)))))
       (fold-leaves c-u (map (constantly 0) varnames) ast)))
 
   (define (replace-local-uses replacements node)
@@ -329,23 +336,96 @@
 
   ;;;; Closure Conversion
 
-  ;;; Need to do this inside-out so we don't re-collect clovers
+  (define (closure-convert locals clovers ast)
+    (define (closure-convert-list locals clovers cexps res)
+      (if (null? cexps)
+        (list (reverse res) clovers)
+        (match-let (((cexp* clovers*)
+                     (closure-convert locals clovers (car cexps))))
+          (closure-convert-list locals clovers* (cdr cexps) (cons cexp* res)))))
 
-  (define ((closure-convert replacements) ast)
+    (define (closure-convert-defn defn)
+      (match-let* (((label formals types body) defn)
+                   (locals (cons label formals))
+                   ((body* clovers) (closure-convert locals '() body)))
+        (list `(,label ,formals ,types ,body*) clovers)))
+    (define (closure-convert-defns defns)
+      (foldr (lambda (defn acc)
+               (match-let (((defn* clovers) (closure-convert-defn defn)))
+                 (list (cons defn* (car acc)) (cons clovers (cadr acc)))))
+             (list '() '()) defns))
+    
+    (define ((replace-defnlabels labels closure-names) defn)
+      (define (defnlabel-replacements labels closure-names repls)
+        (cond
+         ((null? labels) (alist->hash-table (reverse repls)))
+         ((eq? (car labels) (car defn))
+          (defnlabel-replacements (cdr labels) (cdr closure-names) repls))
+         (else
+          (defnlabel-replacements (cdr labels) (cdr closure-names)
+            (cons (cons (car labels) (make-Local (car closure-names))) repls)))))
+      
+      (let ((replacements (defnlabel-replacements labels closure-names '())))
+        (cast:update-defnbody
+         (lambda (dbody)
+           (postwalk (cute replace-local-uses replacements <>) dbody))
+         defn)))
+    
     (match ast
+      (($ If cond then else)
+       (match-let* (((cond* clovers*) (closure-convert locals clovers cond))
+                    ((then* clovers**) (closure-convert locals clovers* then))
+                    ((else* clovers***) (closure-convert locals clovers** else)))
+         (list (make-If cond* then* else*) clovers***)))
+
       (($ Fix defns body)
-       (let* ((labels (map car defns))
-              (cl-names (map gensym labels))
-              (bindings (map list cl-names labels))
-              (replacements* (append (map cons labels cl-names) replacements))
-              (defns* (map (cute cast:update-defnbody
-                                 (closure-convert replacements) <>) defns)))
-         (make-Fix defns*
-                   (make-Close bindings ((closure-convert replacements*) body)))))
-      ((or (? If?) (? Def?) (? Primop?) (? App?))
-       (fmap (closure-convert replacements) ast))
-      (($ Local name) (aif (assq name replacements) (make-Local (cdr it)) ast))
-      ((or (? Const?) (? Global?)) ast)))
+       (match-let* ((labels (map car defns))
+                    (closure-names (map gensym labels))
+                    (defns* (map (replace-defnlabels labels closure-names)
+                                 defns))
+                    ((defns** clover-lls) (closure-convert-defns defns*))
+                    (locals* (append locals closure-names))
+                    (clovers* (foldl lset-append clovers clover-lls))
+                    (body* (postwalk
+                            (cute replace-local-uses
+                                  (alist->hash-table
+                                   (map (lambda (l c)
+                                          (cons l (make-Local c)))
+                                        labels closure-names))
+                                  <>)
+                            body))
+                    ((body** clovers**) (closure-convert locals* clovers* body*)))
+         (list (make-Fix defns**
+                   (make-Close (map (lambda (name label clovers)
+                                      `(,name ,label ,@clovers))
+                                    closure-names labels clover-lls)
+                               body**))
+               clovers*)))
+      
+      (($ Def name val cont)
+       (match-let* (((val* clovers*) (closure-convert locals clovers val))
+                    ((cont* clovers**) (closure-convert locals clovers* cont)))
+         (list (make-Def name val* cont*) clovers**)))
+      (($ Primop op args results conts)
+       (match-let* (((args* clovers*)
+                     (closure-convert-list locals clovers args '()))
+                    (locals* (append locals results))
+                    ((conts* clovers**)
+                     (closure-convert-list locals* clovers* conts '())))
+         (list (make-Primop op args* results conts*) clovers**)))
+      (($ App callee args)
+       (match-let* (((callee* clovers*) (closure-convert locals clovers callee))
+                    ((args* clovers**)
+                     (closure-convert-list locals clovers* args '())))
+         (list (make-App callee* args*) clovers**)))
+      
+      (($ Local name)
+       (if (member name locals)
+         (list ast clovers)
+         (let ((clovers* (lset-append clovers (list name))))
+           (list (make-Clover (sub1 (length clovers*))) clovers*))))
+      
+      ((or (? Const?) (? Global?)) (list ast clovers))))
 
   ;;;; Code Generation
 
