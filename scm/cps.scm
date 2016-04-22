@@ -4,7 +4,7 @@
   (import scheme chicken)
   (use (only matchable match match-let match-let* match-lambda)
        (only anaphora aif)
-       (only (srfi 1) filter)
+       (only (srfi 1) remove list-index)
        (only (srfi 69)
              make-hash-table
              alist->hash-table
@@ -36,7 +36,7 @@
                 (every-2? pred? (cdr ls1) (cdr ls2))))))
 
   (define (lset-append ls1 ls2)
-    (append ls1 (filter (lambda (v) (member v ls1)) ls2)))
+    (append ls1 (remove (lambda (v) (member v ls1)) ls2)))
 
   ;;;; CPS AST
 
@@ -207,10 +207,10 @@
                          ,@(map cps->sexp args))))
           ,(cps->sexp cont)))
       
-      (($ Local name) (if (symbol? name) name `(@ ,name)))
-      (($ Clover index) `(@@ ,index))
-      (($ Global name) (string->symbol (string-append "^" (symbol->string name))))
-      (($ Const val) val)
+      (($ Local name) `(%l ,name))
+      (($ Clover index) `(%f ,index))
+      (($ Global name) `(%g ,name))
+      (($ Const val) `(%c ,val))
       (_ (error "unable to display as S-expr" ast))))
 
   ;;;; Utility Passes
@@ -219,11 +219,11 @@
     (letrec ((c-u (lambda (acc node)
                     (match node
                       (($ Local name) (map (lambda (count varname)
-                                           (if (eq? varname name)
-                                             (+ count 1)
-                                             count))
-                                         acc
-                                         varnames))
+                                             (if (eq? varname name)
+                                               (+ count 1)
+                                               count))
+                                           acc
+                                           varnames))
                       ((or (? Global?) (? Clover?) (? Const?)) acc)))))
       (fold-leaves c-u (map (constantly 0) varnames) ast)))
 
@@ -324,7 +324,16 @@
                        ((zero? (car uses)) (remove-udefns (cdr defns) (cdr uses)))
                        (else (cons (car defns)
                                    (remove-udefns (cdr defns) (cdr uses))))))))
-            (let* ((uses (count-local-uses (map car defns) body))
+            (let* ((labels (map car defns))
+                   (buses (count-local-uses labels body))
+                   (uses (foldl
+                          (lambda (uses defn)
+                            (match-let (((label _ _ body) defn)
+                                        (nuses (count-local-uses labels body)))
+                              (map (lambda (l uc nuc)
+                                     (if (eq? l label) uc (+ uc nuc)))
+                                   labels uses nuses)))
+                          buses defns))
                    (defns* (remove-udefns defns uses)))
               (if (null? defns*)
                 body
@@ -397,7 +406,7 @@
                     ((body** clovers**) (closure-convert locals* clovers* body*)))
          (list (make-Fix defns**
                    (make-Close (map (lambda (name label clovers)
-                                      `(,name ,label ,@clovers))
+                                      `(,name ,label ,@(map make-Local clovers)))
                                     closure-names labels clover-lls)
                                body**))
                clovers*)))
@@ -423,7 +432,8 @@
        (if (member name locals)
          (list ast clovers)
          (let ((clovers* (lset-append clovers (list name))))
-           (list (make-Clover (sub1 (length clovers*))) clovers*))))
+           (list (make-Clover (list-index (cute eq? name <>) clovers*))
+                 clovers*))))
       
       ((or (? Const?) (? Global?)) (list ast clovers))))
 
