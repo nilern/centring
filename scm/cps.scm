@@ -4,7 +4,7 @@
   (import scheme chicken)
   (use (only matchable match match-let match-let* match-lambda)
        (only anaphora aif)
-       (only (srfi 1) remove list-index)
+       (only (srfi 1) remove list-index map-in-order)
        (only (srfi 69)
              make-hash-table
              alist->hash-table
@@ -35,6 +35,8 @@
      (else (and (pred? (car ls1) (car ls2))
                 (every-2? pred? (cdr ls1) (cdr ls2))))))
 
+  (define (lset-push ls v)
+    (if (member v ls) ls (append ls (list v))))
   (define (lset-append ls1 ls2)
     (append ls1 (remove (lambda (v) (member v ls1)) ls2)))
 
@@ -439,77 +441,73 @@
 
   ;;;; Code Generation
 
-  (define-record CodeObject
+  (define-record Procedure
+    name
     (setter instrs)
     (setter consts)
-    (setter localnames))
+    (setter procs)
+    (setter cloverc)
+    (setter local-names)
+    (setter global-names))
 
-  (define (display-codeobj port cob)
-    (define (argf arg)
-      (match arg
-        (`(local ,i) "l~4A")
-        (`(clover ,i) "f~4A")
-        (`(const ,i) "c~4A")
-        (`(global ,i) "g~4A")))
-    (format port ".instructions:~%")
-    (vector-for-each
-     (lambda (i instr)
-       (match instr
-         ((opcode arg)
-          (format port "~A: ~6A ~?~%" i opcode (argf arg) (cdr arg)))
-         ((opcode arg0 arg1)
-          (format port "~A: ~6A ~? ~?~%" i opcode
-                   (argf arg0) (cdr arg0) (argf arg1) (cdr arg1)))))
-     (CodeObject-instrs cob))
-    (format port "~%.constants:~%")
-    (vector-for-each (lambda (i const) (format port "~A: ~S~%" i const))
-                     (CodeObject-consts cob))
-    (format port "~%.localnames:~%")
-    (vector-for-each (lambda (i name) (format port "~A: ~A~%" i name))
-                     (CodeObject-localnames cob)))
+  (define (Procedure->sexp proc)
+    `(procedure
+      (instructions ,@(Procedure-instrs proc))
+      (constants ,@(Procedure-consts proc))
+      (procedures ,@(Procedure-procs proc))
+      (clover-count ,(Procedure-cloverc proc))
+
+      (local-names ,@(Procedure-local-names proc))
+      (global-names ,@(Procedure-global-names proc))))
+
+  (define (push-instr! proc instr)
+    (set! (Procedure-instrs proc)
+          `(,@(Procedure-instrs proc) ,instr)))
+
+  (define (push-constant! proc const)
+    (set! (Procedure-consts proc)
+          (lset-push (Procedure-consts proc) const))
+    (list-index (cute eq? const <>) (Procedure-consts proc)))
+
+  (define (update-clover-count! proc n)
+    (set! (Procedure-cloverc proc)
+          (max (Procedure-cloverc proc) n)))
+
+  (define (local-index proc name)
+    (list-index (cute eq? name <>) (Procedure-local-names proc)))
+
+  (define (push-local! proc name)
+    (set! (Procedure-local-names proc)
+          (lset-push (Procedure-local-names proc) name)))
+
+  (define (push-global! proc name)
+    (set! (Procedure-global-names proc)
+          (lset-push (Procedure-global-names proc) name))
+    (list-index (cute eq? name <>) (Procedure-global-names proc)))
+
+  (define (instr-arg! proc arg)
+    (match arg
+      (($ Local name) `(local ,(local-index proc name)))
+      (($ Global name) `(global ,(push-global! proc name)))
+      (($ Clover index)
+       (update-clover-count! proc index)
+       `(clover ,index))
+      (($ Const val) `(const ,(push-constant! proc val)))))
+
+  (define (instr-args! proc args)
+    (map-in-order (cute instr-arg! proc <>) args))
   
-  (define (collect-const constants node)
-    (match node
-      (($ Const v) (if (memq v constants) constants (cons v constants)))
-      (_ constants)))
-  
-  (define (collect-local constants node)
-    (match node
-      (($ Local name) (if (memq name constants) constants (cons name constants)))
-      (_ constants)))
-
-  (define (collect-constants ast)
-    (list->vector (reverse (fold-leaves collect-const '() ast))))
-
-  (define (collect-locals ast)
-    (list->vector (reverse (fold-leaves collect-local '() ast))))
+  (define (emit! proc ast)
+    (match ast
+      (($ Primop op (arg1 arg2) (res) (cont))
+       (push-instr! proc `(,op ,(instr-arg! proc arg1) ,(instr-arg! proc arg2)))
+       (push-local! proc res)
+       (emit! proc cont))
+      (($ Primop 'halt (arg) '() '())
+       (push-instr! proc `(halt ,(instr-arg! proc arg)))
+       proc)))
 
   (define (emit ast)
-    (let ((codeobj (make-CodeObject '() '() '()))
-          (locals (collect-locals ast))
-          (constants (collect-constants ast)))
-      (letrec ((node-instr
-                (lambda (node)
-                  (match node
-                    (($ Primop op args _ _)
-                     `(,op ,@(map node-instr args)))
-                    (($ Local name)
-                     `(local ,(vector-index (lambda (v) (eq? v name)) locals)))
-                    (($ Const val)
-                     `(const ,(vector-index (lambda (v) (= v val)) constants)))
-                    (_ (void)))))
-               (node-emit
-                (lambda (node)
-                  (match node
-                    (($ Primop op args _ '())
-                     (push! (node-instr node) (CodeObject-instrs codeobj)))
-                    (($ Primop op args _ (cont))
-                     (push! (node-instr node) (CodeObject-instrs codeobj))
-                     (node-emit cont))
-                    (_ (push! (node-instr node) (CodeObject-instrs codeobj)))))))
-        (node-emit ast)
-        (set! (CodeObject-instrs codeobj)
-              (list->vector (reverse (CodeObject-instrs codeobj))))
-        (set! (CodeObject-consts codeobj) constants)
-        (set! (CodeObject-localnames codeobj) locals)
-        codeobj))))
+    (let* ((main (gensym 'main))
+           (proc (make-Procedure main '() '() '() 0 `(,main) '())))
+      (Procedure->sexp (emit! proc ast)))))
