@@ -319,6 +319,8 @@
 
   ;;;; Elimination of Unused Variables
 
+  ;; TODO: don't do this, make beta-contract handle its own defn-cleanup
+
   (define (remove-unuseds ast)
     (postwalk
      (lambda (node)
@@ -370,6 +372,15 @@
                (match-let (((defn* clovers) (closure-convert-defn defn)))
                  (list (cons defn* (car acc)) (cons clovers (cadr acc)))))
              (list '() '()) defns))
+
+    (define (closure-convert-bindings locals clovers bindings res)
+      (if (null? bindings)
+        (list (reverse res) clovers)
+        (match-let* (((name label . clvs) (car bindings))
+                      ((clvs* clovers*)
+                       (closure-convert-list locals clovers clvs '())))
+          (closure-convert-bindings locals clovers* (cdr bindings)
+                                    (cons `(,name ,label ,@clvs*) res)))))
     
     (define ((replace-defnlabels labels closure-names) defn)
       (define (defnlabel-replacements labels closure-names repls)
@@ -400,7 +411,6 @@
                     (defns* (map (replace-defnlabels labels closure-names)
                                  defns))
                     ((defns** clover-lls) (closure-convert-defns defns*))
-                    (locals* (append locals closure-names))
                     (clovers* (foldl lset-append clovers clover-lls))
                     (body* (postwalk
                             (cute replace-local-uses
@@ -410,14 +420,21 @@
                                         labels closure-names))
                                   <>)
                             body))
-                    ((body** clovers**) (closure-convert locals* clovers* body*)))
-         (list (make-Fix defns**
-                   (make-Close (map (lambda (name label clovers)
-                                      `(,name ,label ,@(map make-Local clovers)))
-                                    closure-names labels clover-lls)
-                               body**))
-               clovers*)))
-      
+                    ((body** clovers**)
+                     (closure-convert
+                      locals clovers*              
+                      (make-Close
+                       (map (lambda (name label clovers)
+                              `(,name ,label ,@(map make-Local clovers)))
+                            closure-names labels clover-lls)
+                       body*))))
+          (list (make-Fix defns** body**) clovers**)))
+      (($ Close bindings body)
+       (match-let* (((bindings* clovers*)
+                     (closure-convert-bindings locals clovers bindings '()))
+                    (locals* (lset-append locals (map car bindings)))
+                    ((body* clovers**) (closure-convert locals* clovers* body)))
+         (list (make-Close bindings* body*) clovers**)))
       (($ Def name val cont)
        (match-let* (((val* clovers*) (closure-convert locals clovers val))
                     ((cont* clovers**) (closure-convert locals clovers* cont)))
@@ -489,7 +506,7 @@
 
   (define (update-clover-count! proc n)
     (set! (Procedure-cloverc proc)
-          (max (Procedure-cloverc proc) n)))
+          (max (Procedure-cloverc proc) (add1 n))))
 
   (define (local-index proc name)
     (array-index (cute eq? name <>) (Procedure-local-names proc)))
