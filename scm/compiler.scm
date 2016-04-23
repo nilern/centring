@@ -1,14 +1,10 @@
-(include "util.scm")
-(include "expand.scm")
-(include "coreast.scm")
-(include "cps.scm")
- 
 (use (only matchable match)
-     (only extras read-file pretty-print))
+     (only extras read-file pretty-print)
 
-(import (only centring.expand ctr-expand-all)
-        (prefix centring.coreast cast:)
-        (prefix centring.cps cps:))
+     (only centring.expand ctr-expand-all)
+     (prefix centring.coreast cast:)
+     (prefix centring.cps cps:)
+     (only centring.emit emit))
 
 (keyword-style #:prefix)
 
@@ -26,7 +22,7 @@
                  alphanalyze))
          (optimize (o cps:remove-unuseds cps:beta-contract cps:eta-contract cps))
          (cconvert (o car (cute cps:closure-convert '() '() <>) optimize))
-         (compile (o cps:emit cconvert)))
+         (compile (o emit cconvert)))
     (match (car arglist)
       ("--esxp" (pretty-print (ctr-expand-all sexp)))
       ("--icast" (pretty-print (cast:core->sexp (analyze sexp))))
