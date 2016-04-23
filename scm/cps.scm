@@ -19,7 +19,8 @@
        (only miscmacros push!)
        (only format format))
 
-  (import (prefix centring.coreast cast:))
+  (import array
+          (prefix centring.coreast cast:))
 
   ;;;; Utils
 
@@ -39,6 +40,10 @@
     (if (member v ls) ls (append ls (list v))))
   (define (lset-append ls1 ls2)
     (append ls1 (remove (lambda (v) (member v ls1)) ls2)))
+
+  (define (arrset-push! arr v)
+    (or (array-index (lambda (av) (equal? av v)) arr)
+        (sub1 (array-push! arr v))))
 
   ;;;; CPS AST
 
@@ -450,35 +455,38 @@
     (setter local-names)
     (setter global-names))
 
+  (define (make-proc name)
+    (let ((locals (make-array 8)))
+      (array-push! locals name)
+      (make-Procedure name
+                      (make-array 8) (make-array 8) (make-array 8) 0
+                      locals (make-array 8))))
+
   (define (Procedure->sexp proc)
     `(procedure
-      (instructions ,@(Procedure-instrs proc))
-      (constants ,@(Procedure-consts proc))
-      (procedures ,@(Procedure-procs proc))
+      (instructions ,@(array->list (Procedure-instrs proc)))
+      (constants ,@(array->list (Procedure-consts proc)))
+      (procedures ,@(array->list (Procedure-procs proc)))
       (clover-count ,(Procedure-cloverc proc))
 
-      (local-names ,@(Procedure-local-names proc))
+      (local-names ,@(array->list (Procedure-local-names proc)))
       (global-names ,@(Procedure-global-names proc))))
 
   (define (push-instr! proc instr)
-    (set! (Procedure-instrs proc)
-          `(,@(Procedure-instrs proc) ,instr)))
+    (array-push! (Procedure-instrs proc) instr))
 
   (define (push-constant! proc const)
-    (set! (Procedure-consts proc)
-          (lset-push (Procedure-consts proc) const))
-    (list-index (cute eq? const <>) (Procedure-consts proc)))
+    (arrset-push! (Procedure-consts proc) const))
 
   (define (update-clover-count! proc n)
     (set! (Procedure-cloverc proc)
           (max (Procedure-cloverc proc) n)))
 
   (define (local-index proc name)
-    (list-index (cute eq? name <>) (Procedure-local-names proc)))
+    (array-index (cute eq? name <>) (Procedure-local-names proc)))
 
   (define (push-local! proc name)
-    (set! (Procedure-local-names proc)
-          (lset-push (Procedure-local-names proc) name)))
+    (arrset-push! (Procedure-local-names proc) name))
 
   (define (push-global! proc name)
     (set! (Procedure-global-names proc)
@@ -508,6 +516,4 @@
        proc)))
 
   (define (emit ast)
-    (let* ((main (gensym 'main))
-           (proc (make-Procedure main '() '() '() 0 `(,main) '())))
-      (Procedure->sexp (emit! proc ast)))))
+    (Procedure->sexp (emit! (make-proc (gensym 'main)) ast))))

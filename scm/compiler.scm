@@ -1,3 +1,4 @@
+(include "util.scm")
 (include "expand.scm")
 (include "coreast.scm")
 (include "cps.scm")
