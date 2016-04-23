@@ -1,7 +1,7 @@
 (module array
    (make-array array?
     array-length array-ref array-set! array-index array-push!
-    array->list)
+    list->array array->list)
 
    (import scheme chicken)
    (use (only extras fprintf)
@@ -37,8 +37,9 @@
      (vector-set! (array-buffer arr) i v))
 
    (define (array-grow arr)
-     (let ((oldbuf (array-buffer arr))
-           (newbuf (make-vector (* (vector-length (array-buffer arr)) 2))))
+     (let* ((oldbuf (array-buffer arr))
+            (oldlen (vector-length oldbuf))
+            (newbuf (make-vector (if (> oldlen 0) (* oldlen 2) 8))))
        (do ((i 0 (add1 i))) ((= i (vector-length oldbuf)))
          (set! (vector-ref newbuf i) (vector-ref oldbuf i)))
        (set! (array-buffer arr) newbuf)))
@@ -56,6 +57,11 @@
      (set! (vector-ref (array-buffer arr) (array-length arr)) v)
      (set! (array-length arr) (add1 (array-length arr)))
      (array-length arr))
+
+   (define (list->array ls)
+     (let ((arr (make-array 0)))
+       (for-each (lambda (v) (array-push! arr v)) ls)
+       arr))
 
    (define (array->list arr)
      (let ((res '()))
