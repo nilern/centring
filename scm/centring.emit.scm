@@ -38,10 +38,12 @@
   ;;;; Procedure Record to Hold Emission State
 
   (define-record-type Procedure
-    (make-Procedure name instrs consts procs cloverc local-names global-names)
+    (make-Procedure name formal-types
+                    instrs consts procs cloverc local-names global-names)
     Procedure?
 
     (name Procedure-name)
+    (formal-types Procedure-formal-types)
     (instrs Procedure-instrs)
     (consts Procedure-consts)
     (procs Procedure-procs)
@@ -49,17 +51,17 @@
     (local-names Procedure-local-names set-locals!)
     (global-names Procedure-global-names))
 
-  (define (make-proc init-locals)
+  (define (make-proc init-locals formal-types)
     (let ((name (car init-locals))
           (locals (list->array init-locals)))
-      (make-Procedure name
+      (make-Procedure name formal-types
                       (make-array 8) (make-array 8) (make-array 8) 0
                       locals (make-array 8))))
 
   ;;; convert to S-expr
 
   (define (Procedure->sexp proc)
-    `(procedure ,(Procedure-name proc)
+    `(procedure ,(Procedure-name proc) ,(Procedure-formal-types proc)
       (procedures ,@(map Procedure->sexp
                          (array->list (Procedure-procs proc))))
       (instructions ,@(array->list (Procedure-instrs proc)))
@@ -151,9 +153,10 @@
              (set-instr! brf-i `(brf ,cond-addr ,else-i))))))
       (($ cps:Fix defns body)
        (for-each (match-lambda
-                   ((name formals _ body) ; TODO: emit the types
+                   ((name formals types body) ; TODO: emit the types
                     (push-proc! proc
-                                (emit! (make-proc (cons name formals)) body))))
+                                (emit! (make-proc (cons name formals) types)
+                                       body))))
                  defns)
        (emit! proc body))
       (($ cps:Close ((name label . clvs)) body)
@@ -189,4 +192,4 @@
       (_ (error "don't know how to emit instructions for" ast))))
 
   (define (emit ast)
-    (Procedure->sexp (emit! (make-proc (list (gensym 'main))) ast))))
+    (Procedure->sexp (emit! (make-proc (list (gensym 'main)) '()) ast))))
