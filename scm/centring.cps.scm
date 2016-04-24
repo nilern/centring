@@ -2,9 +2,9 @@
   *
 
   (import scheme chicken)
-  (use (only matchable match match-let match-let* match-lambda)
+  (use (only matchable match match-let match-let* match-lambda match-lambda*)
        (only anaphora aif)
-       (only (srfi 1) remove list-index map-in-order)
+       (only (srfi 1) remove list-index map-in-order append-map delete-duplicates)
        (only (srfi 69)
              make-hash-table
              alist->hash-table
@@ -15,7 +15,7 @@
              hash-table-exists?)
        (only (srfi 13) string-prefix? string-index)
        (only vector-lib vector-index vector-for-each)
-       (only data-structures identity constantly)
+       (only data-structures o identity constantly)
        (only miscmacros push!)
        (only format format))
 
@@ -314,7 +314,7 @@
 
   ;;;; Elimination of Unused Variables
 
-  ;; TODO: don't do this, make beta-contract handle its own defn-cleanup
+  ;; TODO: make beta-contract handle its own defn-cleanup, also eliminate (void):s
 
   (define (remove-unuseds ast)
     (postwalk
@@ -350,108 +350,85 @@
   ;;;; Closure Conversion
 
   (define (closure-convert locals clovers ast)
-    (define (closure-convert-list locals clovers cexps res)
-      (if (null? cexps)
-        (list (reverse res) clovers)
-        (match-let (((cexp* clovers*)
-                     (closure-convert locals clovers (car cexps))))
-          (closure-convert-list locals clovers* (cdr cexps) (cons cexp* res)))))
+    (define (convert-list locals clovers cexps)
+      (define conv-l
+        (match-lambda*
+         ((clovers '() res)
+          (list (reverse res) clovers))
+         ((clovers (cexp . cexps) res)
+          (match-let (((cexp clovers) (closure-convert locals clovers cexp)))
+            (conv-l clovers cexps (cons cexp res))))))
+      (conv-l clovers cexps '()))
 
-    (define (closure-convert-defn defn)
-      (match-let* (((label formals types body) defn)
-                   (locals (cons label formals))
-                   ((body* clovers) (closure-convert locals '() body)))
-        (list `(,label ,formals ,types ,body*) clovers)))
-    (define (closure-convert-defns defns)
-      (foldr (lambda (defn acc)
-               (match-let (((defn* clovers) (closure-convert-defn defn)))
-                 (list (cons defn* (car acc)) (cons clovers (cadr acc)))))
-             (list '() '()) defns))
+    (define (convert-defns defns)
+      (define conv-defns
+        (match-lambda*
+         (('() res clv-mat)
+          (list (reverse res) (reverse clv-mat)))
+         ((((label formals types body) . defns) res clv-mat)
+          (match-let (((body clovers)
+                       (closure-convert (cons label formals) '() body)))
+            (conv-defns defns (cons `(,label ,formals ,types ,body) res)
+                        (cons clovers clv-mat))))))
+      (conv-defns defns '() '()))
 
-    (define (closure-convert-bindings locals clovers bindings res)
-      (if (null? bindings)
-        (list (reverse res) clovers)
-        (match-let* (((name label . clvs) (car bindings))
-                      ((clvs* clovers*)
-                       (closure-convert-list locals clovers clvs '())))
-          (closure-convert-bindings locals clovers* (cdr bindings)
-                                    (cons `(,name ,label ,@clvs*) res)))))
-    
-    (define ((replace-defnlabels labels closure-names) defn)
-      (define (defnlabel-replacements labels closure-names repls)
-        (cond
-         ((null? labels) (alist->hash-table (reverse repls)))
-         ((eq? (car labels) (car defn))
-          (defnlabel-replacements (cdr labels) (cdr closure-names) repls))
-         (else
-          (defnlabel-replacements (cdr labels) (cdr closure-names)
-            (cons (cons (car labels) (make-Local (car closure-names))) repls)))))
+    (define (convert-bindings locals clovers bindings)
+      (define conv-bs
+        (match-lambda*
+         ((clovers '() res)
+          (list (reverse res) clovers))
+         ((clovers ((name label . clvs) . bindings) res)
+          (match-let (((clvs clovers) (convert-list locals clovers clvs)))
+            (conv-bs clovers bindings (cons `(,name ,label ,@clvs) res))))))
+      (conv-bs clovers bindings '()))
+
+    (define (clover clovers name)
+      (let ((clovers (lset-append clovers (list name))))
+        (list (make-Clover (list-index (cute eq? name <>) clovers)) clovers)))
       
-      (let ((replacements (defnlabel-replacements labels closure-names '())))
-        (cast:update-defnbody
-         (lambda (dbody)
-           (postwalk (cute replace-local-uses replacements <>) dbody))
-         defn)))
-    
     (match ast
       (($ If cond then else)
-       (match-let* (((cond* clovers*) (closure-convert locals clovers cond))
-                    ((then* clovers**) (closure-convert locals clovers* then))
-                    ((else* clovers***) (closure-convert locals clovers** else)))
-         (list (make-If cond* then* else*) clovers***)))
-
+       (match-let* (((cond clovers) (closure-convert locals clovers cond))
+                    ((then clovers) (closure-convert locals clovers then))
+                    ((else clovers) (closure-convert locals clovers else)))
+         (list (make-If cond then else) clovers)))
       (($ Fix defns body)
        (match-let* ((labels (map car defns))
                     (closure-names (map gensym labels))
-                    (defns* (map (replace-defnlabels labels closure-names)
-                                 defns))
-                    ((defns** clover-lls) (closure-convert-defns defns*))
-                    (clovers* (foldl lset-append clovers clover-lls))
-                    (body* (postwalk
-                            (cute replace-local-uses
-                                  (alist->hash-table
-                                   (map (lambda (l c)
-                                          (cons l (make-Local c)))
-                                        labels closure-names))
-                                  <>)
-                            body))
-                    ((body** clovers**)
-                     (closure-convert
-                      locals clovers*              
-                      (make-Close
-                       (map (lambda (name label clovers)
-                              `(,name ,label ,@(map make-Local clovers)))
-                            closure-names labels clover-lls)
-                       body*))))
-          (list (make-Fix defns** body**) clovers**)))
+                    ((defns clv-mat) (convert-defns defns))
+                    (bindings (map (lambda (n l clvs)
+                                     `(,n ,l ,@(map make-Local clvs)))
+                                   closure-names labels clv-mat))
+                    (locals (append locals labels))
+                    (body (replace-local-uses
+                           (alist->hash-table
+                            (map (lambda (l n) (cons l (make-Local n)))
+                                 labels closure-names))
+                           body))
+                    (body (make-Close bindings body))
+                    ((body clovers) (closure-convert clovers locals body)))
+         (list (make-Fix defns body) clovers)))
       (($ Close bindings body)
-       (match-let* (((bindings* clovers*)
-                     (closure-convert-bindings locals clovers bindings '()))
-                    (locals* (lset-append locals (map car bindings)))
-                    ((body* clovers**) (closure-convert locals* clovers* body)))
-         (list (make-Close bindings* body*) clovers**)))
+       (match-let* ((locals (append locals (map car bindings)))
+                    ((bindings clovers) (convert-bindings locals clovers bindings))
+                    ((body clovers) (closure-convert locals clovers body)))
+         (list (make-Close bindings body) clovers)))
       (($ Def name val cont)
-       (match-let* (((val* clovers*) (closure-convert locals clovers val))
-                    ((cont* clovers**) (closure-convert locals clovers* cont)))
-         (list (make-Def name val* cont*) clovers**)))
+       (match-let* (((val clovers) (closure-convert locals clovers val))
+                    ((cont clovers) (closure-convert locals clovers cont)))
+         (list (make-Def name val cont) clovers)))
       (($ Primop op args results conts)
-       (match-let* (((args* clovers*)
-                     (closure-convert-list locals clovers args '()))
-                    (locals* (append locals results))
-                    ((conts* clovers**)
-                     (closure-convert-list locals* clovers* conts '())))
-         (list (make-Primop op args* results conts*) clovers**)))
+       (match-let* (((args clovers) (convert-list locals clovers args))
+                    (locals (append locals results))
+                    ((conts clovers) (convert-list locals clovers conts)))
+         (list (make-Primop op args results conts) clovers)))
       (($ App callee args)
-       (match-let* (((callee* clovers*) (closure-convert locals clovers callee))
-                    ((args* clovers**)
-                     (closure-convert-list locals clovers* args '())))
-         (list (make-App callee* args*) clovers**)))
-      
+       (match-let* (((callee clovers) (closure-convert locals clovers callee))
+                    ((args clovers) (convert-list locals clovers args)))
+         (list (make-App callee args) clovers)))
       (($ Local name)
-       (if (member name locals)
+       (if (memq name locals)
          (list ast clovers)
-         (let ((clovers* (lset-append clovers (list name))))
-           (list (make-Clover (list-index (cute eq? name <>) clovers*))
-                 clovers*))))
-      
-      ((or (? Const?) (? Global?)) (list ast clovers)))))
+         (clover clovers name)))
+      ((or (? Global?) (? Const?)) (list ast clovers))
+      (_ (error "unable to closure-convert" ast)))))
