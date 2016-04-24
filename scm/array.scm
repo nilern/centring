@@ -13,6 +13,7 @@
    (define-record-type array
      (make-array-raw length buffer)
      array?
+     
      (length array-length (setter array-length))
      (buffer array-buffer (setter array-buffer)))
 

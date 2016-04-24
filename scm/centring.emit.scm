@@ -35,16 +35,19 @@
            (array-append! b)))))
     (array-merge-with merge mas1 mas2))
 
-  ;;;;
+  ;;;; Procedure Record to Hold Emission State
 
-  (define-record Procedure
-    name
-    (setter instrs)
-    (setter consts)
-    (setter procs)
-    (setter cloverc)
-    (setter local-names)
-    (setter global-names))
+  (define-record-type Procedure
+    (make-Procedure name instrs consts procs cloverc local-names global-names)
+    Procedure?
+
+    (name Procedure-name)
+    (instrs Procedure-instrs)
+    (consts Procedure-consts)
+    (procs Procedure-procs)
+    (cloverc Procedure-cloverc set-cloverc!)
+    (local-names Procedure-local-names set-locals!)
+    (global-names Procedure-global-names))
 
   (define (make-proc init-locals)
     (let ((name (car init-locals))
@@ -52,6 +55,8 @@
       (make-Procedure name
                       (make-array 8) (make-array 8) (make-array 8) 0
                       locals (make-array 8))))
+
+  ;;; convert to S-expr
 
   (define (Procedure->sexp proc)
     `(procedure ,(Procedure-name proc)
@@ -65,14 +70,20 @@
                           (array->list (Procedure-local-names proc))))
       (global-names ,@(array->list (Procedure-global-names proc)))))
 
+  ;;; instructions
+
   (define (push-instr! proc instr)
     (array-push! (Procedure-instrs proc) instr))
 
   (define (set-instr! proc i instr)
     (array-set! (Procedure-instrs proc) i instr))
 
+  ;;; constants
+
   (define (push-constant! proc const)
     (arrset-push! (Procedure-consts proc) const))
+
+  ;;; subprocs
 
   (define (push-proc! proc subproc)
     (array-push! (Procedure-procs proc) subproc))
@@ -82,9 +93,12 @@
                    (($ Procedure procname _ _ _ _ _ _) (eq? procname name)))
                  (Procedure-procs proc)))
 
+  ;;; clover-count
+
   (define (update-clover-count! proc n)
-    (set! (Procedure-cloverc proc)
-          (max (Procedure-cloverc proc) (add1 n))))
+    (set-cloverc! proc (max (Procedure-cloverc proc) (add1 n))))
+
+  ;;; locals
 
   (define (local-index proc name)
     (define (pred v)
@@ -95,15 +109,15 @@
   (define (push-local! proc name)
     (array-push! (Procedure-local-names proc) name))
 
-  (define (set-locals! proc locals)
-    (set! (Procedure-local-names proc) locals))
-
   (define (merge-locals! proc locals)
-    (set! (Procedure-local-names proc)
-          (multiarrset-combine locals (Procedure-local-names proc))))
+    (set-locals! proc (multiarrset-combine locals (Procedure-local-names proc))))
+
+  ;;; globals
 
   (define (push-global! proc name)
     (arrset-push! (Procedure-global-names proc) name))
+
+  ;;;; Emit
 
   (define (instr-arg! proc arg)
     (match arg
@@ -116,6 +130,8 @@
 
   (define (instr-args! proc args)
     (map-in-order (cute instr-arg! proc <>) args))
+
+  ;;;
   
   (define (emit! proc ast)
     (match ast
