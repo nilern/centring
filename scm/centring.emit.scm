@@ -3,17 +3,39 @@
 
   (import scheme chicken)
   (use (only (srfi 1) map-in-order)
+       (only data-structures complement)
        (only matchable match match-lambda)
        (only clojurian-syntax doto)
 
        array
        (prefix centring.cps cps:))
 
-  ;;;;
+  ;;;; Utils
+
+  (define non-array? (complement array?))
 
   (define (arrset-push! arr v)
     (or (array-index (lambda (av) (equal? av v)) arr)
         (sub1 (array-push! arr v))))
+
+  (define (multiarrset-combine mas1 mas2)
+    (define (merge a b)
+      (match (cons a b)
+        (((? non-array?) . (? non-array?))
+         (if (equal? a b) a (array a b)))
+        (((? array?) . (? array?))
+         (doto (array-clone a)
+           (array-append! b)))
+        (((? array?) . (? non-array?))
+         (doto (array-clone a)
+           (array-push! b)))
+        (((? non-array?) . (? array?))
+         (doto (make-array (add1 (array-length b)))
+           (array-push! a)
+           (array-append! b)))))
+    (array-merge-with merge mas1 mas2))
+
+  ;;;;
 
   (define-record Procedure
     name
@@ -39,11 +61,15 @@
       (constants ,@(array->list (Procedure-consts proc)))
       (clover-count ,(Procedure-cloverc proc))
 
-      (local-names ,@(array->list (Procedure-local-names proc)))
+      (local-names ,@(map (lambda (v) (if (array? v) (array->list v) v))
+                          (array->list (Procedure-local-names proc))))
       (global-names ,@(array->list (Procedure-global-names proc)))))
 
   (define (push-instr! proc instr)
     (array-push! (Procedure-instrs proc) instr))
+
+  (define (set-instr! proc i instr)
+    (array-set! (Procedure-instrs proc) i instr))
 
   (define (push-constant! proc const)
     (arrset-push! (Procedure-consts proc) const))
@@ -61,10 +87,20 @@
           (max (Procedure-cloverc proc) (add1 n))))
 
   (define (local-index proc name)
-    (array-index (cute eq? name <>) (Procedure-local-names proc)))
+    (define (pred v)
+      (or (eq? v name)
+          (and (array? v) (array-index (cute eq? name <>) v))))
+    (array-index pred (Procedure-local-names proc)))
 
   (define (push-local! proc name)
-    (arrset-push! (Procedure-local-names proc) name))
+    (array-push! (Procedure-local-names proc) name))
+
+  (define (set-locals! proc locals)
+    (set! (Procedure-local-names proc) locals))
+
+  (define (merge-locals! proc locals)
+    (set! (Procedure-local-names proc)
+          (multiarrset-combine locals (Procedure-local-names proc))))
 
   (define (push-global! proc name)
     (arrset-push! (Procedure-global-names proc) name))
@@ -85,14 +121,18 @@
     (match ast
       (($ cps:If cond then else)
        (let ((brf-i (array-length (Procedure-instrs proc)))
-             (cond-addr (instr-arg! proc cond)))
+             (cond-addr (instr-arg! proc cond))
+             (oldlocals (array-clone (Procedure-local-names proc))))
          (doto proc
-           (push-instr! `(nop))
+           (push-instr! `(nop)) ; placeholder
            (emit! then))
-         (let ((else-i (array-length (Procedure-instrs proc))))
-           (emit! proc else)
-           (array-set! (Procedure-instrs proc) brf-i `(brf ,cond-addr ,else-i))
-           proc)))
+         (let ((else-i (array-length (Procedure-instrs proc)))
+               (then-locals (Procedure-local-names proc)))
+           (doto proc
+             (set-locals! oldlocals) ; restore locals from start of if
+             (emit! else)
+             (merge-locals! then-locals) ; merge locals from both branches
+             (set-instr! brf-i `(brf ,cond-addr ,else-i))))))
       (($ cps:Fix defns body)
        (for-each (match-lambda
                    ((name formals _ body) ; TODO: emit the types
@@ -109,8 +149,7 @@
          (emit! body)))
       (($ cps:Def name val cont)
        (doto proc
-         (push-instr! `(store ,(instr-arg! proc (cps:make-Global name))
-                              ,(instr-arg! proc val)))
+         (push-instr! `(def ,(push-global! proc name) ,(instr-arg! proc val)))
          (emit! cont)))
       (($ cps:Primop op (arg1 arg2) (res) (cont))
        (doto proc

@@ -77,7 +77,7 @@
     (match (cons name args)
       (((or 'add 'sub 'mul 'div) a b)
        (make-Primop name `(,(analyze a) ,(analyze b))))
-      
+      (('void) (make-Primop name '()))
       (form (error "invalid intrinsic" form))))
 
   ;;;; Traversal

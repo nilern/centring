@@ -7,6 +7,9 @@ ctrc: $(SOS) $(ISOS) compiler.scm
 clean:
 	rm *.so *.import.scm ctrc
 
+centring.emit.so centring.emit.import.so: centring.emit.scm array.import.so
+	csc -sJ centring.emit.scm
+
 %.so %.import.scm: %.scm
 	csc -sJ $<
 
