@@ -21,7 +21,9 @@
                                 (cps:make-Primop 'halt `(,v) '() '()))))
                  alphanalyze))
          (optimize (o cps:remove-unuseds cps:beta-contract cps:eta-contract cps))
-         (cconvert (o car (cute cps:closure-convert '() '() <>) optimize))
+         (cconvert (o (cute cps:prewalk cps:serialize-closes <>) car
+                      (cute cps:closure-convert '() '() <>)
+                      optimize))
          (compile (o emit cconvert)))
     (match (car arglist)
       ("--esxp" (pretty-print (ctr-expand-all sexp)))

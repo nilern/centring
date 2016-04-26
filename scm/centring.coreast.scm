@@ -125,6 +125,8 @@
       (($ Const val) val)))
 
   ;;;; Alphatize and Separate Locals from Globals
+
+  ;; TODO: module-resolve globals to retain lexical scoping
   
   (define (replace-sym replacements sym)
     (aif (assq sym replacements) (cdr it) sym))

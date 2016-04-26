@@ -18,11 +18,11 @@
              hash-table-exists?)
        (only (srfi 13) string-prefix? string-index)
        (only vector-lib vector-index vector-for-each)
-       (only data-structures o identity constantly)
+       (only data-structures o identity constantly sort)
        (only miscmacros push!)
        (only format format))
 
-  (use (prefix centring.coreast cast:))
+  (use array (prefix centring.coreast cast:))
 
   ;;;; Utils
 
@@ -217,10 +217,11 @@
                          ,@(map cps->sexp args))))
           ,(cps->sexp cont)))
       
-      (($ Local name) `(%l ,name))
+      (($ Local name) name)
       (($ Clover index) `(%f ,index))
-      (($ Global name) `(%g ,name))
-      (($ Const val) `(%c ,val))
+      (($ Global name) name)
+      (($ Const val) val)
+      (#f '%unbound)
       (_ (error "unable to display as S-expr" ast))))
 
   ;;;; Utility Passes
@@ -323,6 +324,7 @@
   ;;;; Elimination of Unused Variables
 
   ;; TODO: make beta-contract handle its own defn-cleanup, also eliminate (void):s
+  ;; FIXME: removes defns that shouldn't be removed
 
   (define (remove-unuseds ast)
     (postwalk
@@ -435,4 +437,72 @@
          (let ((clovers* (lset-append clovers (list name))))
            (list (make-Clover (list-index (cute eq? name <>) clovers*)) clovers*))))
       ((or (? Global?) (? Const?)) (list ast clovers))
-      (_ (error "unable to closure-convert" ast)))))
+      (_ (error "unable to closure-convert" ast))))
+
+  ;;;; Close-serialization
+
+  (define (analyze-close-binding pending-closures binding)
+    (define analyze
+      (match-lambda
+        ('() (cons '() '()))
+        (((and clv ($ Local name)) . clvs)
+         (match-let (((initials . delayeds) (analyze clvs)))
+           (if (member name pending-closures)
+             (cons (cons #f initials) (cons clv delayeds))
+             (cons (cons clv initials) (cons #f delayeds)))))
+        ((clv . clvs)
+         (match-let (((initials . delayeds) (analyze clvs)))
+           (cons (cons clv initials) (cons #f delayeds))))))
+    (analyze (cddr binding)))
+
+  (define (analyze-close-serial bindings)
+    (define analyze
+      (match-lambda*
+        (('() '()) '())
+        (((_ . pendings) (binding . bindings))
+         (cons (analyze-close-binding pendings binding)
+               (analyze pendings bindings)))))
+    (analyze (map car bindings) bindings))
+
+  (define count-pendings
+    (match-lambda
+     ((initials . delayeds)
+      (foldl (lambda (count delayed) (if delayed (add1 count) count))
+             0 delayeds))))
+
+  (define (pending-indices closure delayeds)
+    (let ((res (make-array 0)))
+      (do ((i 0 (add1 i))) ((= i (array-length delayeds)))
+        (let ((d (array-ref delayeds i)))
+          (when d
+            (array-push! res (list (make-Local closure) (make-Const i) d)))))
+      res))
+
+  (define (serialize-bindings bindings)
+    (define ((cmp pendings) b1 b2)
+      (< (count-pendings (analyze-close-binding pendings b1))
+         (count-pendings (analyze-close-binding pendings b2))))
+    (let* ((sorted-bindings (sort bindings (cmp (map car bindings))))
+           (seranalyzed (analyze-close-serial sorted-bindings))
+           (initials (map car seranalyzed))
+           (delayeds (map (o list->array cdr) seranalyzed))
+           (bindings* (map (match-lambda* (((n l . _) is) (cons* n l is)))
+                           sorted-bindings initials))
+           (pends (map pending-indices (map car sorted-bindings) delayeds)))
+      (values bindings* pends)))
+
+  (define prefix-pends
+    (match-lambda*
+     (('() body) body)
+     (((pend . pends) body)
+      (let ((res (prefix-pends pends body)))
+        (do ((i 0 (add1 i))) ((= i (array-length pend)))
+          (set! res (make-Primop 'clvset (array-ref pend i) '() res)))
+        res))))
+  
+  (define (serialize-closes node)
+    (match node
+      (($ Close bindings body)
+       (receive (bindings* pends) (serialize-bindings bindings)
+         (make-Close bindings* (prefix-pends pends body))))
+      (_ node))))

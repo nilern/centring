@@ -48,6 +48,7 @@
                              `(,(car defn) ,names ,types ,(caddr defn))))
                          defns)))
          `(centring.sf/letfn ,defns ,body)))
+      (('letfn defns . body) `(letfn ,defns (do ,@body)))
       (('def name val) `(centring.sf/def ,name ,val))
       (('quote val) `(centring.sf/quote ,val))
            

@@ -6,4 +6,5 @@
           (if (= n 1)
             #t
             (even? (- n 1)))))
-  (even? 5))
+  (even? 5)
+  (odd? 5))
