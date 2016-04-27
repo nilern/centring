@@ -11,9 +11,11 @@ pub struct VM;
 pub struct VMProcess<'a> {
     vm: &'a VM,           // The parent VM of this process
     heap: GcHeap,         // The GC'ed memory for this process
+    // curr_mod: ValueRef,   // The currently executing Module
+    // mod_registry: HashMap<String, ValueRef> // Keeps 'em reachable
     stack: Vec<ValueRef>, // Workspace
 
-    // These slices point into the GcHeap:
+    // These slices point into the GcHeap and are updated on calls:
     instrs: &'a [Bytecode],   // Instructions of the current Fn
     consts: &'a [ValueRef],   // Constants of the current Fn
     codeobjs: &'a [ValueRef], // Inner Procedures of the current Fn
