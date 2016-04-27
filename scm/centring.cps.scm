@@ -61,6 +61,8 @@
   (define-record Global name)
   (define-record Clover index)
   (define-record Const val)
+  
+  (define-record Unbound)
 
   ;;;; CPS Conversion
 
@@ -212,6 +214,9 @@
        `($def ,name ,(cps->sexp val) ,(cps->sexp cont)))
       (($ App callee args) `(,(cps->sexp callee) ,@(map cps->sexp args)))
       (($ Primop 'halt (v) '() '()) `(%halt ,(cps->sexp v)))
+      (($ Primop op args '() (cont))
+       `(,(string->symbol (string-append "%" (symbol->string op)))
+         ,@(map cps->sexp args) ,(cps->sexp cont)))
       (($ Primop op args (result) (cont))
        `($let ((,result (,(string->symbol (string-append "%" (symbol->string op)))
                          ,@(map cps->sexp args))))
@@ -221,7 +226,6 @@
       (($ Clover index) `(%f ,index))
       (($ Global name) name)
       (($ Const val) val)
-      (#f '%unbound)
       (_ (error "unable to display as S-expr" ast))))
 
   ;;;; Utility Passes
@@ -359,6 +363,8 @@
 
   ;;;; Closure Conversion
 
+  ;; FIXME: recursive bindings fail oddly
+
   (define (closure-convert locals clovers ast)
     (define (convert-list locals clovers cexps)
       (define conv-l
@@ -415,7 +421,7 @@
       (($ Close bindings body)
        (match-let* ((locals* (append locals (map car bindings)))
                     ((bindings* clovers*)
-                     (convert-bindings locals clovers bindings))
+                     (convert-bindings locals* clovers bindings))
                     ((body* clovers**) (closure-convert locals* clovers* body)))
          (list (make-Close bindings* body*) clovers**)))
       (($ Def name val cont)
@@ -448,7 +454,8 @@
         (((and clv ($ Local name)) . clvs)
          (match-let (((initials . delayeds) (analyze clvs)))
            (if (member name pending-closures)
-             (cons (cons #f initials) (cons clv delayeds))
+             (cons (cons (make-Const (make-Unbound)) initials)
+                   (cons clv delayeds))
              (cons (cons clv initials) (cons #f delayeds)))))
         ((clv . clvs)
          (match-let (((initials . delayeds) (analyze clvs)))
@@ -497,7 +504,7 @@
      (((pend . pends) body)
       (let ((res (prefix-pends pends body)))
         (do ((i 0 (add1 i))) ((= i (array-length pend)))
-          (set! res (make-Primop 'clvset (array-ref pend i) '() res)))
+          (set! res (make-Primop 'clvset (array-ref pend i) '() (list res))))
         res))))
   
   (define (serialize-closes node)

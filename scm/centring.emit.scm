@@ -159,13 +159,18 @@
                                        body))))
                  defns)
        (emit! proc body))
-      (($ cps:Close ((name label . clvs)) body)
-       (for-each (lambda (clv) (push-instr! proc `(load ,(instr-arg! proc clv))))
-                 clvs)
-       (doto proc
-         (push-instr! `(fn ,(proc-index proc label)))
-         (push-local! name)
-         (emit! body)))
+      (($ cps:Close bindings body)
+       (letrec ((emit-binding
+                 (match-lambda
+                   ((name label . clvs)
+                    (for-each (lambda (clv)
+                                (push-instr! proc `(load ,(instr-arg! proc clv))))
+                              clvs)
+                    (doto proc
+                      (push-instr! `(fn ,(proc-index proc label)))
+                      (push-local! name))))))
+         (for-each emit-binding bindings)
+         (emit! proc body)))
       (($ cps:Def name val cont)
        (doto proc
          (push-instr! `(def ,(push-global! proc name) ,(instr-arg! proc val)))
@@ -174,6 +179,11 @@
        (doto proc
          (push-instr! `(,op ,(instr-arg! proc arg1) ,(instr-arg! proc arg2)))
          (push-local! res)
+         (emit! cont)))
+      (($ cps:Primop op (arg1 arg2 arg3) '() (cont))
+       (doto proc
+         (push-instr! `(load ,(instr-arg! proc arg3)))
+         (push-instr! `(,op ,(instr-arg! proc arg1) ,(instr-arg! proc arg2)))
          (emit! cont)))
       (($ cps:Primop op '() (res) (cont))
        (doto proc
