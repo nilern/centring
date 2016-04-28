@@ -82,7 +82,7 @@ impl ValueRef {
         match self.0 & INT_BITS {
             INT_TAG => Value::Int((self.0 as isize) >> INT_SHIFT),
             0 => unsafe {
-                let start: *const ValueRef = From::from(*self);
+                let start = self.as_ptr();
                 let header = (*start).0;
                 let data_start = start.offset(1);
                 match header & TYPE_BITS {
@@ -125,7 +125,7 @@ impl ValueRef {
 
     pub fn deref_contents(&self) -> &[ValueRef] {
         unsafe {
-            let start = self.0 as *const ValueRef;
+            let start = self.as_ptr();
             let header = (*start).0;
             let data_start = start.offset(1);
             let len = header & LENGTH_BITS;
@@ -153,9 +153,16 @@ impl ValueRef {
         if self.is_immediate() {
             None
         } else {
-            let start: *const ValueRef = From::from(*self);
-            unsafe { Some((*start).0) }
+            unsafe { Some((*self.as_ptr()).0) }
         }
+    }
+
+    fn as_ptr(&self) -> *const ValueRef {
+        self.0 as *const ValueRef
+    }
+
+    fn as_mut_ptr(&self) -> *mut ValueRef {
+        self.0 as *mut ValueRef
     }
 }
 
@@ -174,18 +181,6 @@ impl From<ValueRef> for isize {
 impl From<*const ValueRef> for ValueRef {
     fn from(ptr: *const ValueRef) -> ValueRef {
         ValueRef(ptr as usize)
-    }
-}
-
-impl From<ValueRef> for *const ValueRef {
-    fn from(vref: ValueRef) -> *const ValueRef {
-        vref.0 as *const ValueRef
-    }
-}
-
-impl From<ValueRef> for *mut ValueRef {
-    fn from(vref: ValueRef) -> *mut ValueRef {
-        vref.0 as *mut ValueRef
     }
 }
 
@@ -323,7 +318,7 @@ impl GcHeap {
                     .offset(self.tospace.len() as isize);
 
                 // Copy object:
-                let oldstart: *mut ValueRef = From::from(vref);
+                let oldstart = vref.as_mut_ptr();
                 {
                     let header = (*oldstart).0;
                     let data_len = data_wlen(header);
