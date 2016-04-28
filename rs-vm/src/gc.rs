@@ -43,7 +43,7 @@ pub struct GcHeap {
     tospace: Vec<ValueRef>
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum Value<'a> {
     Int(isize),
     Unbound,
@@ -57,13 +57,13 @@ pub enum Value<'a> {
     Procedure(Procedure)
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Closure<'a> {
     pub codeobj: ValueRef,
     pub clovers: &'a [ValueRef]
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct Procedure {
     pub instrs: ValueRef,
     pub consts: ValueRef,

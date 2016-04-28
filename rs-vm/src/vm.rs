@@ -1,4 +1,4 @@
-use std::mem::size_of;
+use std::mem::{size_of, transmute};
 use std::slice;
 use std::hash::{Hash, Hasher};
 
@@ -242,10 +242,24 @@ impl ValueRef {
     op_impl!(imul, a, b, ValueRef(((a - 1)*(b - 1)/2 + 1) as usize));
     op_impl!(idiv, a, b, ValueRef(((a - 1)/(b - 1)*2 + 1) as usize));
 
-    pub fn aget(&self, i: usize) -> Result<Option<ValueRef>, VMError> {
+    pub fn identical_to(&self, other: &ValueRef) -> bool {
+        self.0 == other.0
+    }
+
+    pub fn aget(&self, i: usize) -> Result<Option<&ValueRef>, VMError> {
         match self.deref() {
-            Value::Tuple(vals) => Ok(vals.get(i).map(|v| *v)),
-            Value::Array(vals) => Ok(vals.get(i).map(|v| *v)),
+            Value::Tuple(vals) => Ok(vals.get(i)),
+            Value::Array(vals) => Ok(vals.get(i)),
+            _ => Err(VMError::TypeMismatch)
+        }
+    }
+
+    pub fn aget_mut<'a>(self, i: usize)
+                       -> Result<Option<&'a mut ValueRef>, VMError> {
+        match self.deref() {
+            Value::Array(vals) => unsafe {
+                Ok(Some(transmute(vals.as_ptr())))
+            },
             _ => Err(VMError::TypeMismatch)
         }
     }
@@ -261,7 +275,7 @@ impl ValueRef {
 
 impl PartialEq for ValueRef {
     fn eq(&self, other: &ValueRef) -> bool {
-        if self.0 == other.0 {
+        if self.identical_to(other) { // identical immediates or pointers
             true
         } else if self.is_immediate() || other.is_immediate() {
             false
@@ -273,6 +287,6 @@ impl PartialEq for ValueRef {
 
 impl Hash for ValueRef {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        // TODO
+        self.deref().hash(state)
     }
 }
