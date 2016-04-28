@@ -1,4 +1,5 @@
 mod gc;
+mod hashtable;
 mod bytecode;
 mod vm;
 

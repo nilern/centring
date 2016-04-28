@@ -1,7 +1,8 @@
 use std::mem::size_of;
 use std::slice;
+use std::hash::{Hash, Hasher};
 
-use gc::{GcHeap, Value, ValueRef, DeflatedProcedure, Closure, INT_TAG};
+use gc::{GcHeap, Value, ValueRef, DeflatedProcedure, Closure};
 use bytecode::{Bytecode, Opcode, Arg, Domain};
 
 // Types
@@ -240,4 +241,38 @@ impl ValueRef {
     op_impl!(isub, a, b, ValueRef((a - b + 1) as usize));
     op_impl!(imul, a, b, ValueRef(((a - 1)*(b - 1)/2 + 1) as usize));
     op_impl!(idiv, a, b, ValueRef(((a - 1)/(b - 1)*2 + 1) as usize));
+
+    pub fn aget(&self, i: usize) -> Result<Option<ValueRef>, VMError> {
+        match self.deref() {
+            Value::Tuple(vals) => Ok(vals.get(i).map(|v| *v)),
+            Value::Array(vals) => Ok(vals.get(i).map(|v| *v)),
+            _ => Err(VMError::TypeMismatch)
+        }
+    }
+
+    pub fn alength(&self) -> Result<usize, VMError> {
+        match self.deref() {
+            Value::Tuple(vals) => Ok(vals.len()),
+            Value::Array(vals) => Ok(vals.len()),
+            _ => Err(VMError::TypeMismatch)
+        }
+    }   
+}
+
+impl PartialEq for ValueRef {
+    fn eq(&self, other: &ValueRef) -> bool {
+        if self.0 == other.0 {
+            true
+        } else if self.is_immediate() || other.is_immediate() {
+            false
+        } else { // both are pointers
+            self.deref() == other.deref()
+        }
+    }
+}
+
+impl Hash for ValueRef {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // TODO
+    }
 }

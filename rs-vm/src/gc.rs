@@ -1,8 +1,6 @@
 use std::slice;
 use std::mem::{size_of, transmute, swap};
-use std::ops::Deref;
 
-use vm::{VMError, VMResult};
 use bytecode::Bytecode;
 
 // TODO:
@@ -16,7 +14,7 @@ use bytecode::Bytecode;
 const IMMEDIACY_BITS: usize = 0x03;
 const INT_BITS: usize = 0x01;
 
-const REF_SHIFT: usize = 2;
+const FORWARDING_SHIFT: usize = 2;
 pub const INT_SHIFT: usize = 1;
 
 const BYTEBLOCK_BIT: usize =  0x4000_0000_0000_0000;
@@ -25,15 +23,18 @@ const TYPE_BITS: usize =      0x0F00_0000_0000_0000;
 const LENGTH_BITS: usize =    0x00FF_FFFF_FFFF_FFFF;
 
 pub const INT_TAG: usize = 1;
+pub const IMMEDIACY_TAG: usize = 2;
+pub const UNBOUND_TAG: usize = 0x2E;
 
 const TUPLE_TAG: usize =  0x0100_0000_0000_0000;
-const BUFFER_TAG: usize = 0x0200_0000_0000_0000;
-const COB_TAG: usize = 0x0300_0000_0000_0000;
-const FN_TAG: usize = 0x0400_0000_0000_0000;
+const ARRAY_TAG: usize =  0x0200_0000_0000_0000;
+const BUFFER_TAG: usize = 0x0300_0000_0000_0000;
+const COB_TAG: usize =    0x0400_0000_0000_0000;
+const FN_TAG: usize =     0x0500_0000_0000_0000;
 
 // Types
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub struct ValueRef(pub usize);
 
 #[derive(Debug)]
@@ -42,11 +43,13 @@ pub struct GcHeap {
     tospace: Vec<ValueRef>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Value<'a> {
     Int(isize),
+    Unbound,
 
     Tuple(&'a [ValueRef]),
+    Array(&'a [ValueRef]),
 
     Buffer(&'a [u8]),
 
@@ -54,13 +57,13 @@ pub enum Value<'a> {
     Procedure(Procedure)
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Closure<'a> {
     pub codeobj: ValueRef,
     pub clovers: &'a [ValueRef]
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Procedure {
     pub instrs: ValueRef,
     pub consts: ValueRef,
@@ -79,8 +82,12 @@ pub struct DeflatedProcedure<'a> {
 
 impl ValueRef {
     pub fn deref<'a>(&'a self) -> Value<'a> {
-        match self.0 & INT_BITS {
+        match self.0 & IMMEDIACY_BITS {
             INT_TAG => Value::Int((self.0 as isize) >> INT_SHIFT),
+            IMMEDIACY_TAG => match self.0 & 0xFF { // HACK
+                UNBOUND_TAG => Value::Unbound,
+                _ => panic!()
+            },
             0 => unsafe {
                 let start = self.as_ptr();
                 let header = (*start).0;
@@ -90,12 +97,16 @@ impl ValueRef {
                         let len = header & LENGTH_BITS;
                         Value::Tuple(slice::from_raw_parts(data_start, len))
                     },
+                    
+                    ARRAY_TAG => {
+                        let len = header & LENGTH_BITS;
+                        Value::Array(slice::from_raw_parts(data_start, len))
+                    },
 
                     BUFFER_TAG => {
                         let bc = header & LENGTH_BITS;
-                        let bsl = unsafe {
-                            slice::from_raw_parts(data_start as *const u8, bc)
-                        };
+                        let bsl =
+                            slice::from_raw_parts(data_start as *const u8, bc);
                         Value::Buffer(&bsl)
                     },
 
@@ -201,10 +212,21 @@ impl GcHeap {
     pub fn alloc(&mut self, val: &Value) -> ValueRef {
         match *val {
             Value::Int(i) => ValueRef((i << INT_SHIFT) as usize | INT_TAG),
+            Value::Unbound => ValueRef(UNBOUND_TAG),
 
             Value::Tuple(vals) => {
                 let start = self.next_ptr();
                 let header = TUPLE_TAG | vals.len();
+                self.fromspace.push(ValueRef(header));
+
+                self.fromspace.extend_from_slice(vals);
+
+                ValueRef::from(start)
+            },
+
+            Value::Array(vals) => {
+                let start = self.next_ptr();
+                let header = ARRAY_TAG | vals.len();
                 self.fromspace.push(ValueRef(header));
 
                 self.fromspace.extend_from_slice(vals);
@@ -327,7 +349,8 @@ impl GcHeap {
                 }
 
                 // Replace the header in fromspace with a forward:
-                *oldstart = ValueRef(FORWARDING_BIT | (newstart as usize >> 2));
+                *oldstart = ValueRef(FORWARDING_BIT |
+                                     newstart as usize >> FORWARDING_SHIFT);
 
                 ValueRef::from(newstart) // Here's where we moved it
             }
@@ -340,7 +363,7 @@ impl GcHeap {
                 None
             } else {
                 // This will simultaneously shift out FORWARDING_BIT:
-                Some(ValueRef(header << 2))
+                Some(ValueRef(header << FORWARDING_SHIFT))
             }
         } else {
             None
