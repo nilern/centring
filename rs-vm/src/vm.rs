@@ -81,7 +81,7 @@ impl<'a> VMProcess<'a> {
                 },
                 Opcode::Splat => {
                     let a = self.fetch_arg(instr.arg());
-                    let vs = self.heap.deref_contents(a);
+                    let vs = a.deref_contents();
                     self.stack.extend_from_slice(vs);
                 },
 
@@ -135,7 +135,7 @@ impl<'a> VMProcess<'a> {
     }
 
     fn close_over(&mut self, cob: ValueRef) {
-        if let Value::Procedure(vmproc) = self.heap.deref(cob) {
+        if let Value::Procedure(vmproc) = cob.deref() {
             let new_len = self.stack.len() - vmproc.clover_count;
             let fnref = self.heap.alloc(&Value::Closure(Closure {
                 codeobj: cob,
@@ -162,7 +162,7 @@ impl<'a> VMProcess<'a> {
     }
 
     fn fetch_closure(&mut self, fnref: ValueRef) {
-        let (cob, cls) = match self.heap.deref(fnref) {
+        let (cob, cls) = match fnref.deref() {
             Value::Closure(cls) => (
                 cls.codeobj,
                 unsafe {
@@ -176,7 +176,7 @@ impl<'a> VMProcess<'a> {
     }
 
     fn fetch_proc(&mut self, procref: ValueRef) {
-        if let Value::Procedure(vmproc) = self.heap.deref(procref) {
+        if let Value::Procedure(vmproc) = procref.deref() {
             self.fetch_instrs(vmproc.instrs);
             self.fetch_consts(vmproc.consts);
             self.fetch_subprocs(vmproc.codeobjs);
@@ -186,7 +186,7 @@ impl<'a> VMProcess<'a> {
     }
 
     fn fetch_instrs(&mut self, bufref: ValueRef) {
-        if let Value::Buffer(bufbytes) = self.heap.deref(bufref) {
+        if let Value::Buffer(bufbytes) = bufref.deref() {
             self.instrs = unsafe {
                 slice::from_raw_parts(bufbytes.as_ptr() as *const _,
                                       bufbytes.len() / size_of::<Bytecode>())
@@ -197,7 +197,7 @@ impl<'a> VMProcess<'a> {
     }
 
     fn fetch_consts(&mut self, constsref: ValueRef) {
-        if let Value::Tuple(const_ref_slice) = self.heap.deref(constsref) {
+        if let Value::Tuple(const_ref_slice) = constsref.deref() {
             self.consts = unsafe {
                 slice::from_raw_parts(const_ref_slice.as_ptr(),
                                       const_ref_slice.len())
@@ -208,7 +208,7 @@ impl<'a> VMProcess<'a> {
     }
 
     fn fetch_subprocs(&mut self, cobsref: ValueRef) {
-        if let Value::Tuple(cob_ref_slice) = self.heap.deref(cobsref) {
+        if let Value::Tuple(cob_ref_slice) = cobsref.deref() {
             self.codeobjs = unsafe {
                 slice::from_raw_parts(cob_ref_slice.as_ptr(),
                                       cob_ref_slice.len())

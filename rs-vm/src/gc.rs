@@ -1,5 +1,6 @@
 use std::slice;
 use std::mem::{size_of, transmute, swap};
+use std::ops::Deref;
 
 use vm::{VMError, VMResult};
 use bytecode::Bytecode;
@@ -8,7 +9,6 @@ use bytecode::Bytecode;
 // - Add more Value variants
 // - Implement a growth strategy for the semispaces
 // - Support mutation (Value::Ref, Value::Array, Value::Buffer ???)
-// - Use raw pointers
 // - Make generational
 
 // Constants
@@ -78,16 +78,63 @@ pub struct DeflatedProcedure<'a> {
 // Behaviour
 
 impl ValueRef {
+    pub fn deref<'a>(&'a self) -> Value<'a> {
+        match self.0 & INT_BITS {
+            INT_TAG => Value::Int((self.0 as isize) >> INT_SHIFT),
+            0 => unsafe {
+                let start: *const ValueRef = From::from(*self);
+                let header = (*start).0;
+                let data_start = start.offset(1);
+                match header & TYPE_BITS {
+                    TUPLE_TAG => {
+                        let len = header & LENGTH_BITS;
+                        Value::Tuple(slice::from_raw_parts(data_start, len))
+                    },
+
+                    BUFFER_TAG => {
+                        let bc = header & LENGTH_BITS;
+                        let bsl = unsafe {
+                            slice::from_raw_parts(data_start as *const u8, bc)
+                        };
+                        Value::Buffer(&bsl)
+                    },
+
+                    COB_TAG => Value::Procedure(Procedure {
+                        instrs: *data_start,
+                        consts: *data_start.offset(1),
+                        codeobjs: *data_start.offset(2),
+                        clover_count: (*data_start.offset(3))
+                            .get_int().unwrap() as usize
+                    }),
+
+                    FN_TAG => {
+                        let len = header & LENGTH_BITS;
+                        Value::Closure(Closure {
+                            codeobj: *data_start,
+                            clovers: slice::from_raw_parts(data_start.offset(1),
+                                                           len - 1),
+                        })
+                    },
+                    
+                    _ => panic!()
+                }
+            },
+            _ => panic!()
+        }
+    }
+
+    pub fn deref_contents(&self) -> &[ValueRef] {
+        unsafe {
+            let start = self.0 as *const ValueRef;
+            let header = (*start).0;
+            let data_start = start.offset(1);
+            let len = header & LENGTH_BITS;
+            slice::from_raw_parts(data_start, len)
+        }
+    }
+    
     pub fn is_immediate(&self) -> bool {
         self.0 & IMMEDIACY_BITS != 0
-    }
-
-    fn from_index(i: usize) -> ValueRef {
-        ValueRef(i << REF_SHIFT)
-    }
-
-    fn to_index(self) -> usize {
-        self.0 >> REF_SHIFT
     }
 
     pub fn is_int(&self) -> bool {
@@ -99,6 +146,15 @@ impl ValueRef {
             Some(self.0 as isize >> INT_SHIFT)
         } else {
             None
+        }
+    }
+
+    fn header(&self) -> Option<usize> {
+        if self.is_immediate() {
+            None
+        } else {
+            let start: *const ValueRef = From::from(*self);
+            unsafe { Some((*start).0) }
         }
     }
 }
@@ -115,11 +171,35 @@ impl From<ValueRef> for isize {
     }
 }
 
+impl From<*const ValueRef> for ValueRef {
+    fn from(ptr: *const ValueRef) -> ValueRef {
+        ValueRef(ptr as usize)
+    }
+}
+
+impl From<ValueRef> for *const ValueRef {
+    fn from(vref: ValueRef) -> *const ValueRef {
+        vref.0 as *const ValueRef
+    }
+}
+
+impl From<ValueRef> for *mut ValueRef {
+    fn from(vref: ValueRef) -> *mut ValueRef {
+        vref.0 as *mut ValueRef
+    }
+}
+
 impl GcHeap {
     pub fn with_capacity(capacity: usize) -> GcHeap {
         GcHeap {
             fromspace: Vec::with_capacity(capacity),
             tospace: Vec::with_capacity(capacity)
+        }
+    }
+
+    fn next_ptr(&self) -> *const ValueRef {
+        unsafe {
+            self.fromspace.as_ptr().offset(self.fromspace.len() as isize)
         }
     }
     
@@ -128,17 +208,17 @@ impl GcHeap {
             Value::Int(i) => ValueRef((i << INT_SHIFT) as usize | INT_TAG),
 
             Value::Tuple(vals) => {
-                let start = self.fromspace.len();
+                let start = self.next_ptr();
                 let header = TUPLE_TAG | vals.len();
                 self.fromspace.push(ValueRef(header));
 
                 self.fromspace.extend_from_slice(vals);
-                
-                ValueRef::from_index(start)
+
+                ValueRef::from(start)
             },
 
             Value::Buffer(bytes) => {
-                let start = self.fromspace.len();
+                let start = self.next_ptr();
                 let bc = bytes.len();
                 
                 let header = BYTEBLOCK_BIT | BUFFER_TAG | bc;
@@ -151,12 +231,12 @@ impl GcHeap {
                 };
                 self.fromspace.extend_from_slice(words);
                 
-                ValueRef::from_index(start)
+                ValueRef::from(start)
             },
 
             Value::Procedure(ref cob) => {
                 let ccref = self.alloc(&Value::Int(cob.clover_count as isize));
-                let start = self.fromspace.len();
+                let start = self.next_ptr();
                 let header = COB_TAG | 4;
                 
                 self.fromspace.push(ValueRef(header));
@@ -165,18 +245,18 @@ impl GcHeap {
                 self.fromspace.push(cob.codeobjs);
                 self.fromspace.push(ccref);
 
-                ValueRef::from_index(start)
+                ValueRef::from(start)
             },
 
             Value::Closure(ref fun) => {
-                let start = self.fromspace.len();
+                let start = self.next_ptr();
                 let header = FN_TAG | 1 + fun.clovers.len();
 
                 self.fromspace.push(ValueRef(header));
                 self.fromspace.push(fun.codeobj);
                 self.fromspace.extend_from_slice(fun.clovers);
 
-                ValueRef::from_index(start)
+                ValueRef::from(start)
             }
         }
     }
@@ -202,59 +282,6 @@ impl GcHeap {
             codeobjs: cobtupref,
             clover_count: inflatee.clover_count
         }))
-    }
-
-    pub fn deref(&self, vref: ValueRef) -> Value {
-        match vref.0 & INT_BITS {
-            INT_TAG => Value::Int((vref.0 as isize) >> INT_SHIFT),
-            0 => {
-                let start = vref.0 >> REF_SHIFT;
-                let header = self.fromspace[start].0;
-                let data_start = start + 1;
-                match header & TYPE_BITS {
-                    TUPLE_TAG => {
-                        let len = header & LENGTH_BITS;
-                        Value::Tuple(&self.fromspace[data_start..data_start+len])
-                    },
-
-                    BUFFER_TAG => {
-                        let bc = header & LENGTH_BITS;
-                        let bsl = unsafe {
-                            let ptr = transmute(&self.fromspace[data_start]);
-                            slice::from_raw_parts(ptr, bc)
-                        };
-                        Value::Buffer(&bsl)
-                    },
-
-                    COB_TAG => Value::Procedure(Procedure {
-                        instrs: self.fromspace[data_start],
-                        consts: self.fromspace[data_start + 1],
-                        codeobjs: self.fromspace[data_start + 2],
-                        clover_count: self.fromspace[data_start + 3]
-                            .get_int().unwrap() as usize
-                    }),
-
-                    FN_TAG => {
-                        let len = header & LENGTH_BITS;
-                        Value::Closure(Closure {
-                            codeobj: self.fromspace[data_start],
-                            clovers: &self.fromspace[data_start+1..data_start+len]
-                        })
-                    },
-                    
-                    _ => panic!()
-                }
-            },
-            _ => panic!()
-        }
-    }
-
-    pub fn deref_contents(&self, vref: ValueRef) -> &[ValueRef] {
-        let start = vref.0 >> REF_SHIFT;
-        let header = self.fromspace[start].0;
-        let data_start = start + 1;
-        let len = header & LENGTH_BITS;
-        &self.fromspace[data_start..data_start+len]
     }
 
     pub fn collect(&mut self, roots: &mut [ValueRef]) {
@@ -291,35 +318,37 @@ impl GcHeap {
         } else if let Some(fwref) = self.get_fwd(vref) {
             fwref // Has already been moved to this location
         } else {
-            let newstart = self.tospace.len();
+            unsafe {
+                let newstart = self.tospace.as_ptr()
+                    .offset(self.tospace.len() as isize);
 
-            // Copy object:
-            let oldstart = vref.to_index();
-            {
-                let header = self.fromspace[oldstart].0;
-                let data_len = data_wlen(header);
-                let data = &self.fromspace[oldstart..oldstart+data_len+1];
-                self.tospace.extend_from_slice(data);
+                // Copy object:
+                let oldstart: *mut ValueRef = From::from(vref);
+                {
+                    let header = (*oldstart).0;
+                    let data_len = data_wlen(header);
+                    let data = slice::from_raw_parts(oldstart, data_len + 1);
+                    self.tospace.extend_from_slice(data);
+                }
+
+                // Replace the header in fromspace with a forward:
+                *oldstart = ValueRef(FORWARDING_BIT | (newstart as usize >> 2));
+
+                ValueRef::from(newstart) // Here's where we moved it
             }
-
-            // Replace the header in fromspace with a forward:
-            self.fromspace[oldstart] = ValueRef(FORWARDING_BIT | newstart);
-
-            ValueRef::from_index(newstart) // Here's where we moved it
         }
     }
 
     fn get_fwd(&self, vref: ValueRef) -> Option<ValueRef> {
-        if vref.is_immediate() {
-            None
-        } else {
-            let header = self.fromspace[vref.to_index()].0;
+        if let Some(header) = vref.header() {
             if header & FORWARDING_BIT == 0 {
                 None
             } else {
                 // This will simultaneously shift out FORWARDING_BIT:
-                Some(ValueRef::from_index(header))
+                Some(ValueRef(header << 2))
             }
+        } else {
+            None
         }
     }
 }
