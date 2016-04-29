@@ -146,7 +146,8 @@
       (($ Primop op args results conts) (make-Primop op (map f args)
                                                      results (map f conts)))
       
-      ((or (? Local?) (? Global?) (? Clover?) (? Const?)) node)))
+      ((or (? Local?) (? Global?) (? Clover?) (? Const?)) node)
+      (_ (error "not a CPS-expr" node))))
 
   (define (walk inner outer ast)
     (outer (fmap inner ast)))
@@ -512,4 +513,43 @@
       (($ Close bindings body)
        (receive (bindings* pends) (serialize-bindings bindings)
          (make-Close bindings* (prefix-pends pends body))))
-      (_ node))))
+      (_ node)))
+
+  ;;;; Local Enumeration
+
+  (define (enumerate-locals locals cexp)
+    (define enumerate-defn
+      (match-lambda
+       ((label formals types body)
+        `(,label ,formals ,types
+                 ,(enumerate-locals (cons label formals) body)))))
+    (define enumerate-bindings
+      (match-lambda*
+       ((locals ((name label . clvs) . bindings) res)
+        (enumerate-bindings
+         (append locals (list name)) bindings
+         (append res (list `(,name ,label
+                                   ,@(map (cute enumerate-locals locals <>)
+                                          clvs))))))
+       ((locals '() res) (list locals res))))
+    
+    (match cexp
+      ((? If?) (fmap (cute enumerate-locals locals <>) cexp))
+      (($ Fix defns body)
+       (make-Fix (map (cute enumerate-defn <>) defns)
+                 (enumerate-locals (append locals (map car defns)) body)))
+      (($ Close bindings body)
+       (match-let (((bindings* locals*)
+                    (enumerate-bindings locals bindings '())))
+         (make-Close bindings* (enumerate-locals locals* body))))
+      ((? Def?) (fmap (cute enumerate-locals locals <>) cexp))
+      (($ Primop op args results conts)
+       (let ((args* (map (cute enumerate-locals locals <>) args))
+             (locals* (append locals results)))
+         (make-Primop op args* results
+                      (map (cute enumerate-locals locals* <>) conts))))
+      ((? App?) (fmap (cute enumerate-locals locals <>) cexp))
+      (($ Local name)
+       (make-Local (list-index (cute eq? name <>) locals)))
+      ((or (? Const?) (? Clover?) (? Global?)) cexp))))
+      
