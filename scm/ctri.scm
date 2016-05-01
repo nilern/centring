@@ -22,11 +22,9 @@
                     cps-convert
                     cps:eta-contract cps:beta-contract cps:remove-unuseds
                     (cps:closure-convert '() '()) car
-                    (cps:prewalk cps:serialize-closes)
-                    (cps:enumerate-locals '()))))
+                    (cps:prewalk cps:serialize-closes))))
     (printf "~S~%"
-            (vm:eval-cps (vm:make-fiber (make-array 256) 0 #f #f #f #f)
-                         cexp))))
+            (vm:run! (vm:make-fiber (make-array 2) 0 (vm:emit cexp) 0)))))
 
 #+compiling
 (main (command-line-arguments))
