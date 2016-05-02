@@ -327,6 +327,32 @@
   (define-instruction (idiv fiber (fetch a) (fetch b))
     (fiber-push! fiber (quotient a b)))
 
+  (define-instruction (ineg fiber (fetch a))
+    (fiber-push! fiber (- a)))
+
+  (define-instruction (irem fiber (fetch a) (fetch b))
+    (fiber-push! fiber (remainder a b)))
+
+  (define-instruction (imod fiber (fetch a) (fetch b))
+    (fiber-push! fiber (modulo a b)))
+
+  ;;; Bit operations
+
+  (define-instruction (iand fiber (fetch a) (fetch b))
+    (fiber-push! fiber (bitwise-and a b)))
+
+  (define-instruction (ior fiber (fetch a) (fetch b))
+    (fiber-push! fiber (bitwise-ior a b)))
+
+  (define-instruction (ixor fiber (fetch a) (fetch b))
+    (fiber-push! fiber (bitwise-xor a b)))
+
+  (define-instruction (inot fiber (fetch a))
+    (fiber-push! fiber (bitwise-not a)))
+
+  (define-instruction (iash fiber (fetch a) (fetch b))
+    (fiber-push! fiber (arithmetic-shift a b)))
+
   ;;; Functions
 
   (define-instruction (fn fiber i)

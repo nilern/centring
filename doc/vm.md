@@ -90,10 +90,8 @@ iand  a b // stack.push(fetch(a).iand(fetch(b)))  // &
 ior   a b // stack.push(fetch(a).ior(fetch(b)))   // |
 ixor  a b // stack.push(fetch(a).ixor(fetch(b)))  // ^
 inot  a   // stack.push(fetch(a).inot())          // ~
-iashr a b // stack.push(fetch(a).iashr(fetch(b))) // >> (arithmetic)
-iashl a b // stack.push(fetch(a).iashl(fetch(b))) // << (arithmetic)
-ilshr a b // stack.push(fetch(a).ilshr(fetch(b))) // >> (logical)
-ilshl a b // stack.push(fetch(a).ilshl(fetch(b))) // << (logical)
+iash  a b // stack.push(fetch(a).iash(fetch(b)))  // << >>
+ilsh  a b // stack.push(fetch(a).ilsh(fetch(b)))  // <<< >>>
 ```
 
 ### Comparisons
