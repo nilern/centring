@@ -75,7 +75,7 @@
 
   (define (analyze-intr name args)
     (match (cons name args)
-      (((or 'add 'sub 'mul 'div) a b)
+      (((or 'iadd 'isub 'imul 'idiv) a b)
        (make-Primop name `(,(analyze a) ,(analyze b))))
       (('void) (make-Primop name '()))
       (form (error "invalid intrinsic" form))))

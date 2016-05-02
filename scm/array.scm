@@ -1,7 +1,7 @@
 (module array
    (make-array array array?
     array-length array-ref array-set! array-index array-push! array-append!
-    array-merge-with! array-merge-with
+    array-split-off! array-merge-with! array-merge-with
     array-clone list->array array->list)
 
    (import scheme chicken)
@@ -45,7 +45,7 @@
    (define (array-grow arr)
      (let* ((oldbuf (array-buffer arr))
             (oldlen (vector-length oldbuf))
-            (newbuf (make-vector (if (> oldlen 0) (* oldlen 2) 8))))
+            (newbuf (make-vector (if (> oldlen 0) (* oldlen 2) 2))))
        (do ((i 0 (add1 i))) ((= i (vector-length oldbuf)))
          (set! (vector-ref newbuf i) (vector-ref oldbuf i)))
        (set! (array-buffer arr) newbuf)))
@@ -82,6 +82,14 @@
      (do ((i 0 (add1 i))) ((= i (array-length arr2)))
        (array-push! arr1 (array-ref arr2 i)))
      (array-length arr1))
+
+   (define (array-split-off! arr n)
+     (let ((split (- (array-length arr) n))
+           (narr (make-array n)))
+       (do ((i split (add1 i))) ((= i (array-length arr)))
+         (array-push! narr (array-ref arr i)))
+       (set! (array-length arr) split)
+       narr))
 
    (define (array-clone arr)
      (doto (make-array (array-length arr))

@@ -1,6 +1,7 @@
 (use (only matchable match)
      (only clojurian-syntax ->>)
      (only centring.expand ctr-expand-all)
+     (srfi 69)
 
      array
      (prefix centring.coreast cast:)
@@ -24,7 +25,9 @@
                     (cps:closure-convert '() '()) car
                     (cps:prewalk cps:serialize-closes))))
     (printf "~S~%"
-            (vm:run! (vm:make-fiber (make-array 2) 0 (vm:emit cexp) 0)))))
+            (vm:run! (vm:make-fiber (make-hash-table) (make-array 2) 0
+                                    #f 0 #f #f #f #f)
+                     (vm:emit (gensym 'main) '() '() cexp)))))
 
 #+compiling
 (main (command-line-arguments))
