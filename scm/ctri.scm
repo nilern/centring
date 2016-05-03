@@ -8,6 +8,28 @@
      (prefix centring.cps cps:)
      (prefix centring.vm vm:))
 
+;;;; Repurpose Reader
+
+(keyword-style #:prefix)
+
+(define ((read-ctor ctor-sym end-char) port)
+  (let loop ((c (peek-char port)) (exprs '()))
+    (cond
+     ((eof-object? c) (error "EOF reached while parsing #(...)!"))
+     ((char=? c end-char)
+      (read-char port)
+      `(,ctor-sym ,@(reverse exprs)))
+     ((char-whitespace? c)
+      (read-char port)
+      (loop (peek-char port) exprs))
+     (else
+      (let ((expr (read port)))
+        (loop (peek-char port) (cons expr exprs)))))))
+
+(set-sharp-read-syntax! #\( (read-ctor 'centring.lang/Tuple #\)))
+
+;;;; Main
+
 (define (main arglist)
   (let* ((sexp (match arglist
                  (("-e" estr) (with-input-from-string estr read))

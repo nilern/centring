@@ -1,7 +1,7 @@
 (module array
    (make-array array array?
-    array-length array-ref array-set! array-index array-push! array-append!
-    array-split-off! array-merge-with! array-merge-with
+    array-length array-ref array-set! array-index array-push! array-pop!
+    array-append! array-split-off! array-merge-with! array-merge-with
     array-clone list->array array->list)
 
    (import scheme chicken)
@@ -9,6 +9,8 @@
         (only vector-lib vector-for-each)
         (only miscmacros define-syntax-rule)
         (only clojurian-syntax doto))
+
+   ;;; FIXME: Clean out values when array is shortened
 
    (define-record-type array
      (make-array-raw length buffer)
@@ -77,6 +79,15 @@
      (set! (vector-ref (array-buffer arr) (array-length arr)) v)
      (set! (array-length arr) (add1 (array-length arr)))
      (array-length arr))
+
+   (define (array-pop! arr)
+     (let* ((len (array-length arr))
+            (newlen (sub1 len)))
+       (if (> len 0)
+         (let ((v (array-ref arr newlen)))
+           (set! (array-length arr) newlen)
+           v)
+         (error "tried to pop empty array!"))))
 
    (define (array-append! arr1 arr2)
      (do ((i 0 (add1 i))) ((= i (array-length arr2)))

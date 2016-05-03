@@ -9,6 +9,7 @@
        (only extras printf fprintf)
 
        array
+       (prefix centring.coreast cast:)
        (prefix centring.cps cps:))
   
   ;;;; Utils
@@ -162,14 +163,38 @@
        (doto tcode
          (emit-arg! val)
          (emit! cont)))
-      
-      (($ cps:Primop op args (res) (cont))
-       (emit-instr! tcode op)
-       (dolist (arg args)
-         (emit-arg! tcode arg))
-       (doto tcode
-         (push-local! res)
-         (emit! cont)))
+
+      (($ cps:Primop 'record (type . fields) (res) (cont))
+       (let ((first-arg-i (array-length (proc-local-names tcode))))
+         (dolist (arg fields)
+           (doto tcode
+             (emit-instr! 'load)
+             (emit-arg! arg)))
+         (emit-instr! tcode 'record)
+         (emit-arg! tcode type)
+         (array-push! (proc-instrs tcode) first-arg-i)
+         (doto tcode
+           (push-local! res)
+           (emit! cont))))
+      (($ cps:Primop op args results (cont))
+       (cond
+        ((cast:vararg-primop? op)
+         (let ((first-arg-i (array-length (proc-local-names tcode))))
+           (dolist (arg args)
+             (doto tcode
+               (emit-instr! 'load)
+               (emit-arg! arg)))
+           (emit-instr! tcode op)
+           (array-push! (proc-instrs tcode) first-arg-i)))
+        ((cast:primop? (length args) op)
+         (emit-instr! tcode op)
+         (dolist (arg args)
+           (emit-arg! tcode arg)))
+        (else
+         (error "unemittable intrinsic" (cons op args))))
+       (dolist (res results)
+           (push-local! tcode res))
+         (emit! tcode cont))
       (($ cps:Primop 'halt (arg) '() '())
        (doto tcode
          (emit-instr! 'halt)
@@ -190,7 +215,7 @@
       
       (_ (error "unable to emit code for" cexp))))
 
-  ;; TODO: finally turn arrays into vectors
+  ;; TODO: turn arrays into vectors at the end
   (define (emit name formals types cexp)
     (let ((locals (list->array (cons name formals))))
       (emit! (make-proc name types
@@ -235,6 +260,9 @@
 
   (define (fiber-push! fiber v)
     (array-push! (fiber-stack fiber) v))
+
+  (define (fiber-pop! fiber)
+    (array-pop! (fiber-stack fiber)))
 
   ;;;
 
@@ -305,8 +333,24 @@
   (define-instruction (load fiber (fetch a))
     (fiber-push! fiber a))
 
-  (define-instruction (void fiber)
+  (define-instruction (unbound fiber)
     (fiber-push! fiber (cps:make-Unbound)))
+
+  (define-instruction (record fiber (fetch type) i)
+    (let* ((n (- (array-length (fiber-stack fiber)) i))
+           (res (make-vector (add1 n))))
+      (vector-set! res 0 type)
+      (do ((i n (sub1 i))) ((= i 0))
+        (vector-set! res i (fiber-pop! fiber)))
+      (fiber-push! fiber res)))
+
+  ;;; Refs, sets
+
+  (define-instruction (set-type! fiber (fetch v) (fetch t))
+    (vector-set! v 0 t))
+
+  (define-instruction (set-nth-field! fiber (fetch rec) i (fetch v))
+    (vector-set! rec (add1 i) v))
 
   ;;; Module operations
 

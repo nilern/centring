@@ -1,142 +1,158 @@
-(centring.lang/set-module! "centring.lang")
+;;;; Bootstrap Type System
 
-(centring.sf/at-expansion
- (centring.sf/do
-   (centring.sf/def list
-     (centring.sf/fn () '()))
-   (centring.sf/def list
-     (centring.sf/fn (v & vs) (prepend v (apply list vs))))
+;; We want this:
+;;; (def Type (Type (Tuple Any)))
+;;; (def Any (Type (Tuple Any)))
+;;; (def Tuple (Type (Tuple Any)))
+
+;; Those are recursive, so we have to do this instead:
+(def Type (centring.intr/record (centring.intr/unbound) (centring.intr/unbound)))
+(def Any (centring.intr/record Type (centring.intr/unbound)))
+(def Tuple (centring.intr/record Type (centring.intr/unbound)))
+(centring.intr/set-type! Type Type)
+(centring.intr/set-nth-field! Type 0 (centring.intr/record Tuple Any))
+(centring.intr/set-nth-field! Any 0 (centring.intr/record Tuple Any))
+(centring.intr/set-nth-field! Tuple 0 (centring.intr/record Tuple Any))
+
+;; (centring.lang/set-module! "centring.lang")
+
+;; (centring.sf/at-expansion
+;;  (centring.sf/do
+;;    (centring.sf/def list
+;;      (centring.sf/fn () '()))
+;;    (centring.sf/def list
+;;      (centring.sf/fn (v & vs) (prepend v (apply list vs))))
    
-   (centring.sf/def list*
-     (centring.sf/fn () '()))
-   (centring.sf/def list*
-     (centring.sf/fn (ls) ls))
-   (centring.sf/def list*
-     (centring.sf/fn (v & vs) (prepend v (apply list* vs))))))
+;;    (centring.sf/def list*
+;;      (centring.sf/fn () '()))
+;;    (centring.sf/def list*
+;;      (centring.sf/fn (ls) ls))
+;;    (centring.sf/def list*
+;;      (centring.sf/fn (v & vs) (prepend v (apply list* vs))))))
 
-(centring.sf/at-expansion
- (centring.sf/def at-expansion
-   (centring.sf/macro
-    (centring.sf/fn (expr)
-      (list 'centring.sf/at-expansion expr)))))
+;; (centring.sf/at-expansion
+;;  (centring.sf/def at-expansion
+;;    (centring.sf/macro
+;;     (centring.sf/fn (expr)
+;;       (list 'centring.sf/at-expansion expr)))))
 
-(at-expansion
- (centring.sf/def def
-   (centring.sf/macro
-    (centring.sf/fn (name expr)
-      (list 'centring.sf/def name expr)))))
+;; (at-expansion
+;;  (centring.sf/def def
+;;    (centring.sf/macro
+;;     (centring.sf/fn (name expr)
+;;       (list 'centring.sf/def name expr)))))
 
-(at-expansion
- (def macro
-   (centring.sf/macro
-    (centring.sf/fn (expander)
-      (list 'centring.sf/macro expander)))))
+;; (at-expansion
+;;  (def macro
+;;    (centring.sf/macro
+;;     (centring.sf/fn (expander)
+;;       (list 'centring.sf/macro expander)))))
 
-(at-expansion
- (def fn
-   (macro
-    (centring.sf/fn (formals body)
-      (list 'centring.sf/fn formals body)))))
+;; (at-expansion
+;;  (def fn
+;;    (macro
+;;     (centring.sf/fn (formals body)
+;;       (list 'centring.sf/fn formals body)))))
 
-(at-expansion
- (def defmacro
-   (macro (fn (name expander)
-            (list 'at-expansion
-                  (list 'def name
-                        (list 'macro expander)))))))
+;; (at-expansion
+;;  (def defmacro
+;;    (macro (fn (name expander)
+;;             (list 'at-expansion
+;;                   (list 'def name
+;;                         (list 'macro expander)))))))
 
-(defmacro if
-  (fn (cond then else)
-    (list 'centring.sf/if cond then else)))
+;; (defmacro if
+;;   (fn (cond then else)
+;;     (list 'centring.sf/if cond then else)))
 
-(at-expansion
- (centring.sf/do
-   (def expand-cond
-     (fn () '(centring.sf/do)))
-   (def expand-cond
-     (fn (entry) entry))
-   (def expand-cond
-     (fn (entry & entries)
-       (list 'if (.left entry)
-             (.left (.right entry))
-             (apply expand-cond entries))))
-   (def cond (macro expand-cond))
+;; (at-expansion
+;;  (centring.sf/do
+;;    (def expand-cond
+;;      (fn () '(centring.sf/do)))
+;;    (def expand-cond
+;;      (fn (entry) entry))
+;;    (def expand-cond
+;;      (fn (entry & entries)
+;;        (list 'if (.left entry)
+;;              (.left (.right entry))
+;;              (apply expand-cond entries))))
+;;    (def cond (macro expand-cond))
 
-   (def expand-and
-     (fn () #t))
-   (def expand-and
-     (fn (expr & exprs)
-       (list 'if expr (apply list 'and exprs) #f)))
-   (def and (macro expand-and))))
+;;    (def expand-and
+;;      (fn () #t))
+;;    (def expand-and
+;;      (fn (expr & exprs)
+;;        (list 'if expr (apply list 'and exprs) #f)))
+;;    (def and (macro expand-and))))
 
 
-(at-expansion
- (centring.sf/do
-   (def inc (fn (n) (+ n 1)))
-   (def dec (fn (n) (- n 1)))
+;; (at-expansion
+;;  (centring.sf/do
+;;    (def inc (fn (n) (+ n 1)))
+;;    (def dec (fn (n) (- n 1)))
 
-   (def foldl
-     (fn (f v ls :List.Empty) v))
-   (def foldl
-     (fn (f v ls :List.Pair)
-       (foldl f (f v (.left ls)) (.right ls))))
+;;    (def foldl
+;;      (fn (f v ls :List.Empty) v))
+;;    (def foldl
+;;      (fn (f v ls :List.Pair)
+;;        (foldl f (f v (.left ls)) (.right ls))))
 
-   (def count (fn (ls :List) (foldl (fn (acc _) (inc acc)) 0 ls)))
+;;    (def count (fn (ls :List) (foldl (fn (acc _) (inc acc)) 0 ls)))
 
-   (def mappend
-     (fn (l1 :List.Pair l2 :List.Pair)
-       (prepend (.left l1) (mappend (.right l1) l2))))
-   (def mappend
-     (fn (l1 :List.Empty l2 :List.Pair) l2))
-   (def mappend
-     (fn (l1 :List.Pair l2 :List.Empty) l1))
-   (def mappend
-     (fn (l1 :List.Empty l2 :List.Empty) l2))
+;;    (def mappend
+;;      (fn (l1 :List.Pair l2 :List.Pair)
+;;        (prepend (.left l1) (mappend (.right l1) l2))))
+;;    (def mappend
+;;      (fn (l1 :List.Empty l2 :List.Pair) l2))
+;;    (def mappend
+;;      (fn (l1 :List.Pair l2 :List.Empty) l1))
+;;    (def mappend
+;;      (fn (l1 :List.Empty l2 :List.Empty) l2))
 
-   (def expand-qq
-     (fn (expr) (expand-qq 1 expr)))
-   (def expand-qq
-     (fn (_ expr) expr))
-   (def expand-qq
-     (fn (_ expr :Symbol) (list 'centring.sf/quote expr)))
-   (def expand-qq
-     (fn (_ expr :List.Empty) (list 'centring.sf/quote expr)))
-   (def expand-qq
-     (fn (n expr :List.Pair)
-       (cond
-        ((and (= (.left expr) 'centring.lang/unquote) (= (count expr) 2))
-         (if (= n 1)
-           (.left (.right expr))
-           (list 'list ''centring.lang/unquote
-                 (expand-qq (dec n) (.left (.right expr))))))
+;;    (def expand-qq
+;;      (fn (expr) (expand-qq 1 expr)))
+;;    (def expand-qq
+;;      (fn (_ expr) expr))
+;;    (def expand-qq
+;;      (fn (_ expr :Symbol) (list 'centring.sf/quote expr)))
+;;    (def expand-qq
+;;      (fn (_ expr :List.Empty) (list 'centring.sf/quote expr)))
+;;    (def expand-qq
+;;      (fn (n expr :List.Pair)
+;;        (cond
+;;         ((and (= (.left expr) 'centring.lang/unquote) (= (count expr) 2))
+;;          (if (= n 1)
+;;            (.left (.right expr))
+;;            (list 'list ''centring.lang/unquote
+;;                  (expand-qq (dec n) (.left (.right expr))))))
         
-        ((and (= (.left expr) 'centring.lang/quasiquote) (= (count expr) 2))
-         (list 'centring.lang/quasiquote
-               (expand-qq (inc n) (.left (.right expr)))))
+;;         ((and (= (.left expr) 'centring.lang/quasiquote) (= (count expr) 2))
+;;          (list 'centring.lang/quasiquote
+;;                (expand-qq (inc n) (.left (.right expr)))))
         
-        ((and (isa? List.Pair (.left expr))
-              (= (count (.left expr)) 2)
-              (= (.left (.left expr)) 'centring.lang/unquote-splicing))
-         (if (= n 1)
-           (list 'centring.lang/mappend (.left (.right (.left expr)))
-                 (expand-qq n (.right expr)))
-           (prepend (list 'centring.lang/unquote-splicing
-                          (expand-qq (dec n) (.left (.right (.left expr)))))
-                    (expand-qq n (.right expr)))))
+;;         ((and (isa? List.Pair (.left expr))
+;;               (= (count (.left expr)) 2)
+;;               (= (.left (.left expr)) 'centring.lang/unquote-splicing))
+;;          (if (= n 1)
+;;            (list 'centring.lang/mappend (.left (.right (.left expr)))
+;;                  (expand-qq n (.right expr)))
+;;            (prepend (list 'centring.lang/unquote-splicing
+;;                           (expand-qq (dec n) (.left (.right (.left expr)))))
+;;                     (expand-qq n (.right expr)))))
         
         
-        (list 'centring.lang/prepend (expand-qq n (.left expr))
-              (expand-qq n (.right expr))))))
-   (def quasiquote (macro expand-qq))))
+;;         (list 'centring.lang/prepend (expand-qq n (.left expr))
+;;               (expand-qq n (.right expr))))))
+;;    (def quasiquote (macro expand-qq))))
 
-(at-expansion
- (centring.sf/do
-   (def do (macro (fn (& forms) `(centring.sf/do ,@(apply list forms)))))
+;; (at-expansion
+;;  (centring.sf/do
+;;    (def do (macro (fn (& forms) `(centring.sf/do ,@(apply list forms)))))
    
-   (def expand-def
-     (fn (name :Symbol expr) `(centring.sf/def ,name ,expr)))
-   (def expand-def
-     (fn (name :List.Pair expr)
-       `(centring.sf/def ,(.left name)
-          (fn ,(.right name) ,expr))))
-   (def def (macro expand-def))))
+;;    (def expand-def
+;;      (fn (name :Symbol expr) `(centring.sf/def ,name ,expr)))
+;;    (def expand-def
+;;      (fn (name :List.Pair expr)
+;;        `(centring.sf/def ,(.left name)
+;;           (fn ,(.right name) ,expr))))
+;;    (def def (macro expand-def))))

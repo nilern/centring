@@ -74,13 +74,23 @@
       (form (error "invalid special form" form))))
 
   (define (analyze-intr name args)
-    (match (cons name args)
-      (((or 'iadd 'isub 'imul 'idiv 'irem 'imod 'iand 'ior 'ixor 'iash) a b)
-       (make-Primop name `(,(analyze a) ,(analyze b))))
-      (((or 'ineg 'inot) a)
-       (make-Primop name (list (analyze a))))
-      (('void) (make-Primop name '()))
-      (form (error "invalid intrinsic" form))))
+    (if (primop? (length args) name)
+      (make-Primop name (map analyze args))
+      (error "invalid intrinsic" (cons name args))))
+
+  (define (primop? n sym)
+    (or (vararg-primop? sym)
+        (case n
+          ((0) (memq sym '(unbound)))
+          ((1) (memq sym '(ineg inot)))
+          ((2) (memq sym '(iadd isub imul idiv irem imod
+                                iand ior ixor iash
+                                set-type!)))
+          ((3) (memq sym '(set-nth-field!)))
+          (else #f))))
+
+  (define (vararg-primop? sym)
+    (memq sym '(record)))
 
   ;;;; Traversal
 

@@ -81,14 +81,29 @@
       (($ cast:Fix defns body)
        (make-Fix (cps-bindings defns) (cps-k body c)))
       (($ cast:Def name expr)
-       (cps-k expr (lambda (e)
-                     (make-Def name e
-                               (cps-k (cast:make-Primop 'void '()) c)))))
+       (cps-k expr
+              (lambda (e)
+                (make-Def name e
+                          (cps-k (cast:make-Primop
+                                  'record
+                                  (list (cast:make-Global 'centring.lang/Tuple)))
+                                 c)))))
+      (($ cast:Primop (and (or 'set-type!) op) args)
+       (cps-list args
+                 (lambda (as)
+                   (make-Primop
+                    op as
+                    '()
+                    (list (cps-k
+                           (cast:make-Primop
+                            'record
+                            (list (cast:make-Global 'centring.lang/Tuple)))
+                           c))))))
       (($ cast:Primop op args)
        (cps-list args (lambda (as)
-                      (let ((v (gensym 'v)))
-                        (make-Primop op as
-                                     `(,v) `(,(c (make-Local v))))))))
+                        (let ((v (gensym 'v)))
+                          (make-Primop op as
+                                       `(,v) `(,(c (make-Local v))))))))
       (($ cast:App callee args)
        (cps-k callee (lambda (f)
                        (let* ((r (gensym 'r))
@@ -328,7 +343,7 @@
 
   ;;;; Elimination of Unused Variables
 
-  ;; TODO: make beta-contract handle its own defn-cleanup, also eliminate (void):s
+  ;; TODO: make beta-contract handle its own defn-cleanup
   ;; FIXME: removes defns that shouldn't be removed
 
   (define (remove-unuseds ast)
@@ -357,6 +372,11 @@
               (if (null? defns*)
                 body
                 (make-Fix defns* body)))))
+         (($ Primop 'record args (res) (cont))
+          (let ((uses (car (count-local-uses (list res) cont))))
+            (if (zero? uses)
+              cont
+              node)))
          ;; TODO: (($ Primop op args results conts) ...) ; only if fully pure
          ;; (halt is not pure, kills a VMProcess, iadd could overflow, ...)
          (_ node)))
@@ -515,41 +535,42 @@
          (make-Close bindings* (prefix-pends pends body))))
       (_ node)))
 
-  ;;;; Local Enumeration
+  ;; ;;;; Local Enumeration
 
-  (define (enumerate-locals locals cexp)
-    (define enumerate-defn
-      (match-lambda
-       ((label formals types body)
-        `(,label ,formals ,types
-                 ,(enumerate-locals (cons label formals) body)))))
-    (define enumerate-bindings
-      (match-lambda*
-       ((locals ((name label . clvs) . bindings) res)
-        (enumerate-bindings
-         (append locals (list name)) bindings
-         (append res (list `(,name ,label
-                                   ,@(map (cute enumerate-locals locals <>)
-                                          clvs))))))
-       ((locals '() res) (list locals res))))
+  ;; (define (enumerate-locals locals cexp)
+  ;;   (define enumerate-defn
+  ;;     (match-lambda
+  ;;      ((label formals types body)
+  ;;       `(,label ,formals ,types
+  ;;                ,(enumerate-locals (cons label formals) body)))))
+  ;;   (define enumerate-bindings
+  ;;     (match-lambda*
+  ;;      ((locals ((name label . clvs) . bindings) res)
+  ;;       (enumerate-bindings
+  ;;        (append locals (list name)) bindings
+  ;;        (append res (list `(,name ,label
+  ;;                                  ,@(map (cute enumerate-locals locals <>)
+  ;;                                         clvs))))))
+  ;;      ((locals '() res) (list locals res))))
     
-    (match cexp
-      ((? If?) (fmap (cute enumerate-locals locals <>) cexp))
-      (($ Fix defns body)
-       (make-Fix (map (cute enumerate-defn <>) defns)
-                 (enumerate-locals (append locals (map car defns)) body)))
-      (($ Close bindings body)
-       (match-let (((bindings* locals*)
-                    (enumerate-bindings locals bindings '())))
-         (make-Close bindings* (enumerate-locals locals* body))))
-      ((? Def?) (fmap (cute enumerate-locals locals <>) cexp))
-      (($ Primop op args results conts)
-       (let ((args* (map (cute enumerate-locals locals <>) args))
-             (locals* (append locals results)))
-         (make-Primop op args* results
-                      (map (cute enumerate-locals locals* <>) conts))))
-      ((? App?) (fmap (cute enumerate-locals locals <>) cexp))
-      (($ Local name)
-       (make-Local (list-index (cute eq? name <>) locals)))
-      ((or (? Const?) (? Clover?) (? Global?)) cexp))))
+  ;;   (match cexp
+  ;;     ((? If?) (fmap (cute enumerate-locals locals <>) cexp))
+  ;;     (($ Fix defns body)
+  ;;      (make-Fix (map (cute enumerate-defn <>) defns)
+  ;;                (enumerate-locals (append locals (map car defns)) body)))
+  ;;     (($ Close bindings body)
+  ;;      (match-let (((bindings* locals*)
+  ;;                   (enumerate-bindings locals bindings '())))
+  ;;        (make-Close bindings* (enumerate-locals locals* body))))
+  ;;     ((? Def?) (fmap (cute enumerate-locals locals <>) cexp))
+  ;;     (($ Primop op args results conts)
+  ;;      (let ((args* (map (cute enumerate-locals locals <>) args))
+  ;;            (locals* (append locals results)))
+  ;;        (make-Primop op args* results
+  ;;                     (map (cute enumerate-locals locals* <>) conts))))
+  ;;     ((? App?) (fmap (cute enumerate-locals locals <>) cexp))
+  ;;     (($ Local name)
+  ;;      (make-Local (list-index (cute eq? name <>) locals)))
+  ;;     ((or (? Const?) (? Clover?) (? Global?)) cexp)))
+  )
       
