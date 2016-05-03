@@ -1,3 +1,5 @@
+;; (namespace centring.lang) ; TODO
+
 ;;;; Bootstrap Type System
 
 ;; We want this:
@@ -6,9 +8,12 @@
 ;;; (def Tuple (Type (Tuple Any)))
 
 ;; Those are recursive, so we have to do this instead:
-(def Type (centring.intr/record (centring.intr/unbound) (centring.intr/unbound)))
-(def Any (centring.intr/record Type (centring.intr/unbound)))
-(def Tuple (centring.intr/record Type (centring.intr/unbound)))
+(def Type (centring.intr/record (centring.intr/unbound) (centring.intr/unbound)
+                                'centring.lang/Type))
+(def Any
+  (centring.intr/record Type (centring.intr/unbound) 'centring.lang/Any))
+(def Tuple
+  (centring.intr/record Type (centring.intr/unbound) 'centring.lang/Tuple))
 (centring.intr/set-type! Type Type)
 (centring.intr/set-nth-field! Type 0 (centring.intr/record Tuple Any))
 (centring.intr/set-nth-field! Any 0 (centring.intr/record Tuple Any))

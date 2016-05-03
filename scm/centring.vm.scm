@@ -349,7 +349,10 @@
   (define-instruction (set-type! fiber (fetch v) (fetch t))
     (vector-set! v 0 t))
 
-  (define-instruction (set-nth-field! fiber (fetch rec) i (fetch v))
+  (define-instruction (get-nth-field fiber (fetch rec) (fetch i))
+    (fiber-push! fiber (vector-ref rec (add1 i))))
+
+  (define-instruction (set-nth-field! fiber (fetch rec) (fetch i) (fetch v))
     (vector-set! rec (add1 i) v))
 
   ;;; Module operations

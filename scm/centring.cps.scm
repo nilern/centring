@@ -88,7 +88,7 @@
                                   'record
                                   (list (cast:make-Global 'centring.lang/Tuple)))
                                  c)))))
-      (($ cast:Primop (and (or 'set-type!) op) args)
+      (($ cast:Primop (and (or 'set-type! 'set-nth-field!) op) args)
        (cps-list args
                  (lambda (as)
                    (make-Primop

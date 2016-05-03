@@ -84,8 +84,8 @@
           ((0) (memq sym '(unbound)))
           ((1) (memq sym '(ineg inot)))
           ((2) (memq sym '(iadd isub imul idiv irem imod
-                                iand ior ixor iash
-                                set-type!)))
+                           iand ior ixor iash
+                           get-nth-field set-type!)))
           ((3) (memq sym '(set-nth-field!)))
           (else #f))))
 

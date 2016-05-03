@@ -46,7 +46,7 @@
                     cps:eta-contract cps:beta-contract cps:remove-unuseds
                     (cps:closure-convert '() '()) car
                     (cps:prewalk cps:serialize-closes))))
-    (printf "~S~%"
+    (printf "~S~%" ; (vm:emit (gensym 'main) '() '() cexp))))
             (vm:run! (vm:make-fiber (make-hash-table) (make-array 2) 0
                                     #f 0 #f #f #f #f)
                      (vm:emit (gensym 'main) '() '() cexp)))))
