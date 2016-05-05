@@ -1,6 +1,7 @@
 (use (only matchable match)
      (only extras read-file pretty-print)
      (only data-structures o)
+     (only ports with-input-from-string)
 
      (only centring.expand expand-all)
      (prefix centring.analyze ana:))

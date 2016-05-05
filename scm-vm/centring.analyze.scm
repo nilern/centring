@@ -6,7 +6,9 @@
        (only (srfi 1) remove)
        (only (srfi 13) string-prefix? string-index)
        (only data-structures identity o)
-       (only anaphora aif))
+       (only anaphora aif)
+
+       (only centring.instructions valid-intrinsic?))
 
   ;;;; Utils
 
@@ -74,23 +76,23 @@
       (form (error "invalid special form" form))))
 
   (define (analyze-intr name args)
-    (if (primop? (length args) name)
+    (if (valid-intrinsic? name args)
       (make-Primop name (map analyze args))
       (error "invalid intrinsic" (cons name args))))
 
-  (define (primop? n sym)
-    (or (vararg-primop? sym)
-        (case n
-          ((0) (memq sym '(unbound)))
-          ((1) (memq sym '(ineg inot)))
-          ((2) (memq sym '(iadd isub imul idiv irem imod
-                           iand ior ixor iash
-                           get-nth-field set-type!)))
-          ((3) (memq sym '(set-nth-field!)))
-          (else #f))))
+  ;; (define (primop? n sym)
+  ;;   (or (vararg-primop? sym)
+  ;;       (case n
+  ;;         ((0) (memq sym '(unbound)))
+  ;;         ((1) (memq sym '(ineg inot)))
+  ;;         ((2) (memq sym '(iadd isub imul idiv irem imod
+  ;;                          iand ior ixor iash
+  ;;                          get-nth-field set-type!)))
+  ;;         ((3) (memq sym '(set-nth-field!)))
+  ;;         (else #f))))
 
-  (define (vararg-primop? sym)
-    (memq sym '(record)))
+  ;; (define (vararg-primop? sym)
+  ;;   (memq sym '(record)))
 
   ;;;; Traversal
 
