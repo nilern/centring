@@ -2,10 +2,44 @@
   *
 
   (import scheme chicken)
+  (use typed-records)
 
-  (define-record Block label formals types body)
+  (define-record Block
+    (label : symbol)
+    formals ; ::vector<symbol U (... symbol)>
+    types   ; ::vector<symbol U (... symbol)>
+    body)   ; ::CPS
+  (define-record Fix
+    (defns : (vector-of (struct Block)))
+    body) ; ::CPS
+  (define-record Def
+    (name : symbol)
+    val   ; ::fetch-descr
+    cont) ; ::CPS
+  (define-record If
+    cond   ; ::fetch-descr
+    tcont  ; ::CPS
+    fcont) ; ::CPS
+  (define-record Primop
+    (op : symbol)
+    args  ; ::vector<fetch-descr U Splat>
+    (res : (or (list symbol) (list)))
+    cont) ; ::CPS
+  (define-record App
+    callee ; ::fetch-descr
+    args)  ; ::vector<fetch-descr U Splat>
 
-  (define-record Local name)
-  (define-record Clover index)
-  (define-record Constant val)
-  (define-record Global name))
+  (define-record Splat
+    fd) ; ::fetch-descr
+
+  ;; fetch-descr
+  (define-record Local
+    (name : symbol))
+  (define-record Clover
+    (index : fixnum))
+  (define-record Const
+    val) ; ::dvalue
+  (define-record Label
+    (name : symbol))
+  (define-record Global
+    (name : symbol)))
