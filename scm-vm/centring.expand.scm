@@ -48,7 +48,7 @@
                          defns)))
          `(centring.sf/letfn ,defns ,body)))
       (('letfn defns . body) `(letfn ,defns (do ,@body)))
-      (('def name val) `(centring.sf/def ,name ,val))
+      (('def name val) `(centring.intr/set-global! ,name ,val))
       (('quote val) `(centring.sf/quote ,val))
            
       (_ sexp)))     

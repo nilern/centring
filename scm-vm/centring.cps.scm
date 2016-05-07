@@ -6,16 +6,12 @@
 
   (define-record Block
     (label : symbol)
-    formals ; ::vector<symbol U (... symbol)>
-    types   ; ::vector<symbol U (... symbol)>
+    formals ; ::vector<symbol U Splat<symbol>>
+    types   ; ::vector<symbol U Splat<symbol>>
     body)   ; ::CPS
   (define-record Fix
     (defns : (vector-of (struct Block)))
     body) ; ::CPS
-  (define-record Def
-    (name : symbol)
-    val   ; ::fetch-descr
-    cont) ; ::CPS
   (define-record If
     cond   ; ::fetch-descr
     tcont  ; ::CPS
@@ -39,7 +35,7 @@
     (index : fixnum))
   (define-record Const
     val) ; ::dvalue
-  (define-record Label
-    (name : symbol))
   (define-record Global
+    (name : symbol))
+  (define-record Label
     (name : symbol)))

@@ -5,106 +5,108 @@
   (use (only matchable match match-let match-lambda)
        (only (srfi 1) remove)
        (only (srfi 13) string-prefix? string-index)
+       (only vector-lib vector-map)
        (only data-structures identity o)
        (only anaphora aif)
 
+       (only centring.util mapv mapl ns-name ns name)
        (only centring.instructions valid-intrinsic?))
-
-  ;;;; Utils
-
-  (define (update-nth n f ls)
-    (letrec ((udn (lambda (n vs)
-                    (if (zero? n)
-                      (cons (f (car vs)) (cdr vs))
-                      (cons (car vs) (udn (sub1 n) (cdr vs)))))))
-      (udn n ls)))
-
-  (define update-defnbody (cute update-nth 3 <> <>))
   
   ;;;; AST
 
-  (define-record If cond then else)
+  (define-record Block label formals types body)
   (define-record Fix defns body)
-  (define-record Def name val)
+  (define-record If cond then else)
   (define-record Primop op args)
   (define-record App callee args)
 
-  (define-record Var name)
+  (define-record Splat fd)
+  
   (define-record Local name)
-  (define-record Global name)
+  (define-record Global ns name)
+  (define-record Label name)
   (define-record Const val)
 
   ;;;; Analyze Sexpr
 
-  (define (symbol-prefix? prefix sym)
-    (string-prefix? prefix (symbol->string sym)))
-
-  (define (special-form? sym)
-    (and (symbol? sym) (symbol-prefix? "centring.sf/" sym)))
-
-  (define (intrinsic? sym)
-    (and (symbol? sym) (symbol-prefix? "centring.intr/" sym)))
-
-  (define (name sym)
-    (let ((symstr (symbol->string sym)))
-      (string->symbol (substring symstr (add1 (string-index symstr #\/))))))
-
   (define (analyze sexp)
     (match sexp
-      (((and (? special-form?) op) . args) (analyze-sf (name op) args))
-      (((and (? intrinsic?) op) . args)    (analyze-intr (name op) args))
-      ((op . args)                         (make-App (analyze op)
-                                                     (map analyze args)))
-      
-      ((? symbol?)                   (make-Var sexp))
-      ((or (? fixnum?) (? boolean?)) (make-Const sexp))
-      
-      (_ (error "invalid expression" sexp))))
+      (((and (? special-form?) op) . args)
+       (analyze-sf sexp))
+      (((and (? intrinsic?) op) . args)
+       (analyze-intr sexp))
+      ((op . args)
+       (make-App (analyze op) (mapv analyze args)))
+      ((? symbol?)
+       (analyze-id sexp))
+      ((? literal?)
+       (analyze-lit sexp))
+      (_ (error "unable to analyze" sexp))))
 
-  (define (analyze-sf name args)
-    (match (cons name args)
-      (('if cond then else) (make-If (analyze cond)
-                                     (analyze then)
-                                     (analyze else)))
-      
+  (define (analyze-sf sexp)
+    (match (cons (name (car sexp)) (cdr sexp))
       (('letfn defns body)
-       (make-Fix (map (cute update-defnbody analyze <>) defns) (analyze body)))
-      (('def name val) (make-Def name (analyze val)))
+       (make-Fix (mapv analyze-defn defns) (analyze body)))
+      (('if cond then else)
+       (make-If (analyze cond) (analyze then) (analyze else)))
+      (('quote val)
+       (analyze-lit val))
+      (_ (error "invalid special form" sexp))))
 
-      (('quote val) (make-Const val))
-      
-      (form (error "invalid special form" form))))
+  (define (analyze-intr sexp)
+    (match-let (((op . args) sexp))
+      (if (valid-intrinsic? (name op) args)
+        (make-Primop name (mapv analyze args))
+        (error "invalid intrinsic" sexp))))
 
-  (define (analyze-intr name args)
-    (if (valid-intrinsic? name args)
-      (make-Primop name (map analyze args))
-      (error "invalid intrinsic" (cons name args))))
+  (define (analyze-id id)
+    (call-with-values (lambda () (ns-name id)) make-Global))
 
-  ;; (define (primop? n sym)
-  ;;   (or (vararg-primop? sym)
-  ;;       (case n
-  ;;         ((0) (memq sym '(unbound)))
-  ;;         ((1) (memq sym '(ineg inot)))
-  ;;         ((2) (memq sym '(iadd isub imul idiv irem imod
-  ;;                          iand ior ixor iash
-  ;;                          get-nth-field set-type!)))
-  ;;         ((3) (memq sym '(set-nth-field!)))
-  ;;         (else #f))))
+  (define (analyze-lit lit)
+    (match lit
+      ((? literal?) (make-Const lit))
+      (_ (error "invalid literal" lit))))
 
-  ;; (define (vararg-primop? sym)
-  ;;   (memq sym '(record)))
+  (define (analyze-defn defn)
+    (match-let (((label formals types body) defn))
+      (make-Block label (analyze-formals formals) (analyze-formals types)
+                  (analyze body))))
+
+  (define (analyze-formals formals)
+    (define (analyze-formal formal)
+      (match formal
+        ((... f) (make-Splat f))
+        (_ formal)))
+    (mapv analyze-formal formals))
+
+  (define (special-form? sym)
+    (and (symbol? sym) (eq? (ns sym) 'centring.sf)))
+
+  (define (intrinsic? sym)
+    (and (symbol? sym) (eq? (ns sym) 'centring.intr)))
+
+  (define (literal? v)
+    (or (fixnum? v) (boolean? v)))
 
   ;;;; Traversal
 
   (define (fmap f node)
     (match node
-      (($ If cond then else) (make-If (f cond) (f then) (f else)))
-      (($ Fix defns body) (make-Fix (map (cute update-defnbody f <>) defns)
-                                    (f body)))
-      (($ Def name expr) (make-Def name (f expr)))
-      (($ Primop op args) (make-Primop op (map f args)))
-      (($ App callee args) (make-App (f callee) (map f args)))
-      ((or (? Var?) (? Local?) (? Global?) (? Const?)) node)))
+      (($ Block label formals types body)
+       (make-Block label formals types (f body)))
+      (($ Fix defns body)
+       (make-Fix defns (f body)))
+      (($ If cond then else)
+       (make-If (f cond) (f then) (f else)))
+      (($ Primop op args)
+       (make-Primop op (vector-map (lambda (_ v) (f v)) args)))
+      (($ App callee args)
+       (make-App (f callee) (vector-map (lambda (_ v) (f v)) args)))
+
+      (($ Splat arg)
+       (make-Splat (f arg)))
+
+      ((or (? Local?) (? Global?) (? Const?) (? Label?)) node)))
 
   (define (walk inner outer ast)
     (outer (fmap inner ast)))
@@ -112,62 +114,80 @@
   (define (postwalk f ast)
     (walk (cute postwalk f <>) f ast))
 
-  (define (prewalk f ast)
-    (walk (cute prewalk f <>) identity (f ast)))
-
   ;;;; Convert Back to Sexpr (for Debugging)
 
   (define (ast->sexp ast)
     (match ast
-      (($ If cond then else) `($if ,(ast->sexp cond)
-                                   ,(ast->sexp then)
-                                   ,(ast->sexp else)))
-      
-      (($ Fix defns body)
-       `($letfn ,(map (cute update-defnbody ast->sexp <>) defns)
+      (($ Block label formals types body)
+       `(,label ,(mapl ast->sexp formals) ,(mapl ast->sexp types)
                 ,(ast->sexp body)))
-      (($ Def name val) `($def ,name ,(ast->sexp val)))
-      
+      (($ Fix defns body)
+       `($letfn ,(mapl ast->sexp defns)
+                ,(ast->sexp body)))
+      (($ If cond then else)
+       `($if ,(ast->sexp cond) ,(ast->sexp then) ,(ast->sexp else)))
       (($ Primop op args)
        `(,(string->symbol (string-append "%" (symbol->string op)))
-         ,@(map ast->sexp args)))
-      (($ App callee args) `(,(ast->sexp callee) ,@(map ast->sexp args)))
-      
-      (($ Var name) name)
-      (($ Local name) name)
-      (($ Global name) (string->symbol (string-append "^" (symbol->string name))))
-      (($ Const val) val)))
+         ,@(mapl ast->sexp args)))
+      (($ App callee args)
+       `(,(ast->sexp callee)
+         ,@(mapl ast->sexp args)))
 
-  ;;;; Alphatize and Separate Locals from Globals
+      (($ Splat arg) `($... ,(ast->sexp arg)))
+
+      (($ Local name) name)
+      (($ Global #f name) (symbol-append '@@ '/ name))
+      (($ Global ns name) (symbol-append ns '/ name))
+      (($ Const val) val)
+      (($ Label name) name)
+      ((? symbol?) ast)
+      (_ (error "unable to display" ast)))))
+
+  ;;;; Alphatize and Separate Locals and Labels from Globals
 
   ;; TODO: module-resolve globals to retain lexical scoping
-  
-  (define (replace-sym replacements sym)
-    (aif (assq sym replacements) (cdr it) sym))
-  
-  (define (replacement-entry name)
-    (cons name (gensym name)))
-  
-  (define (alph&spec-defn replacements defn)
-    (match-let (((f formals types body) defn))
-      (let ((replacements* (append (map replacement-entry formals)
-                                   replacements)))
-        `(,(replace-sym replacements f)
-          ,(map (cute replace-sym replacements* <>) formals)
-          ,types
-          ,(alphatize&specialize replacements* body)))))
 
-  (define (alphatize&specialize replacements node)
-    (match node
-      (($ Fix defns body)
-       (let* ((replacements* (append (map (o replacement-entry car) defns)
-                                     replacements)))
-         (make-Fix (map (cute alph&spec-defn replacements* <>) defns)
-                   (alphatize&specialize replacements* body))))
-      ((or (? If?) (? Def?) (? Primop?) (? App?))
-       (fmap (cute alphatize&specialize replacements <>) node))
-      (($ Var name)
-       (aif (assq name replacements)
-         (make-Local (cdr it))
-         (make-Global name)))
-      ((? Const?) node))))
+  ;; (define (alphatize&specialize replacements node)
+  ;;   (define (alph&spec replacements node)
+  ;;     (match node
+  ;;       (($ Block label formals types body)
+  ;;        (let* ((fnames (formal-names formals))
+  ;;               (fnames* (map gensym fnames))
+  ;;               (replacements* (append (map (lambda (v v*)
+  ;;                                             (cons v (make-Local v*)))
+  ;;                                           fnames fnames*)
+  ;;                                      replacements)))
+  ;;          (make-Block (replace-sym replacements label)
+  ;;                      (replace-formals replacements* formals)
+  ;;                      types
+  ;;                      (alph&spec replacements* body))
+                 
+  ;; (define (replace-sym replacements sym)
+  ;;   (aif (assq sym replacements) (cdr it) sym))
+  
+  ;; (define (replacement-entry name)
+  ;;   (cons name (gensym name)))
+  
+  ;; (define (alph&spec-defn replacements defn)
+  ;;   (match-let (((f formals types body) defn))
+  ;;     (let ((replacements* (append (map replacement-entry formals)
+  ;;                                  replacements)))
+  ;;       `(,(replace-sym replacements f)
+  ;;         ,(map (cute replace-sym replacements* <>) formals)
+  ;;         ,types
+  ;;         ,(alphatize&specialize replacements* body)))))
+
+  ;; (define (alphatize&specialize replacements node)
+  ;;   (match node
+  ;;     (($ Fix defns body)
+  ;;      (let* ((replacements* (append (map (o replacement-entry car) defns)
+  ;;                                    replacements)))
+  ;;        (make-Fix (map (cute alph&spec-defn replacements* <>) defns)
+  ;;                  (alphatize&specialize replacements* body))))
+  ;;     ((or (? If?) (? Def?) (? Primop?) (? App?))
+  ;;      (fmap (cute alphatize&specialize replacements <>) node))
+  ;;     (($ Var name)
+  ;;      (aif (assq name replacements)
+  ;;        (make-Local (cdr it))
+  ;;        (make-Global name)))
+  ;;     ((? Const?) node))))
