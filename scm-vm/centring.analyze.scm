@@ -8,6 +8,8 @@
        (only vector-lib vector-map)
        (only data-structures identity o)
        (only anaphora aif)
+       persistent-hash-map
+       sequences
 
        (only centring.util mapv mapl ns-name ns name)
        (only centring.instructions valid-intrinsic?))
@@ -75,7 +77,7 @@
   (define (analyze-formals formals)
     (define (analyze-formal formal)
       (match formal
-        ((... f) (make-Splat f))
+        ((mod f) (if (eq? mod '...) (make-Splat f) formal))
         (_ formal)))
     (mapv analyze-formal formals))
 
@@ -95,7 +97,7 @@
       (($ Block label formals types body)
        (make-Block label formals types (f body)))
       (($ Fix defns body)
-       (make-Fix defns (f body)))
+       (make-Fix (vector-map (lambda (_ defn) (f defn)) defns) (f body)))
       (($ If cond then else)
        (make-If (f cond) (f then) (f else)))
       (($ Primop op args)
@@ -113,6 +115,11 @@
 
   (define (postwalk f ast)
     (walk (cute postwalk f <>) f ast))
+
+  (define (map-formal f formal)
+    (match formal
+      (($ Splat name) (make-Splat (f name)))
+      (name (f name))))
 
   ;;;; Convert Back to Sexpr (for Debugging)
 
@@ -140,54 +147,54 @@
       (($ Global ns name) (symbol-append ns '/ name))
       (($ Const val) val)
       (($ Label name) name)
-      ((? symbol?) ast)
-      (_ (error "unable to display" ast)))))
+      (_ ast)))
 
   ;;;; Alphatize and Separate Locals and Labels from Globals
 
   ;; TODO: module-resolve globals to retain lexical scoping
 
-  ;; (define (alphatize&specialize replacements node)
-  ;;   (define (alph&spec replacements node)
-  ;;     (match node
-  ;;       (($ Block label formals types body)
-  ;;        (let* ((fnames (formal-names formals))
-  ;;               (fnames* (map gensym fnames))
-  ;;               (replacements* (append (map (lambda (v v*)
-  ;;                                             (cons v (make-Local v*)))
-  ;;                                           fnames fnames*)
-  ;;                                      replacements)))
-  ;;          (make-Block (replace-sym replacements label)
-  ;;                      (replace-formals replacements* formals)
-  ;;                      types
-  ;;                      (alph&spec replacements* body))
-                 
-  ;; (define (replace-sym replacements sym)
-  ;;   (aif (assq sym replacements) (cdr it) sym))
-  
-  ;; (define (replacement-entry name)
-  ;;   (cons name (gensym name)))
-  
-  ;; (define (alph&spec-defn replacements defn)
-  ;;   (match-let (((f formals types body) defn))
-  ;;     (let ((replacements* (append (map replacement-entry formals)
-  ;;                                  replacements)))
-  ;;       `(,(replace-sym replacements f)
-  ;;         ,(map (cute replace-sym replacements* <>) formals)
-  ;;         ,types
-  ;;         ,(alphatize&specialize replacements* body)))))
+  (define (alphatize&specialize node)
+    (define (alph&spec replacements node)
+      (match node
+        (($ Block label formals types body)
+         (let* ((fnames (formal-names formals))
+                (fnames* (map gensym fnames))
+                (replacements*
+                 (extend-replacements replacements make-Local fnames fnames*)))
+           (make-Block (replace-sym replacements label)
+                       (smap #() (cute replace-formal replacements* <>) formals)
+                       types
+                       (alph&spec replacements* body))))
+        (($ Fix defns body)
+         (let* ((labels (mapl Block-label defns))
+                (labels* (map gensym labels))
+                (replacements*
+                 (extend-replacements replacements make-Label labels labels*)))
+           (fmap (cute alph&spec replacements* <>) node)))
+        ((or (? If?) (? Primop?) (? App?) (? Splat?))
+         (fmap (cute alph&spec replacements <>) node))
+        ((? Global?) (replace-global replacements node))
+        ((? Const?) node)))
+    (alph&spec (persistent-map) node))
 
-  ;; (define (alphatize&specialize replacements node)
-  ;;   (match node
-  ;;     (($ Fix defns body)
-  ;;      (let* ((replacements* (append (map (o replacement-entry car) defns)
-  ;;                                    replacements)))
-  ;;        (make-Fix (map (cute alph&spec-defn replacements* <>) defns)
-  ;;                  (alphatize&specialize replacements* body))))
-  ;;     ((or (? If?) (? Def?) (? Primop?) (? App?))
-  ;;      (fmap (cute alphatize&specialize replacements <>) node))
-  ;;     (($ Var name)
-  ;;      (aif (assq name replacements)
-  ;;        (make-Local (cdr it))
-  ;;        (make-Global name)))
-  ;;     ((? Const?) node))))
+  (define (formal-names formals)
+    (mapl (match-lambda (($ Splat f) f) (f f)) formals))
+
+  (define (extend-replacements rpls ctor vs vs*)
+    (let ((trpls (map->transient-map rpls)))
+      (for-each (lambda (v v*) (map-add! trpls v (ctor v*))) vs vs*)
+      (persist-map! trpls)))
+
+  (define (replace-sym replacements sym)
+    (match (map-ref replacements sym)
+      (($ Local name) name)
+      (($ Label name) name)
+      (#f sym)))
+
+  (define (replace-formal replacements formal)
+    (map-formal (cute replace-sym replacements <>) formal))
+
+  (define (replace-global replacements g)
+    (match g
+      (($ Global #f name) (map-ref replacements name g))
+      (_ g))))

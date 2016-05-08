@@ -12,7 +12,7 @@
                  ((filename)  `(do ,@(read-file filename)))
                  (_ (exit 1))))
          (analyze (o ana:analyze expand-all))
-         (alphanalyze (o (cute ana:alphatize&specialize '() <>) analyze)))
+         (alphanalyze (o ana:alphatize&specialize analyze)))
     (match (car arglist)
       ("--esxp" (pretty-print (expand-all sexp)))
       ("--iana" (pretty-print (ana:ast->sexp (analyze sexp))))
