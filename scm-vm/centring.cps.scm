@@ -7,6 +7,7 @@
        sequences
        vector-lib
 
+       (only centring.util mapl)
        (prefix centring.analyze ana:))
 
   (define-record Block
@@ -38,13 +39,13 @@
     (name : symbol))
   (define-record Clover
     (index : fixnum))
-  (define-record Const
-    val) ; ::dvalue
   (define-record Global
     (ns : symbol)
     (name : symbol))
   (define-record Label
     (name : symbol))
+  (define-record Const
+    val) ; ::dvalue
 
   ;;;; CPS conversion
 
@@ -78,7 +79,7 @@
                    (lambda (as)
                      (if (produces-result? op)
                        (let ((res (gensym 'v)))
-                         (make-Primop op as (vector res) (make-Local res)))
+                         (make-Primop op as (vector res) (c (make-Local res))))
                        (make-Primop op as #()
                                     (cps-c (ana:make-Primop 'record
                                             (vector (ana:make-Global
@@ -120,5 +121,37 @@
       (f f)))
 
   (define (produces-result? op)
-    (not (eq? op 'set-global!))))
-         
+    (not (eq? op 'set-global!)))
+
+  ;;;; Convert to S-expr (for debugging)
+
+  (define (cps->sexp cexp)
+    (match cexp
+      (($ Block label formals types body)
+       `((,label ,(mapl cps->sexp formals) ,(mapl cps->sexp types)
+                 ,(cps->sexp body))))
+      (($ Fix defns body)
+       `($letfn ,(mapl cps->sexp defns) ,(cps->sexp body)))
+      (($ If cond then else)
+       `($if ,(cps->sexp cond) ,(cps->sexp then) ,(cps->sexp else)))
+      (($ Primop op args #(res) cont)
+       `($let ((,res (,(symbol-append '% op) ,@(mapl cps->sexp args))))
+              ,(cps->sexp cont)))
+      (($ Primop 'halt #(arg) #() #f)
+       `(%halt ,(cps->sexp arg)))
+      (($ Primop op args #() cont)
+       `($let ((,(symbol-append '% op) ,@(mapl cps->sexp args)))
+              ,(cps->sexp cont)))
+      (($ App callee args)
+       `(,(cps->sexp callee) ,@(mapl cps->sexp args)))
+
+      (($ Splat val)
+       `($... ,(cps->sexp val)))
+
+      (($ Local name) name)
+      (($ Clover i) `(@ ,i))
+      (($ Global #f name) (symbol-append '@@/ name))
+      (($ Global ns name) (symbol-append ns '/ name))
+      (($ Label name) name)
+      (($ Const val) val)
+      (_ cexp))))

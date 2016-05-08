@@ -1,5 +1,5 @@
 (def (fact n :Int)
-  (letfn ((f (m :Int acc :Int)
+  (letfn (((f m :Int acc :Int)
             (if (< m 1)
               1
               (f (- m 1) (* acc m)))))
