@@ -6,7 +6,7 @@
        (only matchable match match-let)
 
        (only centring.util stack-push!)
-       (only centring.vm fiber-stack execute-1! fetch-arg!))
+       (only centring.vm fiber-stack execute-1! fetch-arg! fetch-instr!))
 
   (use-for-syntax (only matchable match match-let))
 
@@ -42,9 +42,13 @@
     (ir-macro-transformer
       (lambda (form _ compare?)
         (define (fd? id) (compare? id '<fd>))
+        (define (index? id) (compare? id '<i>))
         (match form
           ((_ (fiber arg . args) ((and (? fd?) type) . types) . body)
            `(let ((,arg (fetch-arg! ,fiber)))
+              (instruction-body (,fiber ,@args) ,types ,@body)))
+          ((_ (fiber arg . args) ((and (? index?) type) . types) . body)
+           `(let ((,arg (fetch-instr! ,fiber)))
               (instruction-body (,fiber ,@args) ,types ,@body)))
           ((_ (fiber) '() . body)
            `(begin
@@ -65,4 +69,8 @@
 
   (define-instruction (idiv <fd> <fd>)
     (lambda (fiber a b)
-      (stack-push! (fiber-stack fiber) (quotient a b)))))
+      (stack-push! (fiber-stack fiber) (quotient a b))))
+
+  (define-instruction (set-global! <i> <fd>)
+    (lambda (fiber i v)
+      (set-global! fiber i v))))

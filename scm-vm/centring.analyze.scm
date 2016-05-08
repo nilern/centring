@@ -58,7 +58,7 @@
   (define (analyze-intr sexp)
     (match-let (((op . args) sexp))
       (if (valid-intrinsic? (name op) args)
-        (make-Primop name (mapv analyze args))
+        (make-Primop (name op) (mapv analyze args))
         (error "invalid intrinsic" sexp))))
 
   (define (analyze-id id)

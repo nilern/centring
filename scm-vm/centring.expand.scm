@@ -37,14 +37,14 @@
       (('do stmt) stmt)
       (('do stmt . stmts) `((fn (,(gensym '_)) (do ,@stmts)) ,stmt))
       (('fn formals body) (let ((f (gensym 'f)))
-                            `(letfn ((,f ,formals ,body)) ,f)))
+                            `(letfn (((,f ,@formals) ,body)) ,f)))
 
       ;; At the bottom, these delegate to special forms:
       (('if cond then else) `(centring.sf/if ,cond ,then ,else))
       (('letfn defns body)
        (let ((defns (map (lambda (defn)
-                           (receive (names types) (analyze-formals (cadr defn))
-                             `(,(car defn) ,names ,types ,(caddr defn))))
+                           (receive (names types) (analyze-formals (cdar defn))
+                             `(,(caar defn) ,names ,types ,(cadr defn))))
                          defns)))
          `(centring.sf/letfn ,defns ,body)))
       (('letfn defns . body) `(letfn ,defns (do ,@body)))

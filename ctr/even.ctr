@@ -1,8 +1,8 @@
-(letfn ((even? (n :Int)
+(letfn (((even? n :Int)
           (if (= n 2)
             #t
             (odd? (- n 1))))
-        (odd? (n :Int)
+        ((odd? n :Int)
           (if (= n 1)
             #t
             (even? (- n 1)))))
