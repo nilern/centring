@@ -53,6 +53,8 @@
        (make-If (analyze cond) (analyze then) (analyze else)))
       (('quote val)
        (analyze-lit val))
+      (((? (cute eq? <> '...)) inner)
+       (make-Splat (analyze inner)))
       (_ (error "invalid special form" sexp))))
 
   (define (analyze-intr sexp)
@@ -77,7 +79,7 @@
   (define (analyze-formals formals)
     (define (analyze-formal formal)
       (match formal
-        ((mod f) (if (eq? mod '...) (make-Splat f) formal))
+        (((? (cute eq? <> '...)) f) (make-Splat f))
         (_ formal)))
     (mapv analyze-formal formals))
 
@@ -152,7 +154,7 @@
   ;;;; Alphatize and Separate Locals and Labels from Globals
 
   ;; TODO: module-resolve globals to retain lexical scoping
-
+  
   (define (alphatize&specialize node)
     (define (alph&spec replacements node)
       (match node
