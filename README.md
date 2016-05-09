@@ -3,7 +3,12 @@ Centring, a Modern Lisp
 
 With inspiration from Clojure, Julia, Scheme, Haskell, Rust etc.
 
-*Everything is in a flux*.
+**Under heavy development, not usable.**
+
+I'm mostly making this to learn about the implementation of programming languages,
+with a focus on continuation-passing style, virtual machines and dispatch.
+
+Hopefully it will eventually also be useful for implementing something else.
 
 Example
 -------
@@ -49,3 +54,22 @@ Example
 
 ; => 20
 ```
+
+Initial Implementation Strategy
+-------------------------------
+
+* Modify Chicken Scheme's reader and use that to parse S-expressions.
+* Do some built-in 'macro expansion' in Scheme.
+* Convert the S-expressions to a direct-style AST.
+* Alpha-convert the AST and mark local variables as such.
+* Convert the direct-style AST to a CPS representation.
+* Do some optimizations to reduce the verbosity of the CPS representation.
+* Closure-convert the CPS representation.
+* Emit a kind of threaded code.
+* Run the threaded code.
+
+Then it will be possible to
+
+* Write the standard library.
+* Write a self-hosting compiler that has a proper extensible reader and a
+  hygienic macro system.
