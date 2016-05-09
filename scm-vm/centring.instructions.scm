@@ -28,6 +28,9 @@
   (define (valid-arity? sym n)
     (= n (length (instruction-args (hash-table-ref instructions sym)))))
 
+  (define (side-effecting? op)
+    (memq op '(iadd isub imul idiv set-global!)))
+
   (define-syntax define-instruction
     (ir-macro-transformer
       (lambda (form _ _)

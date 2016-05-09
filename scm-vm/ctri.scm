@@ -23,12 +23,14 @@
                    (cps:cps-c cast
                               (lambda (v)
                                 (cps:make-Primop 'halt (vector v) #() #f))))
-                 alphanalyze)))
+                 alphanalyze))
+         (optimize cps))
     (match (car arglist)
       ("--esxp" (pretty-print (expand-all sexp)))
       ("--iana" (pretty-print (ana:ast->sexp (analyze sexp))))
       ("--fana" (pretty-print (ana:ast->sexp (alphanalyze sexp))))
-      ("--icps" (pretty-print (cps:cps->sexp (cps sexp)))))))
+      ("--icps" (pretty-print (cps:cps->sexp (cps sexp))))
+      ("--fcps" (pretty-print (cps:cps->sexp (optimize sexp)))))))
 
 #+compiling
 (main (command-line-arguments))

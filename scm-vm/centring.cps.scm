@@ -3,11 +3,16 @@
 
   (import scheme chicken)
   (use typed-records
-       (only matchable match)
+       (only matchable match match-let match-lambda)
+       (only miscmacros define-syntax-rule)
+       (only clojurian-syntax ->)
+       (only anaphora aif)
+       (srfi 69)
        sequences
        vector-lib
 
        (only centring.util mapl)
+       (only centring.instructions side-effecting?)
        (prefix centring.analyze ana:))
 
   (define-record Block
@@ -25,7 +30,7 @@
   (define-record Primop
     (op : symbol)
     args  ; ::vector<fetch-descr U Splat<fetch-descr>>
-    (res : (vector-of symbol))
+    (results : (vector-of symbol))
     cont) ; ::CPS
   (define-record App
     callee ; ::fetch-descr
@@ -91,7 +96,8 @@
                 (let* ((ret (gensym 'r))
                        (res (gensym 'v))
                        (jump (lambda (as)
-                               (make-App f (vector-append (vector ret) as)))))
+                               (make-App f (vector-append
+                                            (vector (make-Label ret)) as)))))
                   (make-Fix
                    (vector
                     (make-Block ret (vector res) (vector 'centring.lang/Any)
@@ -123,35 +129,129 @@
   (define (produces-result? op)
     (not (eq? op 'set-global!)))
 
+  ;;;; Traversal
+
+  (define (prefold f cexp)
+    (match cexp
+      (($ Block _ _ _ body)
+       ((f 'Block) cexp (prefold f body)))
+      (($ Fix defns body)
+       ((f 'Fix) cexp (smap #() (cute prefold f <>) defns) (prefold f body)))
+      (($ If cond then else)
+       ((f 'If) cexp (prefold f cond) (prefold f then) (prefold f else)))
+      (($ Primop _ args _ cont)
+       ((f 'Primop) cexp (smap #() (cute prefold f <>) args)
+        (if cont (prefold f cont) cont)))
+      (($ App callee args)
+       ((f 'App) cexp (prefold f callee) (smap #() (cute prefold f <>) args)))
+
+      (($ Splat arg)
+       ((f 'Splat) cexp (prefold f arg)))
+
+      ((? Local?)  ((f 'Local) cexp))
+      ((? Clover?) ((f 'Clover) cexp))
+      ((? Global?) ((f 'Global) cexp))
+      ((? Label?)  ((f 'Label) cexp))
+      ((? Const?)  ((f 'Const) cexp))
+      (_ (error "not a CPS expression" cexp))))
+
+  (define-syntax-rule
+    (define-prefolder name ((tag (node subresults ...)) body ...) ...)
+    (define (name tg)
+      (case tg
+        ((tag) (lambda (node subresults ...) body ...)) ...
+        (else (error "unknown prefold dispatch tag" tg)))))
+
   ;;;; Convert to S-expr (for debugging)
 
   (define (cps->sexp cexp)
-    (match cexp
-      (($ Block label formals types body)
-       `((,label ,(mapl cps->sexp formals) ,(mapl cps->sexp types)
-                 ,(cps->sexp body))))
-      (($ Fix defns body)
-       `($letfn ,(mapl cps->sexp defns) ,(cps->sexp body)))
-      (($ If cond then else)
-       `($if ,(cps->sexp cond) ,(cps->sexp then) ,(cps->sexp else)))
-      (($ Primop op args #(res) cont)
-       `($let ((,res (,(symbol-append '% op) ,@(mapl cps->sexp args))))
-              ,(cps->sexp cont)))
-      (($ Primop 'halt #(arg) #() #f)
-       `(%halt ,(cps->sexp arg)))
-      (($ Primop op args #() cont)
-       `($let ((,(symbol-append '% op) ,@(mapl cps->sexp args)))
-              ,(cps->sexp cont)))
-      (($ App callee args)
-       `(,(cps->sexp callee) ,@(mapl cps->sexp args)))
+    (define-prefolder cs-r
+      ((Block (node br))
+       (match-let ((($ Block label formals types _) node))
+             `(,label ,(mapl formal->sexp formals) ,(mapl formal->sexp types)
+                      ,br)))
+      ((Fix (node drs br))  `($letfn ,(vector->list drs) ,br))
+      ((If (node cr tr er)) `($if ,cr ,tr ,er))
+      ((Primop (node ars cr))
+         (cond
+          ((eq? (Primop-op node) 'halt)
+           `(%halt ,(vector-ref ars 0)))
+          ((zero? (vector-length (Primop-results node)))
+           `($let ((,(symbol-append '% (Primop-op node)) ,(vector->list ars)))
+                  ,cr))
+          (else
+           `($let ((,(vector-ref (Primop-results node) 0)
+                    (,(symbol-append '% (Primop-op node)) ,(vector->list ars))))
+                  ,cr))))
+      ((App (_ cr ars)) `(,cr ,(vector->list ars)))
+      
+      ((Splat (_ ar)) `($... ,ar))
+      
+      ((Local (node))  (Local-name node))
+      ((Clover (node)) `(@ ,(Clover-index node)))
+      ((Global (node)) (symbol-append (or (Global-ns node) '@@) '/ (Global-name node)))
+      ((Label (node))  (Label-name node))
+      ((Const (node))  (Const-val node)))
+    (prefold cs-r cexp))
 
-      (($ Splat val)
-       `($... ,(cps->sexp val)))
+  (define (formal->sexp formal)
+    (match formal
+      (($ Splat name) `($... ,name))
+      (_ formal))))
 
-      (($ Local name) name)
-      (($ Clover i) `(@ ,i))
-      (($ Global #f name) (symbol-append '@@/ name))
-      (($ Global ns name) (symbol-append ns '/ name))
-      (($ Label name) name)
-      (($ Const val) val)
-      (_ cexp))))
+  ;; ;;;; Collect Contraction Information
+
+  ;; (define (contraction-db cexp)
+  ;;   (let ((db (make-hash-table)))
+  ;;     (prewalk (cute collect-db! db <>) cexp)
+  ;;     db))
+
+  ;; (define (collect-db! db node)
+  ;;   (match node
+  ;;     (($ Block label formals types _)
+  ;;      (hash-table-set! db label (alist->hash-table `((type . (fn ,types))
+  ;;                                                     (usecount . 0))))
+  ;;      (vector-for-each
+  ;;       (lambda (f t)
+  ;;         (hash-table-set! db f (alist->hash-table `((type . ,t)
+  ;;                                                    (usecount . 0)))))
+  ;;       formals types))
+  ;;     (($ Primop _ _ #(res) _)
+  ;;      (hash-table-set! db res (alist->hash-table `((usecount . 0)))))
+  ;;     ((or ($ Local name) ($ Label name))
+  ;;      (hash-table-update! (hash-table-ref db name) 'usecount add1)))
+  ;;   node)
+
+  ;; ;;;; Eta Contraction
+
+  ;; (define (mark-etable! db label replacement)
+  ;;   (hash-table-set! (hash-table-ref db label) 'replacement replacement))
+
+  ;; (define (replace-etable! db name)
+  ;;   (let ((facts (hash-table-ref db name)))
+  ;;     (aif (hash-table-ref/default facts 'replacement #f)
+  ;;       (begin
+  ;;         (hash-table-update! facts 'usecount sub1)
+  ;;         it)
+  ;;       name)))
+
+  ;; ;;;; Useless-variable Elimination
+
+  ;; (define (eliminate-useless db cexp)
+  ;;   (prewalk (cute eliminate-useless db <>) cexp))
+
+  ;; (define (eliminate-useless-f db node)
+  ;;   (match node
+  ;;     (($ Fix defns body)
+  ;;      (make-Fix
+  ;;       (filter #() (lambda (defn) (not (not-used? db (Block-label defn)))) defns)
+  ;;       body))
+  ;;     (($ Primop op args #(res) cont)
+  ;;      (if (and (not-used? db op) (not (side-effecting? op)))
+  ;;        cont
+  ;;        node))
+  ;;     (_ node)))
+
+  ;; (define (not-used? db name)
+  ;;   (zero? (usecount db name))))
+      
