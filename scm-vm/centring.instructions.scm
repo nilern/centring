@@ -37,44 +37,38 @@
   ;;;; Instruction-definition Macro
 
   (define-syntax define-instruction
-    (ir-macro-transformer
-     (lambda (form _ compare?)
-       (match-let (((_ name arg-descrs arrow conts (__ (fiber . args) . body))
-                    form))
-         `(begin
-            (define (,name ,fiber)
-              (instruction-body ,fiber ,arg-descrs ,args
-                                ,(thereis? (lambda (v) (compare? (car v) 'cont))
-                                           conts)
-                                ,body))
-            (hash-table-set!
-             instructions (quote ,name)
-             (make-instruction (quote ,arg-descrs)
-                               (quote ,conts)
-                               ,(cond
-                                 ((compare? arrow '->) #f)
-                                 ((compare? arrow '-->) #t)
-                                 (else (error "invalid arrow" arrow)))
-                               ,name)))))))
+    (syntax-rules (lambda)
+      ((_ name arg-descrs arrow conts (lambda (fiber args ...) body ...))
+       (begin
+         (define (name fiber)
+           (instruction-body fiber arg-descrs (args ...) conts (body ...)))
+         (hash-table-set! instructions (quote name)
+                          (instruction-construction
+                           name arg-descrs arrow conts))))))
+
+  (define-syntax instruction-construction
+    (syntax-rules (-> -->)
+      ((_ name arg-descrs --> conts)
+       (make-instruction (quote arg-descrs) (quote conts) #t name))
+      ((_ name arg-descrs -> conts)
+       (make-instruction (quote arg-descrs) (quote conts) #f name))))
 
   (define-syntax instruction-body
-    (ir-macro-transformer
-     (lambda (form _ compare?)
-       (let ((fd? (lambda (v) compare? v 'fd))
-             (index? (lambda (v) compare? v 'index)))
-         (match form
-           ((_ fiber (adescr . adescrs) (arg . args) continue? body)
-            `(let ((,arg (,(cond
-                            ((fd? adescr) 'vm:fetch-arg!)
-                            ((index? adescr) 'vm:fetch-instr!)
-                            (else (error "invalid instruction arg-descr" adescr)))
-                           ,fiber)))
-               (instruction-body ,fiber ,adescrs ,args ,continue? ,body)))
-           ((_ fiber '() '() #t body)
-            `(begin ,@body (vm:execute-1! ,fiber)))
-           ((_ fiber '() '() #f body)
-            `(begin ,@body))
-           (_ (error "invalid instruction-body call" form)))))))
+    (syntax-rules (fd index cont)
+      ((_ fiber (fd adescrs ...) (arg args ...) conts body)
+       (let ((arg (vm:fetch-arg! fiber)))
+         (instruction-body fiber (adescrs ...) (args ...) conts body)))
+      ((_ fiber (index adescrs ...) (arg args ...) conts body)
+       (let ((arg (vm:fetch-instr! fiber)))
+         (instruction-body fiber (adescrs ...) (args ...) conts body)))
+      ((_ fiber () () (_ conts ...) body)
+       (instruction-body fiber () () (conts ...) body))
+      ((_ fiber () () ((cont _) conts ...) (body ...))
+       (begin
+         body ...
+         (vm:execute-1! fiber)))
+      ((_ fiber () () () body)
+       body)))
 
   ;;;; Instructions
 
