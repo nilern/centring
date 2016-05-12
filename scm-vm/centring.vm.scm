@@ -39,6 +39,9 @@
   (define (local-ref fiber i)
     (array-ref (fiber-stack fiber) (+ (fiber-sp fiber) i)))
 
+  (define (local-set! fiber i v)
+    (array-set! (fiber-stack fiber) (+ (fiber-sp fiber) i)))
+
   (define (fiber-push! fiber v)
     (array-push! (fiber-stack fiber) v))
 

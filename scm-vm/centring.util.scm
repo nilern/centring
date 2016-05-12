@@ -2,7 +2,9 @@
   *
 
   (import scheme chicken)
-  (use (only clojurian-syntax -> doto)
+  (use persistent-hash-map
+       (only clojurian-syntax -> doto)
+       (only anaphora aif)
        (only (srfi 13) string-index))
 
   (define (keyword->symbol kw)
@@ -21,6 +23,11 @@
       (do ((i (sub1 (vector-length vec)) (sub1 i))) ((= i -1))
         (set! res (cons (f (vector-ref vec i)) res)))
       res))
+
+  (define (map-merge-with f map1 map2)
+    (define (merge k v map)
+      (map-add map k (aif (map-ref map k) (f it v) v)))
+    (map-reduce merge map1 map2))
 
   (define (ns-name sym)
     (let* ((symstr (symbol->string sym))

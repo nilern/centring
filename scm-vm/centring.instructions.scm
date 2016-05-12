@@ -3,7 +3,9 @@
 
   (import scheme chicken)
   (use (srfi 69)
+       (srfi 1)
        (only matchable match match-let)
+       (only anaphora aand)
 
        (only centring.util stack-push!)
        (prefix centring.vm vm:))
@@ -33,6 +35,13 @@
 
   (define (side-effecting? op)
     (memq op '(iadd isub imul idiv set-global!)))
+
+  (define (produced-type op)
+    ;; FIXME: should probably throw on unimplemented instructions
+    (aand (hash-table-ref/default instructions op #f)
+          (instruction-cont-descrs it)
+          (find (lambda (cd) (eq? (car cd) 'cont)) it)
+          (cadr it)))
 
   ;;;; Instruction-definition Macro
 
@@ -86,13 +95,18 @@
   ;;   (lambda (fiber as)
   ;;     (vm:fiber-push! fiber as)))
 
+  ;; (define-instruction block-ref
+  ;;   ((rec <fd>) (i <fd>)) --> ((cont (d <Any>)))
+  ;;   (lambda (fiber)
+  ;;     (vm:local-set! d (vector-ref rec i))))
+  
   (define-instruction block-ref
     (fd fd) -> ((cont Any) (throw OutOfBounds))
     (lambda (fiber rec i)
       (vm:fiber-push! fiber (vector-ref rec i))))
 
   (define-instruction block-set!
-    (fd fd fd) -> ((throw OutOfBounds) (throw Immutable))
+    (fd fd fd) -> ((cont) (throw OutOfBounds) (throw Immutable))
     (lambda (fiber rec i v)
       (vector-set! rec i v)))
 

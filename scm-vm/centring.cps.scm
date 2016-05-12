@@ -3,16 +3,16 @@
 
   (import scheme chicken)
   (use typed-records
-       (only matchable match match-let match-lambda)
+       (only matchable match match-let match-lambda match-lambda*)
        (only miscmacros define-syntax-rule)
        (only clojurian-syntax ->)
        (only anaphora aif)
-       (srfi 69)
+       persistent-hash-map
        sequences
        vector-lib
 
-       (only centring.util mapl)
-       (only centring.instructions side-effecting?)
+       (only centring.util mapl map-merge-with)
+       (prefix centring.instructions instr:)
        (prefix centring.analyze ana:))
 
   (define-record Block
@@ -197,30 +197,81 @@
   (define (formal->sexp formal)
     (match formal
       (($ Splat name) `($... ,name))
-      (_ formal))))
+      (_ formal)))
 
-  ;; ;;;; Collect Contraction Information
+  ;;;; Collect Contraction Information
 
-  ;; (define (contraction-db cexp)
-  ;;   (let ((db (make-hash-table)))
-  ;;     (prewalk (cute collect-db! db <>) cexp)
-  ;;     db))
+  (define-record LocalInfo
+    usecount
+    type)
+  (define-record LabelInfo
+    usecount
+    ftypes)
 
-  ;; (define (collect-db! db node)
-  ;;   (match node
-  ;;     (($ Block label formals types _)
-  ;;      (hash-table-set! db label (alist->hash-table `((type . (fn ,types))
-  ;;                                                     (usecount . 0))))
-  ;;      (vector-for-each
-  ;;       (lambda (f t)
-  ;;         (hash-table-set! db f (alist->hash-table `((type . ,t)
-  ;;                                                    (usecount . 0)))))
-  ;;       formals types))
-  ;;     (($ Primop _ _ #(res) _)
-  ;;      (hash-table-set! db res (alist->hash-table `((usecount . 0)))))
-  ;;     ((or ($ Local name) ($ Label name))
-  ;;      (hash-table-update! (hash-table-ref db name) 'usecount add1)))
-  ;;   node)
+  (define-record-printer (LocalInfo li out)
+    (fprintf out "#<LocalInfo ~S ~S>"
+             (LocalInfo-usecount li) (LocalInfo-type li)))
+  (define-record-printer (LabelInfo li out)
+    (fprintf out "#<LabelInfo ~S ~S>"
+             (LabelInfo-usecount li) (LabelInfo-ftypes li)))
+
+  (define (collect-db cexp)
+    (define combine-entries
+      (match-lambda*
+       ((($ LocalInfo uc1 'centring.lang/Any) ($ LocalInfo uc2 t2))
+        (make-LocalInfo (+ uc1 uc2) t2))
+       ((($ LocalInfo uc1 t1) ($ LocalInfo uc2 'centring.lang/Any))
+        (make-LocalInfo (+ uc1 uc2) t1))
+       ((($ LabelInfo uc1 #(($ Splat 'centring.lang/Any))) ($ LabelInfo uc2 t2))
+        (make-LabelInfo (+ uc1 uc2) t2))
+       ((($ LabelInfo uc1 t1) ($ LabelInfo uc2 #(($ Splat 'centring.lang/Any))))
+        (make-LabelInfo (+ uc1 uc2) t1))))
+    
+    (define merge (cute map-merge-with combine-entries <> <>))
+
+    (define (collect-formals formals types)
+      (define r
+        (match-lambda*
+         ((_ res ($ Splat f) ($ Splat t))
+          (cons (cons f (make-LocalInfo 0 'centring.lang/Tuple)) res))
+         ((_ res f t)
+          (cons (cons f (make-LocalInfo 0 t)) res))))
+      (alist->map (reverse (vector-fold r '() formals types))))
+    
+    (define-prefolder db-collector
+      ((Block (node bdb))
+       (match-let ((($ Block label formals types _) node))
+         (-> bdb
+             (merge (persistent-map label (make-LabelInfo 0 types)))
+             (merge (collect-formals formals types)))))
+      ((Fix (_ drs br))
+       (foldl merge br drs))
+      ((If (_ cr tr er))
+       (-> cr (merge tr) (merge er)))
+      ((Primop (node ars cr))
+       (match node
+         (($ Primop op _ #(res) _)
+          (merge (foldl merge (or cr (persistent-map)) ars)
+                 (persistent-map res (make-LocalInfo 0 (instr:produced-type op)))))
+         (($ Primop op _ #() _)
+          (foldl merge (or cr (persistent-map)) ars))))
+      ((App (_ cr ars))
+       (foldl merge cr ars))
+
+      ((Splat (_ ar)) ar)
+
+      ((Local (node))
+       (persistent-map (Local-name node)
+                       (make-LocalInfo 1 'centring.lang/Any)))
+      ((Clover (_)) (persistent-map))
+      ((Global (_)) (persistent-map))
+      ((Label (node))
+       (persistent-map (Label-name node)
+                       (make-LabelInfo 1 (vector
+                                          (make-Splat 'centring.lang/Any)))))
+      ((Const (_)) (persistent-map)))
+    
+      (prefold db-collector cexp)))
 
   ;; ;;;; Eta Contraction
 
