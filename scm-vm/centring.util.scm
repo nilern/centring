@@ -3,6 +3,7 @@
 
   (import scheme chicken)
   (use persistent-hash-map
+       vector-lib
        (only clojurian-syntax -> doto)
        (only anaphora aif)
        (only (srfi 13) string-index))
@@ -29,6 +30,11 @@
       (map-add map k (aif (map-ref map k) (f it v) v)))
     (map-reduce merge map1 map2))
 
+  (define (zipmap ks vs)
+    (let ((m (map->transient-map (persistent-map))))
+      (vector-for-each (lambda (i k v) (map-add! m k v)) ks vs)
+      (persist-map! m)))
+    
   (define (ns-name sym)
     (let* ((symstr (symbol->string sym))
            (i (string-index symstr #\/)))
@@ -50,6 +56,9 @@
     (start stack-start stack-start-set!)
     (end stack-end stack-end-set!)
     (buffer stack-buffer stack-buffer-set!))
+
+  (define (subtype? t subt)
+    (or (equal? t subt) (eq? t 'centring.lang/Any)))
 
   (define (stack-has-space? st)
     (< (stack-end st) (vector-length (stack-buffer st))))

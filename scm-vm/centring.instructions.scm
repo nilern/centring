@@ -33,8 +33,8 @@
   (define (valid-arity? sym n)
     (= n (length (instruction-arg-descrs (hash-table-ref instructions sym)))))
 
-  (define (side-effecting? op)
-    (memq op '(iadd isub imul idiv set-global!)))
+  (define (elidable? op)
+    (instruction-elidable (hash-table-ref instructions op)))
 
   (define (produced-type op)
     ;; FIXME: should probably throw on unimplemented instructions
@@ -47,10 +47,10 @@
 
   (define-syntax define-instruction
     (syntax-rules (lambda)
-      ((_ name arg-descrs arrow conts (lambda (fiber args ...) body ...))
+      ((_ name arg-descrs arrow conts (lambda (fiber . args) body ...))
        (begin
          (define (name fiber)
-           (instruction-body fiber arg-descrs (args ...) conts (body ...)))
+           (instruction-body fiber arg-descrs args conts (body ...)))
          (hash-table-set! instructions (quote name)
                           (instruction-construction
                            name arg-descrs arrow conts))))))
@@ -64,18 +64,29 @@
 
   (define-syntax instruction-body
     (syntax-rules (fd index cont)
-      ((_ fiber (fd adescrs ...) (arg args ...) conts body)
+      ((_ fiber (fd adescrs ...) (arg . args) conts body)
        (let ((arg (vm:fetch-arg! fiber)))
-         (instruction-body fiber (adescrs ...) (args ...) conts body)))
-      ((_ fiber (index adescrs ...) (arg args ...) conts body)
+         (instruction-body fiber (adescrs ...) args conts body)))
+      ((_ fiber (fd* adescrs ...) (arg . args) conts body)
+       (let ((arg (vm:fetch-arg! fiber))) ; FIXME: handle splats here
+         (instruction-body fiber (adescrs ...) args conts body)))
+      ((_ fiber (index adescrs ...) (arg . args) conts body)
        (let ((arg (vm:fetch-instr! fiber)))
-         (instruction-body fiber (adescrs ...) (args ...) conts body)))
+         (instruction-body fiber (adescrs ...) args conts body)))
       ((_ fiber () () (_ conts ...) body)
        (instruction-body fiber () () (conts ...) body))
       ((_ fiber () () ((cont _) conts ...) (body ...))
        (begin
          body ...
          (vm:execute-1! fiber)))
+      ((_ fiber fd* arg (_ conts ...) body)
+       (let ((arg (vm:fetch-arg! fiber))) ; FIXME: fetch vec, handle splats
+         (instruction-body fiber () () (conts ...) body)))
+      ((_ fiber fd* arg ((cont _) conts ...) (body ...))
+       (let ((arg (vm:fetch-arg! fiber))) ; FIXME: fetch vec, handle splats
+         (begin
+           body ...
+           (vm:execute-1! fiber))))
       ((_ fiber () () () body)
        body)))
 
@@ -90,10 +101,10 @@
 
   ;;; Records
 
-  ;; (define-instruction record
-  ;;   fd* --> ((cont Any))
-  ;;   (lambda (fiber as)
-  ;;     (vm:fiber-push! fiber as)))
+  (define-instruction record
+    fd* --> ((cont Any))
+    (lambda (fiber . as)
+      (vm:fiber-push! fiber as)))
 
   ;; (define-instruction block-ref
   ;;   ((rec <fd>) (i <fd>)) --> ((cont (d <Any>)))
@@ -133,12 +144,12 @@
       (vm:fiber-push! fiber (fx/ a b))))
 
   (define-instruction irem
-    (fd fd) --> ((cont Int))
+    (fd fd) -> ((cont Int) (throw DivideByZero))
     (lambda (fiber a b)
       (vm:fiber-push! fiber (remainder a b))))
 
   (define-instruction imod
-    (fd fd) --> ((cont Int))
+    (fd fd) -> ((cont Int) (throw DivideByZero))
     (lambda (fiber a b)
       (vm:fiber-push! fiber (modulo a b))))
 

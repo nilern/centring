@@ -7,11 +7,13 @@
        (only miscmacros define-syntax-rule)
        (only clojurian-syntax ->)
        (only anaphora aif)
+       (only data-structures o complement identity)
+       (only extras printf) ; just for debugging
        persistent-hash-map
        sequences
        vector-lib
 
-       (only centring.util mapl map-merge-with)
+       (only centring.util mapl map-merge-with zipmap subtype?)
        (prefix centring.instructions instr:)
        (prefix centring.analyze ana:))
 
@@ -162,6 +164,32 @@
         ((tag) (lambda (node subresults ...) body ...)) ...
         (else (error "unknown prefold dispatch tag" tg)))))
 
+  (define (fmap f node)
+    (match node
+      (($ Block label formals types body)
+       (make-Block label formals types (f body)))
+      (($ Fix defns body)
+       (make-Fix (smap #() f defns) (f body)))
+      (($ If cond then else)
+       (make-If (f cond) (f then) (f else)))
+      (($ Primop op args results cont)
+       (make-Primop op (smap #() f args) results (if cont (f cont) cont)))
+      (($ App callee args)
+       (make-App (f callee) (smap #() f args)))
+      (($ Splat arg)
+       (make-Splat (f arg)))
+      ((or (? Local?) (? Global?) (? Clover?) (? Label?) (? Const?))
+       node)))
+
+  (define (walk inner outer ast)
+    (outer (fmap inner ast)))
+
+  (define (postwalk f ast)
+    (walk (cute postwalk f <>) f ast))
+
+  (define (prewalk f ast)
+    (walk (cute prewalk f <>) identity (f ast)))
+
   ;;;; Convert to S-expr (for debugging)
 
   (define (cps->sexp cexp)
@@ -177,19 +205,20 @@
           ((eq? (Primop-op node) 'halt)
            `(%halt ,(vector-ref ars 0)))
           ((zero? (vector-length (Primop-results node)))
-           `($let ((,(symbol-append '% (Primop-op node)) ,(vector->list ars)))
+           `($let ((,(symbol-append '% (Primop-op node)) ,@(vector->list ars)))
                   ,cr))
           (else
            `($let ((,(vector-ref (Primop-results node) 0)
-                    (,(symbol-append '% (Primop-op node)) ,(vector->list ars))))
+                    (,(symbol-append '% (Primop-op node)) ,@(vector->list ars))))
                   ,cr))))
-      ((App (_ cr ars)) `(,cr ,(vector->list ars)))
+      ((App (_ cr ars)) `(,cr ,@(vector->list ars)))
       
       ((Splat (_ ar)) `($... ,ar))
       
       ((Local (node))  (Local-name node))
       ((Clover (node)) `(@ ,(Clover-index node)))
-      ((Global (node)) (symbol-append (or (Global-ns node) '@@) '/ (Global-name node)))
+      ((Global (node)) (symbol-append (or (Global-ns node) '@@)
+                                      '/ (Global-name node)))
       ((Label (node))  (Label-name node))
       ((Const (node))  (Const-val node)))
     (prefold cs-r cexp))
@@ -199,6 +228,13 @@
       (($ Splat name) `($... ,name))
       (_ formal)))
 
+  ;;;; Utility Passes
+
+  (define (replace-local rps node)
+    (match node
+      (($ Local name) (map-ref rps name node))
+      (_ node)))
+
   ;;;; Collect Contraction Information
 
   (define-record LocalInfo
@@ -206,14 +242,40 @@
     type)
   (define-record LabelInfo
     usecount
-    ftypes)
+    ftypes
+    formals
+    body)
 
   (define-record-printer (LocalInfo li out)
     (fprintf out "#<LocalInfo ~S ~S>"
              (LocalInfo-usecount li) (LocalInfo-type li)))
   (define-record-printer (LabelInfo li out)
-    (fprintf out "#<LabelInfo ~S ~S>"
-             (LabelInfo-usecount li) (LabelInfo-ftypes li)))
+    (fprintf out "#<LabelInfo ~S ~S ~S>"
+             (LabelInfo-usecount li) (LabelInfo-ftypes li)
+             (LabelInfo-formals li)))
+
+  (define (usecount db name)
+    (match (map-ref db name)
+      (($ LocalInfo usecount _) usecount)
+      (($ LabelInfo usecount _) usecount)))
+  
+  (define (useless? db name)
+    (zero? (usecount db name)))
+
+  (define (type db ref)
+    (match ref
+      (($ Local name) (LocalInfo-type (map-ref db name)))
+      (($ Label name) (LabelInfo-ftypes (map-ref db name)))
+      (_ #f)))
+
+  (define (ftypes db name)
+    (LabelInfo-ftypes (map-ref db name)))
+
+  (define (formals db name)
+    (LabelInfo-formals (map-ref db name)))
+
+  (define (body db name)
+    (LabelInfo-body (map-ref db name)))
 
   (define (collect-db cexp)
     (define combine-entries
@@ -222,10 +284,12 @@
         (make-LocalInfo (+ uc1 uc2) t2))
        ((($ LocalInfo uc1 t1) ($ LocalInfo uc2 'centring.lang/Any))
         (make-LocalInfo (+ uc1 uc2) t1))
-       ((($ LabelInfo uc1 #(($ Splat 'centring.lang/Any))) ($ LabelInfo uc2 t2))
-        (make-LabelInfo (+ uc1 uc2) t2))
-       ((($ LabelInfo uc1 t1) ($ LabelInfo uc2 #(($ Splat 'centring.lang/Any))))
-        (make-LabelInfo (+ uc1 uc2) t1))))
+       ((($ LabelInfo uc1 #(($ Splat 'centring.lang/Any)) _ _)
+         ($ LabelInfo uc2 t2 formals body))
+        (make-LabelInfo (+ uc1 uc2) t2 formals body ))
+       ((($ LabelInfo uc1 t1 formals body) ($ LabelInfo uc2))
+        (make-LabelInfo (+ uc1 uc2) t1 formals body))
+       ((a b) (error "can't combine" a b))))
     
     (define merge (cute map-merge-with combine-entries <> <>))
 
@@ -240,9 +304,10 @@
     
     (define-prefolder db-collector
       ((Block (node bdb))
-       (match-let ((($ Block label formals types _) node))
+       (match-let ((($ Block label formals types body) node))
          (-> bdb
-             (merge (persistent-map label (make-LabelInfo 0 types)))
+             (merge (persistent-map label
+                                    (make-LabelInfo 0 types formals body)))
              (merge (collect-formals formals types)))))
       ((Fix (_ drs br))
        (foldl merge br drs))
@@ -268,41 +333,53 @@
       ((Label (node))
        (persistent-map (Label-name node)
                        (make-LabelInfo 1 (vector
-                                          (make-Splat 'centring.lang/Any)))))
+                                          (make-Splat 'centring.lang/Any))
+                                       #f #f)))
       ((Const (_)) (persistent-map)))
     
-      (prefold db-collector cexp)))
+      (prefold db-collector cexp))
 
-  ;; ;;;; Eta Contraction
+  ;;;; Eta Contraction
 
-  ;; (define (mark-etable! db label replacement)
-  ;;   (hash-table-set! (hash-table-ref db label) 'replacement replacement))
+  ;;;; Beta-contraction
 
-  ;; (define (replace-etable! db name)
-  ;;   (let ((facts (hash-table-ref db name)))
-  ;;     (aif (hash-table-ref/default facts 'replacement #f)
-  ;;       (begin
-  ;;         (hash-table-update! facts 'usecount sub1)
-  ;;         it)
-  ;;       name)))
+  ;; need to run `eliminate-useless` after this:
+  (define (beta-contract db cexp)
+    (define (contract node)
+      (match node
+        (($ App ($ Label callee) args)
+         (if (and (= (usecount db callee) 1)
+                  (vector-every (lambda (a ft) (subtype? ft (type db a)))
+                                args (ftypes db callee)))
+           (postwalk (cute replace-local (zipmap (formals db callee) args) <>)
+                     (body db callee))
+           node))
+        (_ node)))
+    ;; using prewalk is potentially more aggressive:
+    (prewalk contract cexp))
 
-  ;; ;;;; Useless-variable Elimination
+  ;;;; Useless-variable Elimination
 
-  ;; (define (eliminate-useless db cexp)
-  ;;   (prewalk (cute eliminate-useless db <>) cexp))
+  (define (eliminate-useless db cexp)
+    (define (elim node)
+      (match node
+        (($ Fix defns body)
+         (let ((defns* (filter #()
+                               (complement (o (cute useless? db <>) Block-label))
+                               defns)))
+           (if (zero? (vector-length defns*))
+             body
+             (make-Fix defns* body))))
+        (($ Primop op args #(res) cont)
+         (if (and (useless? db res) (instr:elidable? op))
+           cont
+           node))
+        (($ Primop op args #() cont) node)
 
-  ;; (define (eliminate-useless-f db node)
-  ;;   (match node
-  ;;     (($ Fix defns body)
-  ;;      (make-Fix
-  ;;       (filter #() (lambda (defn) (not (not-used? db (Block-label defn)))) defns)
-  ;;       body))
-  ;;     (($ Primop op args #(res) cont)
-  ;;      (if (and (not-used? db op) (not (side-effecting? op)))
-  ;;        cont
-  ;;        node))
-  ;;     (_ node)))
-
-  ;; (define (not-used? db name)
-  ;;   (zero? (usecount db name))))
+        ((or (? Block?) (? If?) (? App?)
+             (? Splat?)
+             (? Local?) (? Global?) (? Clover?) (? Label?) (? Const?))
+         node)))
+    ;; need postwalk here so that the bodies and conts don't slip through:
+    (postwalk elim cexp)))
       
