@@ -1,4 +1,4 @@
-ctri: ctri.scm array.import.so centring.util.import.so \
+ctri: ctri.scm array.import.so centring.util.import.so centring.schring.import.so \
       centring.vm.import.so centring.instructions.import.so \
       centring.expand.import.so centring.analyze.import.so \
       centring.cps.import.so
