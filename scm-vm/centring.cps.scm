@@ -9,6 +9,7 @@
        (only anaphora aif)
        (only data-structures o complement identity)
        (only extras printf) ; just for debugging
+       (srfi 69)
        persistent-hash-map
        sequences
        vector-lib
@@ -75,7 +76,7 @@
                 (let* ((ret (gensym 'r))
                        (res (gensym 'v))
                        (jump (lambda (v)
-                               (make-App (make-Local ret) (vector v)))))
+                               (make-App (make-Label ret) (vector v)))))
                   (make-Fix
                    (vector
                     (make-Block ret (vector res) (vector 'centring.lang/Any)
@@ -235,6 +236,11 @@
       (($ Local name) (map-ref rps name node))
       (_ node)))
 
+  (define (replace-label rps node)
+    (match node
+      (($ Label name) (hash-table-ref/default rps name node))
+      (_ node)))
+
   ;;;; Collect Contraction Information
 
   (define-record LocalInfo
@@ -340,6 +346,32 @@
       (prefold db-collector cexp))
 
   ;;;; Eta Contraction
+  
+  (define (eta-contract db cexp)
+    (letrec ((eta-rps (make-hash-table))
+             (localize-formal
+              (match-lambda
+               (($ Splat f) (make-Splat (make-Local f)))
+               (f (make-Local f))))
+             (is-any?
+              (match-lambda
+               ((or ($ Splat 'centring.lang/Any) 'centring.lang/Any) #t)
+               (_ #f)))
+             (update-rps!
+              (match-lambda
+               (($ Block label fps types ($ App f args))
+                (when (and (equal? (smap #() localize-formal fps) args)
+                           (vector-every is-any? types))
+                  (hash-table-set! eta-rps label (replace-label eta-rps f))))
+               ((? Block?))))
+             (contract
+              (match-lambda
+               ((and ($ Fix defns _) node)
+                (for update-rps! defns)
+                node)
+               (node (replace-label eta-rps node)))))
+      ;; need prewalk so that eta-rps is updated before replacements are tried:
+      (prewalk contract cexp)))
 
   ;;;; Beta-contraction
 
