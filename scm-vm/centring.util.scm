@@ -4,6 +4,7 @@
   (import scheme chicken)
   (use persistent-hash-map
        vector-lib
+       sequences
        (only clojurian-syntax -> doto)
        (only anaphora aif)
        (only (srfi 13) string-index))
@@ -12,23 +13,15 @@
     (-> kw keyword->string string->symbol))
 
   (define (mapv f ls)
-    (define (mv ls n)
-      (if (null? ls)
-        (make-vector n)
-        (doto (mv (cdr ls) (add1 n))
-          (vector-set! n (f (car ls))))))
-    (mv ls 0))
+    (smap #() f ls))
 
   (define (mapl f vec)
-    (let ((res '()))
-      (do ((i (sub1 (vector-length vec)) (sub1 i))) ((= i -1))
-        (set! res (cons (f (vector-ref vec i)) res)))
-      res))
+    (smap '() f vec))
 
   (define (map-merge-with f map1 map2)
     (define (merge k v map)
-      (map-add map k (aif (map-ref map k) (f it v) v)))
-    (map-reduce merge map1 map2))
+      (map-add! map k (aif (map-ref map k) (f it v) v)))
+    (persist-map! (map-reduce merge (map->transient-map map1) map2)))
 
   (define (zipmap ks vs)
     (let ((m (map->transient-map (persistent-map))))
