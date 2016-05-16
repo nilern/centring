@@ -2,10 +2,10 @@
   *
 
   (import scheme chicken)
-  (use (only matchable match)
-       (only data-structures o))
-  
-  (define keyword->symbol (o string->symbol keyword->string))
+  (use matchable
+       (only data-structures compose))
+
+  (define keyword->symbol (compose string->symbol keyword->string))
 
   (define (analyze-formals formals)
     (match formals
@@ -32,25 +32,37 @@
   
   (define (ctr-expand-1 sexp)
     (match sexp
-      (('def (name . formals) body) `(def ,name (fn ,formals ,body)))
-           
-      (('do) `(centring.intr/void))
+      (('let ((name val) . nvs) . body) `((fn (,name) (let ,nvs ,@body)) ,val))
+      (('let '() . body) `(do ,@body))
+      
+      (('do) '(centring.intr/record centring.lang/Tuple))
       (('do stmt) stmt)
-      (('do stmt . stmts) `((fn (,(gensym '_)) (do ,@stmts)) ,stmt))
-      (('fn formals body) (let ((f (gensym 'f)))
-                            `(letfn ((,f ,formals ,body)) ,f)))
+      (('do stmt . stmts) `(let ((,(gensym '_) ,stmt)) ,@stmts))
 
-      ;; At the bottom, these delegate to special forms:
-      (('if cond then else) `(centring.sf/if ,cond ,then ,else))
+      ;; These are backed up by special forms:
+      (('fn formals body)
+       (receive (names types) (analyze-formals formals)
+         `(centring.sf/fn ,names ,types ,body)))
+      (('fn formals . body)
+       `(fn ,formals (do ,@body)))
       (('letfn defns body)
-       (let ((defns (map (lambda (defn)
-                           (receive (names types) (analyze-formals (cadr defn))
-                             `(,(car defn) ,names ,types ,(caddr defn))))
-                         defns)))
-         `(centring.sf/letfn ,defns ,body)))
-      (('letfn defns . body) `(letfn ,defns (do ,@body)))
-      (('def name val) `(centring.sf/def ,name ,val))
-      (('quote val) `(centring.sf/quote ,val))
+       `(centring.sf/letrec
+         ,(map (match-lambda
+                (((name . formals) . body) `(,name (fn ,formals ,@body))))
+               defns)
+         ,body))
+      (('letfn defns . body)
+       `(letfn ,defns (do ,@body)))
+      (('quote val)
+       `(centring.sf/quote ,val))
+
+      ;; And these by intrinsics:
+      (('if cond then else)
+       `(centring.intr/brf ,cond (fn () ,then) (fn () ,else)))
+      (('def (name . formals) body)
+       `(def ,name (fn ,formals ,body)))
+      (('def name val)
+       `(centring.intr/set-global! (quote ,name) ,val))
            
       (_ sexp)))     
 
@@ -61,8 +73,8 @@
         (ctr-expand expansion))))
 
   ;; Does not handle macro shadowing (i.e. (let ((if (fn (n) ...))) (if ...)))
-  (define (ctr-expand-all expr)
+  (define (expand-all expr)
     (let ((expansion (ctr-expand expr)))
       (if (list? expansion)
-        (map ctr-expand-all (ctr-expand expr))
+        (map expand-all (ctr-expand expr))
         expansion))))

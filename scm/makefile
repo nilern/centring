@@ -1,15 +1,9 @@
-all: ctrc ctri
-
-ctrc: array.import.so centring.expand.import.so centring.coreast.import.so \
-      centring.cps.import.so centring.emit.import.so compiler.scm
-	csc -o ctrc compiler.scm
-
-ctri: array.import.so centring.expand.import.so centring.coreast.import.so \
-      centring.cps.import.so centring.vm.import.so ctri.scm
-	csc -o ctri ctri.scm
+ctri: ctri.scm centring.schring.import.so centring.value.import.so \
+      centring.expand.import.so centring.analyze.import.so
+	csc ctri.scm
 
 clean:
-	rm *.so *.import.scm ctrc ctri
+	rm *.so *.import.scm ctri
 
 %.import.so: %.scm
 	csc -sJ $<
