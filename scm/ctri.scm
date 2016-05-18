@@ -13,10 +13,12 @@
                 (("-e" estr) (with-input-from-string estr read))
                 ((filename)  `(do ,@(read-file filename)))
                 (_ (exit 1))))
-         (analyze (o ana:analyze exp:expand-all)))
+         (analyze (o ana:analyze exp:expand-all))
+         (alphanalyze (o ana:alphatize&specialize analyze)))
     (match (car arglist)
       ("--esxp" (pretty-print (exp:expand-all sexp)))
-      ("--iana" (pretty-print (ana:ast->sexpr (analyze sexp)))))))
+      ("--iana" (pretty-print (ana:ast->sexpr (analyze sexp))))
+      ("--fana" (pretty-print (ana:ast->sexpr (alphanalyze sexp)))))))
 
 #+compiling
 (main (command-line-arguments))

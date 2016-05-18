@@ -3,6 +3,7 @@
 
   (import scheme chicken)
   (use coops coops-primitive-objects
+       sequences
        (only vector-lib vector-fold vector-map))
 
   ;;;
@@ -67,6 +68,10 @@
                               (accessor recname classname slotname))
                             slotnames))))
                variants))))))
+
+  (define-syntax doseq
+    (syntax-rules ()
+      ((_ (item items) body ...) (for (lambda (item) body ...) items))))
 
   ;;;;
 
