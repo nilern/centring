@@ -1,3 +1,5 @@
+(centring.intr/set-ns! 'fact.core)
+
 (def (fact n :Int)
   (letfn (((f m :Int acc :Int)
             (if (< m 1)

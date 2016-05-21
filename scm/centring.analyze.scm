@@ -4,6 +4,7 @@
   (import scheme chicken)
   (use matchable
        (only anaphora aif)
+       vector-lib
        sequences
        coops
        persistent-hash-map
@@ -23,7 +24,7 @@
     (APrimop op args)
 
     (ASplat val)
-    (AGlobal ns name)
+    (AGlobal resolution-ns ns name)
     (ALocal name)
     (AConst val))
 
@@ -32,7 +33,7 @@
   (define (analyze sexp)
     (match sexp
       ((? symbol?)
-       (call-with-values (lambda () (ns-name sexp)) AGlobal))
+       (call-with-values (lambda () (ns-name sexp)) (cute AGlobal #f <> <>)))
       
       ((? literal?)
        (AConst sexp))
@@ -133,13 +134,18 @@
     `(,(symbol-append '% (.op node)) ,@(vector->list br)))
 
   (define-method (ast->sexpr-rf (node <AGlobal>))
-    (symbol-append (unwrap-or (.ns node) '@@) ns-sep (.name node)))
+    (symbol-append (unwrap-or (.ns node) '@@)
+                   '<= (.resolution-ns node)
+                   ns-sep (.name node)))
 
   (define-method (ast->sexpr-rf (node <ASplat>) ir)
     `($... ,ir))
 
   (define-method (ast->sexpr-rf (node <ALocal>))
     (.name node))
+
+  (define-method (ast->sexpr-rf (node <AConst>))
+    (.val node))
 
   (define-method (ast->sexpr-rf (node <AConst>))
     (.val node))
@@ -154,54 +160,92 @@
 
   ;;;; Alphatize & specialize
 
-  ;;; TODO: ns-resolve globals (?)
+  ;;; TODO: ns-resolve globals
 
-  (define (alphatize&specialize ast)
-    (define (alph&spec env node)
+  (defrecord (AEnv ns replacements))
+
+  ;; HACK: AEnv-ns is handled in a confusing manner. Behaviour is OK though.
+  ;; Maybe the behaviour is a bit ill-defined compared to e.g. Chicken's module
+  ;; form (but it is oh-so-handy for live development).
+  (define (alphatize&specialize curr-ns ast)
+    (define (alph&spec node env)
       (match node
         (($ AFn formals types body)
          (let* ((fnames (fmap formal-name formals))
                 (env* (add-locals env fnames)))
-           (AFn (fmap (cute replace-formal env* <>) formals) types
-                (alph&spec env* body))))
+           (receive (body* env**) (alph&spec body env*)
+             (values
+              (AFn (fmap (cute replace-formal env* <>) formals) types body*)
+              (AEnv (.ns env**) (.replacements env))))))
+        
         (($ AFix bindings body)
          (let* ((names (fmap car bindings))
                 (vals (fmap cdr bindings))
                 (env* (add-locals env names)))
-           (AFix (fmap (match-lambda
-                        ((name . val)
-                         (cons (replace-sym env* name) (alph&spec env* val))))
-                       bindings)
-                 (alph&spec env* body))))
+           (receive (body* env**) (alph&spec body env*)
+             (values
+              (AFix
+               (fmap (match-lambda
+                      ((name . val)
+                       (cons (replace-sym env** name) (alph&spec val env**))))
+                     bindings)
+               body*)
+              (AEnv (.ns env**) (.replacements env))))))
+        
+        (($ APrimop 'set-ns! #(($ AConst ns*)))
+         (let ((env* (assoc-ns env ns*)))
+           (values node env*)))
+        
+        (($ APrimop 'call operands)
+         (receive (args* env*)
+           (fmap-st alph&spec (subvector operands 1) env)
+           (receive (callee* env**) (alph&spec (vector-ref operands 0) env*)
+             (values
+              (APrimop 'call (vector-append (vector callee*) args*))
+              env**))))
+        
         (($ APrimop op args)
-         (APrimop op (fmap (cute alph&spec env <>) args)))
+         (receive (args* env*) (fmap-st alph&spec args env)
+           (values (APrimop op args*) env*)))
+        
         (($ ASplat val)
-         (ASplat (alph&spec env val)))
-        ((? AGlobal?) (replace-global env node))
-        ((? AConst?) node)))
-    (alph&spec (persistent-map) ast))
+         (receive (val* env*) (alph&spec val env)
+           (values (ASplat val*) env*)))
 
-  (define (add-locals env localnames)
-    (let ((env* (map->transient-map env)))
-      (doseq (name localnames)
-        (map-add! env* name (gensym name)))
-      (persist-map! env*)))
+        ((? AGlobal?) (values (replace-global env node) env))
+
+        ((? AConst?) (values node env))))
+    (receive (ast* _) (alph&spec ast (AEnv curr-ns (persistent-map)))
+      ast*))
 
   (define (formal-name f)
     (match f
       (($ ASplat f) f)
       (f f)))
 
+  (define (assoc-ns env ns*)
+    (AEnv ns* (.replacements env)))
+
+  (define (add-locals env localnames)
+    (let ((rpls* (map->transient-map (.replacements env))))
+      (doseq (name localnames)
+        (map-add! rpls* name (gensym name)))
+      (AEnv (.ns env) (persist-map! rpls*))))
+
   (define (replace-sym env sym)
-    (map-ref env sym sym))
+    (map-ref (.replacements env) sym sym))
 
   (define (replace-formal env f)
     (map-formal (cute replace-sym env <>) f))
 
   (define (replace-global env g)
     (match g
-      (($ AGlobal (? Some?) _) g)
-      (($ AGlobal (? None?) name) (aif (map-ref env name #f) (ALocal it) g)))))
+      (($ AGlobal #f (and (? Some?) ns) name)
+       (AGlobal (.ns env) ns name))
+      (($ AGlobal #f (and (? None?) ns) name)
+       (aif (map-ref (.replacements env) name #f)
+         (ALocal it)
+         (AGlobal (.ns env) ns name))))))
             
         
                 

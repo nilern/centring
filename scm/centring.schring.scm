@@ -24,8 +24,65 @@
   (define-method (fold (f #t) (v #t) (vec <vector>))
     (vector-fold (lambda (_ acc v) (f acc v)) v vec))
 
+  ;; (define-generic (fold-st f iv ist coll))
+
+  ;; (define-method (fold-st (f #t) (iv #t) (ist #t) (ls <list>))
+  ;;   (define (fold-st-ls ls v st)
+  ;;     (if (null? ls)
+  ;;       (values v st)
+  ;;       (receive (v* st*) (f v st (car ls))
+  ;;         (fold-st-ls (cdr ls) v* st*))))
+  ;;   (fold-st-ls ls iv ist))
+
+  (define-generic (fmap-st f coll))
+
+  (define-method (fmap-st (f #t) (coll <vector>) ist)
+    (let* ((len (vector-length coll))
+           (res (make-vector len))
+           (st ist))
+      (do ((i 0 (add1 i))) ((= i len))
+        (receive (v st*) (f (vector-ref coll i) st)
+          (vector-set! res i v)
+          (set! st st*)))
+      (values res st)))
+
   ;;;
 
+  (define-syntax defrecord
+    (er-macro-transformer
+     (lambda (form r _)
+       (define (classify recname)
+         (symbol-append '< recname '>))
+       
+       (define (predicativize recname)
+         (symbol-append recname '?))
+       
+       (define (rec-accessorize recname slotname)
+         (symbol-append recname '- slotname))
+       
+       (define (accessor recname classname slotname)
+         `(,(r 'define-method) (,(symbol-append '|.| slotname)
+                                (,(r 'rec) ,classname))
+           (,(rec-accessorize recname slotname) ,(r 'rec))))
+       
+       (let* ((recname (caadr form))
+              (classname (classify recname))
+              (slotnames (cdadr form)))
+         `(,(r 'begin)
+           ;; The record type (for constructor, pattern matching)
+           (,(r 'define-record-type) ,recname
+            (,recname ,@slotnames) ,(predicativize recname)
+            ,@(map (lambda (slotname)
+                     `(,slotname ,(rec-accessorize recname slotname)))
+                   slotnames))
+           ;; The corresponding class (for dispatch):
+           (,(r 'define-primitive-class) ,classname
+            ,(predicativize recname))
+           ;; Dot-functions (for nicer field access):
+           ,@(map (lambda (slotname)
+                    (accessor recname classname slotname))
+                  slotnames))))))
+  
   (define-syntax define-enum
     (er-macro-transformer
      (lambda (form r _)
