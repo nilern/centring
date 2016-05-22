@@ -22,7 +22,7 @@
       ("--esxp" (pretty-print (exp:expand-all sexp)))
       ("--iana" (pretty-print (ana:ast->sexpr (analyze sexp))))
       ("--fana" (pretty-print (ana:ast->sexpr (alphanalyze sexp))))
-      ("--icps" (pretty-print (cps sexp))))))
+      ("--icps" (pretty-print (cps:cps->sexpr (cps sexp)))))))
 
 #+compiling
 (main (command-line-arguments))
