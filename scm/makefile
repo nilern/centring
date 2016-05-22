@@ -1,4 +1,5 @@
 ctri: ctri.scm centring.schring.import.so centring.value.import.so \
+      centring.vm.import.so centring.instructions.import.so \
       centring.expand.import.so centring.analyze.import.so centring.cps.import.so
 	csc ctri.scm
 

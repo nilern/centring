@@ -10,12 +10,10 @@
        (only data-structures o)
 
        centring.schring
-       (prefix centring.analyze ana:))
+       (prefix centring.analyze ana:)
+       (prefix centring.instructions instr:))
 
   ;;;;
-
-  (define (produces-result? op)
-    (memq op '(iadd isub imul idiv)))
 
   (define (branches? op)
     (eq? op 'brf))
@@ -58,11 +56,12 @@
           args
           (lambda (as)
             (cond
-             ((produces-result? op)
+             ((instr:produces-result? op)
               (let ((res (gensym 'v)))
                 (Primop op as
                         (vector
-                         (Fn (vector res) (vector 'centring.lang/Any)
+                         (Fn (vector res)
+                             (vector (instr:result-type op))
                              (k (Local res)))))))
              ((branches? op))
              ((eq? op 'call))
