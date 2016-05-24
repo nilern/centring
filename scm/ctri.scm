@@ -17,12 +17,14 @@
          (analyze (o ana:analyze exp:expand-all))
          (alphanalyze (o (cute ana:alphatize&specialize 'centring.user <>)
                          analyze))
-         (cps (o cps:ast->cps alphanalyze)))
+         (cps (o cps:ast->cps alphanalyze))
+         (optimize (o cps:contify cps)))
     (match (car arglist)
       ("--esxp" (pretty-print (exp:expand-all sexp)))
       ("--iana" (pretty-print (ana:ast->sexpr (analyze sexp))))
       ("--fana" (pretty-print (ana:ast->sexpr (alphanalyze sexp))))
-      ("--icps" (pretty-print (cps:cps->sexpr (cps sexp)))))))
+      ("--icps" (pretty-print (cps:cps->sexpr (cps sexp))))
+      ("--fcps" (pretty-print (cps:cps->sexpr (optimize sexp)))))))
 
 #+compiling
 (main (command-line-arguments))

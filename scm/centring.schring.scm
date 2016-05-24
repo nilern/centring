@@ -4,6 +4,7 @@
   (import scheme chicken)
   (use coops coops-primitive-objects
        sequences
+       (only data-structures identity)
        (only vector-lib vector-fold vector-map))
 
   ;;;
@@ -15,6 +16,15 @@
 
   (define-method (fmap (f #t) (vec <vector>))
     (vector-map (lambda (_ v) (f v)) vec))
+
+  (define (walk inner outer ast)
+    (outer (fmap inner ast)))
+
+  (define (postwalk f ast)
+    (walk (cute postwalk f <>) f ast))
+
+  (define (prewalk f ast)
+    (walk (cute prewalk f <>) identity (f ast)))
 
   (define-generic (fold f v coll))
 
