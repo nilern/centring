@@ -6,6 +6,7 @@
        matchable
 
        centring.schring
+       (prefix centring.value val:)
        (prefix centring.vm vm:))
 
   ;;;; Instruction Type and Table
@@ -38,15 +39,19 @@
        (Instruction (quote arg-descrs) (quote conts) #f name))))
 
   (define-syntax instruction-body
-    (syntax-rules (fd index cont)
+    (syntax-rules (fd fd* index cont)
       ;; Fetching an argument (no splats):
-      ((_ fiber (fd adescrs ...) (arg . args) conts body)
+      ((_ fiber (fd . adescrs) (arg . args) conts body)
        (let ((arg (vm:fetch-arg! fiber)))
-         (instruction-body fiber (adescrs ...) args conts body)))
+         (instruction-body fiber adescrs args conts body)))
       ;; Fetching some index (directly from instruction stream):
-      ((_ fiber (index adescrs ...) (arg . args) conts body)
+      ((_ fiber (index . adescrs) (arg . args) conts body)
        (let ((arg (vm:fetch-instr! fiber)))
-         (instruction-body fiber (adescrs ...) args conts body)))
+         (instruction-body fiber adescrs args conts body)))
+      ;; Fetching a variable number of arguments (incl. splats):
+      ((_ fiber fd* (n) conts body)
+       (let ((n (vm:fetch-instr! fiber)))
+         (instruction-body fiber () () conts body)))
       
       ;; Produces a value in register? Fetch the index of the dest register:
       ((_ fiber () (dest) ((cont _)) body)
@@ -104,9 +109,19 @@
 
   ;;; Functions
 
-  ;; (define-instruction call
-  ;;   (fd . fd*) -> ()
-  ;;   (lambda (fiber f n)
+  (define-instruction call
+    (fd . fd*) -> ()
+    (lambda (fiber f n)
+      ;; TODO: calling things that are not Procs
+
+      ;; fetch and flatten the arguments into and use the other register set:
+      (do ((i 0 (add1 i))) ((= i n))
+        (vm:fetch-arg*! fiber (vm:fiber-pregs fiber)))
+      (vm:swap-regs! fiber)
+
+      ;; jump to the beginning of the callee:
+      (vm:fiber-instrs-set! fiber (val:Proc-instrs f))
+      (vm:fiber-ip-set! fiber 0)))
   
   ;;;; Query Instruction Table
 
@@ -116,6 +131,11 @@
   (define (produces-result? op)
     (match (.cont-descrs (hash-table-ref instructions op))
       ((('cont _)) #t)
+      (_ #f)))
+
+  (define (bin-branch? op)
+    (match (.cont-descrs (hash-table-ref instructions op))
+      (('(cont) '(cont)) #t)
       (_ #f)))
 
   (define (result-type op)

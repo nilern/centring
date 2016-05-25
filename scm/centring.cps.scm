@@ -7,16 +7,13 @@
        coops coops-primitive-objects
        sequences
        vector-lib
-       (only data-structures o)
+       (only data-structures o complement)
 
        centring.schring
        (prefix centring.analyze ana:)
        (prefix centring.instructions instr:))
 
   ;;;;
-
-  (define (branches? op)
-    (eq? op 'brf))
 
   (define (symbol->keyword sym)
     (-> sym symbol->string string->keyword))
@@ -40,38 +37,74 @@
   (define (ast->cps ast)
     (define (cps-k ast k)
       (match ast
-        (($ ana:AFn formals types body)
-         (let* ((f (gensym 'f))
-                (ret (gensym 'r))
-                (fn (Fn
-                     (vector-append (vector ret)
-                                    (smap #() convert-formal formals))
-                     (vector-append (vector 'centring.lang/Any)
-                                    (smap #() convert-formal types))
-                     (cps-k body (lambda (v)
-                                   (Primop 'call (vector (Local ret) v) #()))))))
-           (Fix (vector (cons f fn)) (k (Local f)))))
-        (($ ana:APrimop op args)
-         (convert-vector
-          args
-          (lambda (as)
-            (cond
-             ((instr:produces-result? op)
-              (let ((res (gensym 'v)))
-                (Primop op as
-                        (vector
-                         (Fn (vector res)
-                             (vector (instr:result-type op))
-                             (k (Local res)))))))
-             ((branches? op))
-             ((eq? op 'call))
-             (else (error "TBD" op))))))
+        ((? ana:AFn?)
+         (let ((f (gensym 'f)))
+           (cps-k (ana:AFix (vector (cons f ast)) (ana:ALocal f)) k)))
+        (($ ana:AFix bindings body)
+         (define (convert-fixfun bind)
+           (match-let (((f . ($ ana:AFn formals types body)) bind)
+                       (ret (gensym 'r)))
+             (cons f
+                   (Fn
+                    (vector-append (vector ret)
+                                   (smap #() convert-formal formals))
+                    (vector-append (vector 'centring.lang/Any)
+                                   (smap #() convert-formal types))
+                    (cps-k body (lambda (v)
+                                  (Primop 'call (vector (Local ret) v) #())))))))
+         (Fix (smap #() convert-fixfun bindings) (cps-k body k)))
+        (($ ana:APrimop op args) (convert-primop op args k))
+        
+        (($ ana:ASplat val) (cps-k val (lambda (v) (k (Splat v)))))
         (($ ana:AGlobal res-ns ns name) (k (Global res-ns ns name)))
         (($ ana:ALocal name) (k (Local name)))
         (($ ana:AConst val) (k (Const val)))
         (_ (error "unable to CPS-convert" ast))))
+
+    (define (convert-primop op args k)
+      (cond
+       ((instr:produces-result? op)
+        (convert-args
+         args
+         (lambda (as)
+           (let ((res (gensym 'v)))
+             (Primop op as
+                     (vector
+                      (Fn (vector res)
+                          (vector (instr:result-type op))
+                          (k (Local res)))))))))
+       ((instr:bin-branch? op)
+        (receive (args conts) (split (complement ana:AFn?) args)
+          (convert-args
+           args
+           (lambda (as)
+             (let* ((ret (gensym 'r))
+                    (res (gensym 'v))
+                    (jump (lambda (v) (Primop 'call (vector (Local ret) v) #())))
+                    (convert-cont
+                     (lambda (cont)
+                       (Fn (smap #() convert-formal (ana:AFn-formals cont))
+                           (smap #() convert-formal (ana:AFn-types cont))
+                           (cps-k (ana:AFn-body cont) jump)))))
+               (Fix (vector (cons ret (Fn (vector res) (vector 'centring.lang/Any)
+                                          (k (Local res)))))
+                    (Primop op as (smap #() convert-cont conts))))))))
+       ((eq? op 'call)
+        (convert-args
+         args
+         (lambda (as)
+           (let* ((ret (gensym 'r))
+                  (res (gensym 'v))
+                  (jump (lambda (v) (Primop 'call (vector (Local ret) v) #()))))
+             (Fix (vector (cons ret
+                                (Fn (vector res) (vector 'centring.lang/Any)
+                                    (k (Local res)))))
+                  (Primop 'call (vector-append (subvector as 0 1)
+                                               (vector (Local ret))
+                                               (subvector as 1)) #()))))))
+       (else (error "unable to CPS-convert primop" ast))))
     
-    (define (convert-vector vec k)
+    (define (convert-args vec k)
       (let* ((len (vector-length vec))
              (res (make-vector len)))
         (define (cpsv i)
@@ -108,11 +141,22 @@
        (fmap (cute fold-cps f <>) (.args node))
        (fmap (cute fold-cps f <>) (.conts node))))
 
+  (define-method (fold-cps (f #t) (node <Splat>))
+    (f node (fold-cps f (.val node))))
+
+  (define-method (fold-cps (f #t) (node <Global>))
+    (f node))
+
+  (define-method (fold-cps (f #t) (node <Clover>))
+    (f node))
+
   (define-method (fold-cps (f #t) (node <Local>))
     (f node))
 
   (define-method (fold-cps (f #t) (node <Const>))
     (f node))
+
+  ;;;
 
   (define-method (fmap (f #t) (node <Fn>))
     (Fn (.formals node) (.types node) (f (.body node))))
@@ -173,7 +217,21 @@
       (#(('$k (res) (t) br))
        `($let ((,res ,(symbol->keyword t)
                      (,(symbol-append '% (.op node)) ,@(vector->list ars))))
-              ,br))))
+              ,br))
+      (_
+       `(,(symbol-append '% (.op node)) ,@(vector->list ars)
+         ,@(vector->list krs)))))
+
+  (define-method (cps->sexpr-rf (node <Splat>) ar)
+    `($... ,ar))
+
+  (define-method (cps->sexpr-rf (node <Global>))
+    (symbol-append (unwrap-or (.ns node) '@@)
+                   ;'<= (.resolution-ns node)
+                   ana:ns-sep (.name node)))
+
+  (define-method (cps->sexpr-rf (node <Clover>))
+    `(@ ,(.index node)))
 
   (define-method (cps->sexpr-rf (node <Local>))
     (.name node))
@@ -190,7 +248,7 @@
      (f f)))
 
   ;;;; Contification
-
+                 
   ;;; ATM this is trivial
 
   (define (contify cexp)
@@ -205,5 +263,4 @@
                                conts)))
         (_ node)))
     (prewalk cfy cexp)))
-                 
                  
