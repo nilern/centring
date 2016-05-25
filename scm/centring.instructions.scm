@@ -55,6 +55,9 @@
       ;; A bidirectional conditional branch? Just need the body:
       ((_ fiber () () ((cont) (cont)) body)
        (instruction-body fiber () () () body))
+      ;; Halt? Eval body and return value:
+      ((_ fiber () () #f (body ...))
+       (begin body ...))
 
       ;; Splice in the body and dispatch next instruction:
       ((_ fiber () () () (body ...))
@@ -94,7 +97,21 @@
       (unless c
         (vm:fiber-ip-set! fiber ip*))))
 
+  (define-instruction halt
+    (fd) -> #f
+    (lambda (fiber res)
+      res))
+
+  ;;; Functions
+
+  ;; (define-instruction call
+  ;;   (fd . fd*) -> ()
+  ;;   (lambda (fiber f n)
+  
   ;;;; Query Instruction Table
+
+  (define (instr-proc op)
+    (.code (hash-table-ref instructions op)))
 
   (define (produces-result? op)
     (match (.cont-descrs (hash-table-ref instructions op))

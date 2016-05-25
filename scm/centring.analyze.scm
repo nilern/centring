@@ -135,7 +135,7 @@
 
   (define-method (ast->sexpr-rf (node <AGlobal>))
     (symbol-append (unwrap-or (.ns node) '@@)
-                   '<= (.resolution-ns node)
+                   ;'<= (.resolution-ns node)
                    ns-sep (.name node)))
 
   (define-method (ast->sexpr-rf (node <ASplat>) ir)

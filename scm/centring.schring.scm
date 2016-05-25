@@ -75,23 +75,35 @@
                                 (,(r 'rec) ,classname))
            (,(rec-accessorize recname slotname) ,(r 'rec))))
        
+       (define (setter recname classname slotname)
+         `(,(r 'define-method) ((setter ,(symbol-append '|.| slotname))
+                                (,(r 'rec) ,classname)
+                                (,(r 'val) #t))
+           (,(r 'set!) (,(rec-accessorize recname slotname) ,(r 'rec)) ,(r 'val))))
+       
        (let* ((recname (caadr form))
               (classname (classify recname))
-              (slotnames (cdadr form)))
+              (slotnames (cdadr form))
+              (super (if (= (length form) 3)
+                       (caddr form)
+                       (r '<primitive-object>))))
          `(,(r 'begin)
            ;; The record type (for constructor, pattern matching)
            (,(r 'define-record-type) ,recname
             (,recname ,@slotnames) ,(predicativize recname)
             ,@(map (lambda (slotname)
-                     `(,slotname ,(rec-accessorize recname slotname)))
+                     (let ((axor (rec-accessorize recname slotname)))
+                     `(,slotname ,axor (setter ,axor))))
                    slotnames))
            ;; The corresponding class (for dispatch):
-           (,(r 'define-primitive-class) ,classname
+           (,(r 'define-primitive-class) ,classname (,super)
             ,(predicativize recname))
            ;; Dot-functions (for nicer field access):
-           ,@(map (lambda (slotname)
-                    (accessor recname classname slotname))
-                  slotnames))))))
+           ,@(apply append
+                    (map (lambda (slotname)
+                           (list (accessor recname classname slotname)
+                                 (setter recname classname slotname)))
+                         slotnames)))))))
   
   (define-syntax define-enum
     (er-macro-transformer
@@ -99,41 +111,13 @@
        (define (classify recname)
          (symbol-append '< recname '>))
        
-       (define (predicativize recname)
-         (symbol-append recname '?))
-       
-       (define (rec-accessorize recname slotname)
-         (symbol-append recname '- slotname))
-       
-       (define (accessor recname classname slotname)
-         `(,(r 'define-method) (,(symbol-append '|.| slotname)
-                                (,(r 'rec) ,classname))
-           (,(rec-accessorize recname slotname) ,(r 'rec))))
-       
        (let* ((abstract (cadr form))
               (variants (cddr form))
               (abstract-class (classify abstract)))
          `(,(r 'begin)
             (,(r 'define-class) ,abstract-class) ; abstract supertype
             ,@(map                               ; variants/subtypes
-               (lambda (variant)
-                 (let* ((recname (car variant))
-                        (classname (classify recname))
-                        (slotnames (cdr variant)))
-                   `(,(r 'begin)
-                     ;; The record type (for constructor, pattern matching)
-                     (,(r 'define-record-type) ,recname
-                      (,recname ,@slotnames) ,(predicativize recname)
-                      ,@(map (lambda (slotname)
-                               `(,slotname ,(rec-accessorize recname slotname)))
-                             slotnames))
-                     ;; The corresponding class (for dispatch):
-                     (,(r 'define-primitive-class) ,classname (,abstract-class)
-                      ,(predicativize recname))
-                     ;; Dot-functions (for nicer field access):
-                     ,@(map (lambda (slotname)
-                              (accessor recname classname slotname))
-                            slotnames))))
+               (lambda (variant) `(defrecord ,variant ,abstract-class))
                variants))))))
 
   (define-syntax doseq

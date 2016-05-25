@@ -18,4 +18,11 @@
     (receive (_ name) (ns-name sym) name))
 
   (define (ns sym)
-    (receive (ns _) (ns-name sym) ns)))
+    (receive (ns _) (ns-name sym) ns))
+
+  (define-record Proc
+    name
+    instrs
+    consts
+    global-names
+    local-names))

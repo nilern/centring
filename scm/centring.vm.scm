@@ -2,6 +2,8 @@
   *
 
   (import scheme chicken)
+  (use dyn-vector
+       centring.value)
 
   ;;;; Fibers
 
@@ -10,7 +12,9 @@
     pregs
     
     instrs
-    ip)
+    ip
+
+    consts)
 
   ;;; instrs
 
@@ -32,21 +36,33 @@
 
   (define (decode-fetch-descr fiber i)
     (case (bitwise-and i 3)
-      ((0) (local-ref fiber (arithmetic-shift i -2)))
+      ((0) (local-ref fiber (arithmetic-shift i -3)))
       ;; ((1) (clover-ref fiber (arithmetic-shift i -2)))
-      ;; ((2) (const-ref fiber (arithmetic-shift i -2)))
+      ((2) (const-ref fiber (arithmetic-shift i -3)))
       ;; ((3) (global-ref fiber (arithmetic-shift i -2)))
       ))
 
   ;;; locals
 
   (define (local-ref fiber i)
-    (vector-ref (fiber-aregs fiber) i))
+    (dynvector-ref (fiber-aregs fiber) i))
 
   (define (local-set! fiber i v)
-    (vector-set! (fiber-aregs fiber) i v))
+    (dynvector-set! (fiber-aregs fiber) i v))
+
+  ;;; constants
+
+  (define (const-ref fiber i)
+    (vector-ref (fiber-consts fiber) i))
 
   ;;;; Interpret Threadcode
+
+  (define (run! fiber proc)
+    (fiber-consts-set! fiber (Proc-consts proc))
+    
+    (fiber-instrs-set! fiber (Proc-instrs proc))
+    (fiber-ip-set! fiber 0)
+    (execute-1! fiber))
 
   (define (execute-1! fiber)
     ((fetch-instr! fiber) fiber)))
