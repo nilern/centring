@@ -14,21 +14,6 @@
 
   ;;;
 
-  (define (dynvector-push! dv v)
-    (dynvector-set! dv (dynvector-length dv) v)
-    (dynvector-length dv))
-
-  (define (dvset-push! dv v)
-    (or (dynvector-index (cute eq? v <>) dv)
-        (sub1 (dynvector-push! dv v))))
-
-  (define (dynvector->vector dv)
-    (let ((res (make-vector (dynvector-length dv))))
-      (dynvector-for-each (lambda (i v) (vector-set! res i v)) dv)
-      res))
-
-  ;;;
-
   (defrecord (ProcBuilder name instrs consts global-names local-names))
 
   (defrecord (Instr op args))

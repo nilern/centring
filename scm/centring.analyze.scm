@@ -79,10 +79,10 @@
     (or (fixnum? v) (boolean? v)))
 
   (define (special-form? sym)
-    (and (symbol? sym) (Some? (ns sym)) (eq? (unwrap (ns sym)) 'centring.sf)))
+    (and (symbol? sym) (eq? (ns sym) 'centring.sf)))
 
   (define (intrinsic? sym)
-    (and (symbol? sym) (Some? (ns sym)) (eq? (unwrap (ns sym)) 'centring.intr)))
+    (and (symbol? sym) (eq? (ns sym) 'centring.intr)))
 
   ;;;;
 
@@ -134,7 +134,7 @@
     `(,(symbol-append '% (.op node)) ,@(vector->list br)))
 
   (define-method (ast->sexpr-rf (node <AGlobal>))
-    (symbol-append (unwrap-or (.ns node) '@@)
+    (symbol-append (or (.ns node) '@@)
                    ;'<= (.resolution-ns node)
                    ns-sep (.name node)))
 
@@ -195,6 +195,13 @@
         (($ APrimop 'set-ns! #(($ AConst ns*)))
          (let ((env* (assoc-ns env ns*)))
            (values node env*)))
+
+        (($ APrimop 'set-global! #(($ AGlobal _ ns name) val))
+         (if ns
+           (error "can't def ns-qualified var" ns name)
+           (receive (val* env*) (alph&spec val env)
+             (values (APrimop 'set-global! (vector (AGlobal (.ns env) ns name) val*))
+                     env*))))
         
         (($ APrimop 'call operands)
          (receive (args* env*)
@@ -240,12 +247,12 @@
 
   (define (replace-global env g)
     (match g
-      (($ AGlobal #f (and (? Some?) ns) name)
-       (AGlobal (.ns env) ns name))
-      (($ AGlobal #f (and (? None?) ns) name)
+      (($ AGlobal #f (and #f ns) name)
        (aif (map-ref (.replacements env) name #f)
          (ALocal it)
-         (AGlobal (.ns env) ns name))))))
+         (AGlobal (.ns env) ns name)))
+      (($ AGlobal #f ns name)
+       (AGlobal (.ns env) ns name)))))
             
         
                 

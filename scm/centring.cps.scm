@@ -89,6 +89,18 @@
                (Fix (vector (cons ret (Fn (vector res) (vector 'centring.lang/Any)
                                           (k (Local res)))))
                     (Primop op as (smap #() convert-cont conts))))))))
+       ((instr:statement? op)
+        (convert-args
+         args
+         (lambda (as)
+           (Primop op as
+                   (vector
+                    (Fn #() #()
+                        (cps-k
+                         (ana:APrimop 'record (vector (ana:AGlobal 'centring.lang
+                                                                   'centring.lang
+                                                                   'Tuple)))
+                         k)))))))
        ((eq? op 'call)
         (convert-args
          args
@@ -226,7 +238,7 @@
     `($... ,ar))
 
   (define-method (cps->sexpr-rf (node <Global>))
-    (symbol-append (unwrap-or (.ns node) '@@)
+    (symbol-append (or (.ns node) '@@)
                    ;'<= (.resolution-ns node)
                    ana:ns-sep (.name node)))
 

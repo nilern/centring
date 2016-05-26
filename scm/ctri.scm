@@ -2,6 +2,7 @@
      (only extras read-file pretty-print)
      (only data-structures o)
      (only ports with-input-from-string)
+     (srfi 69)
      dyn-vector
 
      (prefix centring.expand exp:)
@@ -9,7 +10,8 @@
      (prefix centring.cps cps:)
      (prefix centring.emit emit:)
      (prefix centring.value val:)
-     (prefix centring.vm vm:))
+     (prefix centring.vm vm:)
+     (prefix centring.ns ns:))
 
 (keyword-style #:prefix)
 
@@ -40,11 +42,15 @@
       ("--fcps" (pretty-print (cps:cps->sexpr (optimize sexp))))
       ("--asm"  (pretty-print (emit:procb->sexpr (emit sexp))))
       ("--run"
-       (let ((proc (emit:assemble (emit sexp)))
-             (fiber (vm:make-fiber (make-dynvector 0 (void))
-                                   (make-dynvector 0 (void))
-                                   #f 0
-                                   #f)))
+       (let* ((proc (emit:assemble (emit sexp)))
+              (ns-registry (make-hash-table))
+              (centring.user (ns:ns-ref ns-registry 'centring.user))
+              (fiber (vm:make-fiber #f 0
+                                    centring.user
+                                    ns-registry
+                                    (make-dynvector 0 (void))
+                                    (make-dynvector 0 (void))
+                                    #f #f)))
          (pretty-print (vm:run! fiber proc)))))))
                      
 

@@ -62,7 +62,7 @@
       (('def (name . formals) body)
        `(def ,name (fn ,formals ,body)))
       (('def name val)
-       `(centring.intr/set-global! (quote ,name) ,val))
+       `(centring.intr/set-global! ,name ,val))
            
       (_ sexp)))     
 

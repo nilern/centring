@@ -3,18 +3,21 @@
 
   (import scheme chicken)
   (use dyn-vector
-       centring.value)
+       (srfi 69)
+       centring.value
+       (prefix centring.ns ns:))
 
   ;;;; Fibers
 
   (define-record fiber
-    aregs
-    pregs
-    
     instrs
     ip
-
-    consts)
+    curr-ns
+    ns-reg
+    aregs
+    pregs
+    consts
+    globals)
 
   ;;; instrs
 
@@ -61,6 +64,24 @@
       ;; ((3) (global-ref fiber (arithmetic-shift i -2)))
       ))
 
+  ;;; globals
+
+  (define-record Global
+    resolution-ns
+    ns
+    name)
+
+  (define (global-ref fiber i)
+    (let ((glob (vector-ref (fiber-globals fiber) i))
+          (ns-reg (fiber-ns-reg fiber)))
+      (ns:lookup ns-reg (fiber-curr-ns fiber)
+                 (hash-table-ref ns-reg (Global-resolution-ns glob))
+                 (Global-ns glob) (Global-name glob))))
+
+  (define (global-set! fiber i v)
+    (let ((glob (vector-ref (fiber-globals fiber) i)))
+      (ns:extend! (fiber-curr-ns fiber) (Global-name glob) v)))
+
   ;;; locals
 
   (define (local-ref fiber i)
@@ -84,6 +105,7 @@
   ;; HACK: this overlaps with the call instruction:
   (define (run! fiber proc)
     (fiber-consts-set! fiber (Proc-consts proc))
+    (fiber-globals-set! fiber (Proc-global-names proc))
     
     (fiber-instrs-set! fiber (Proc-instrs proc))
     (fiber-ip-set! fiber 0)

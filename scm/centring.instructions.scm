@@ -3,6 +3,7 @@
 
   (import scheme chicken)
   (use (srfi 69)
+       dyn-vector
        matchable
 
        centring.schring
@@ -49,14 +50,17 @@
        (let ((arg (vm:fetch-instr! fiber)))
          (instruction-body fiber adescrs args conts body)))
       ;; Fetching a variable number of arguments (incl. splats):
-      ((_ fiber fd* (n) conts body)
+      ((_ fiber fd* (n . adescrs) conts body)
        (let ((n (vm:fetch-instr! fiber)))
-         (instruction-body fiber () () conts body)))
+         (instruction-body fiber () adescrs conts body)))
       
       ;; Produces a value in register? Fetch the index of the dest register:
       ((_ fiber () (dest) ((cont _)) body)
        (let ((dest (vm:fetch-instr! fiber)))
          (instruction-body fiber () () () body)))
+      ;; Statement? Just need the body:
+      ((_ fiber () () ((cont)) body)
+       (instruction-body fiber () () () body))
       ;; A bidirectional conditional branch? Just need the body:
       ((_ fiber () () ((cont) (cont)) body)
        (instruction-body fiber () () () body))
@@ -71,6 +75,23 @@
          (vm:execute-1! fiber)))))
 
   ;;;; Instructions
+
+  ;;; Namespace Operations
+
+  (define-instruction set-global!
+    (index fd) -> ((cont))
+    (lambda (fiber i v)
+      (vm:global-set! fiber i v)))
+
+  ;;; Construction
+
+  (define-instruction record
+    (fd . fd*) --> ((cont Any))
+    (lambda (fiber t n d)
+      (let ((res (make-dynvector 1 t)))
+        (do ((i 0 (add1 i))) ((= i n))
+          (vm:fetch-arg*! fiber res))
+        (vm:local-set! fiber d (dynvector->vector res)))))
 
   ;;; Arithmetic
 
@@ -119,6 +140,10 @@
         (vm:fetch-arg*! fiber (vm:fiber-pregs fiber)))
       (vm:swap-regs! fiber)
 
+      ;; switch other contexts to those of the callee:
+      (vm:fiber-consts-set! fiber (val:Proc-consts f))
+      (vm:fiber-globals-set! fiber (val:Proc-global-names f))
+
       ;; jump to the beginning of the callee:
       (vm:fiber-instrs-set! fiber (val:Proc-instrs f))
       (vm:fiber-ip-set! fiber 0)))
@@ -131,6 +156,11 @@
   (define (produces-result? op)
     (match (.cont-descrs (hash-table-ref instructions op))
       ((('cont _)) #t)
+      (_ #f)))
+
+  (define (statement? op)
+    (match (.cont-descrs (hash-table-ref instructions op))
+      ((('cont)) #t)
       (_ #f)))
 
   (define (bin-branch? op)
