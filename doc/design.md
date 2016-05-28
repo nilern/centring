@@ -1,3 +1,116 @@
+# Data and Types
+
+## Bits Types
+
+* Int
+* Float
+* Bool
+* Char
+
+## Record Types
+
+    (defrecord (Point x y))
+
+    (defrecord (Tuple (... vals)))
+
+    (defrecord (Array (... (mut vals))))
+
+    (defrecord (Closure proc (... (mut vals))))
+
+<!-- parametric types? -->
+
+## Kinds
+
+    (defkind Any)
+
+    (defkind (Callable T)
+      (call T (... Any)))
+
+    (defkind (Functor T)
+      (fmap Callable T))
+
+<!-- inheritance (i.e. Monad <: Applicative <: Functor)? -->
+
+## Variants
+
+# Code and Callables
+
+Like all Lisps, Centring is based on **application**. In very general terms, an
+(unquoted) list is interpreted in this manner:
+
+    (let ((code '(foo bar baz quux))
+          (((List.Pair op args) (map eval code)))
+      (apply op args))
+
+In Centring as in other Lisps there are actually multiple variations on this
+theme.
+
+## Macros
+
+Macros are expanded in the macroexpansion phase. A macro receives an unevaluated
+S-expression and returns another. This results in a sort of call-by-name
+evaluation. This is necessary since macros often expand into forms that are also
+macro calls.
+
+* In Centring, there are both function-macros and symbol-macros.
+* Macroexpansion is hygienic (using the sets-of-scopes approach).
+
+## Special Forms
+
+Special forms implement fundamental aspects of the language such as
+
+* fn
+* letrec
+* call-cc
+
+They reside in the pseudo-namespace `centring.sf` and are specially handled by
+the compiler (and in fact form the backbone of the IR).
+
+Since they don't exist at runtime, special forms can only be directly applied.
+
+## Intrinsics
+
+Intrinsics represent fundamental operations that are provided by the execution
+platform such as
+
+* iadd
+* record (allocate record)
+* brf (implements `if`)
+* call
+
+They reside in the pseudo-namespace `centring.intr` and are handled by the
+compiler (mostly in the code generation phase).
+
+Since they don't exist at runtime, intrinsics can only be directly applied.
+
+## Multimethods
+
+* eval callee and args, perform splatting
+* select most specific method of callee based on args' values/types/kinds
+  - panic if none found
+* bind formals to args
+* jump to body
+
+<!-- predicate dispatch? -->
+
+### Efficient implementation
+
+Common cases can be optimized:
+
+0. Multimethods (Multiple methods, polymorphic callsites etc.)
+1. Closures (Function has just one method.)
+2. Procedures (The one method doesn't close over anything.)
+3. Contification (All calls of the function return to the same location.)
+4. Inlining (Method at callsite is known and cannot change.)
+
+=> think in terms of Callable, not Function/Closure/Procedure/Constructor...
+
+## Callable
+
+can be implemented for any type.
+
+---
+
 # Datatypes
 
 ## Built-In Types
@@ -96,12 +209,12 @@ Unions represent a set of arbitrary types:
 
 These are just good ol' lambdas:
 
-   (fn (x) x)
+    (fn (x) x)
 
 But with the added benefit of argument types, which are checked at call-time
 and can also be used at compile-time for type-checking and optimization:
 
-   (fn (a :Int b :Int) (+ a b))
+    (fn (a :Int b :Int) (+ a b))
 
 ## NativeFns
 
