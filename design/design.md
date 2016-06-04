@@ -1,3 +1,42 @@
+## Compilation Units
+
+After macroexpansion:
+
+    <compilation_unit> ::= <decl>*
+    <decl> ::= <ns> | <require> | <def>
+    <ns> ::= (centring.intr/set-ns! (quote NS_NAME))
+    <require> ::= (centring.intr/require! (centring.sf/quote NS_NAME)*)
+                | (centring.intr/alias! (centring.sf/quote NS_NAME)
+                                        (centring.sf/quote NS_NAME))
+                | (centring.intr/refer! (centring.sf/quote NS_NAME)
+                                        (centring/sf.quote SYMBOL)*)
+    <def> ::= (centring.intr/set-global! BOOL (centring/sf.quote SYMBOL_NAME)*
+                                         <expr>)
+            | (centring.intr/add-method! <expr> <expr>)
+
+<!-- How about FFI? -->
+
+## Compilation Modes
+
+1. In **development mode** runtime namespaces are enabled; all references to
+globals even in the binary itself go through the namespace mechanism so globals
+(even private ones) can be redefined.
+2. In **release mode** runtime namespaces are disabled. Now globals are resolved
+directly and redefinitions are impossible. Private globals can be optimized.
+Public globals cannot be optimized since their call sites and mutations (adding
+methods, for example) are unknown.
+3. The **whole-program mode** can even optimize public globals since it sees the
+external call-sites and mutations as well.
+
+<!-- Implementation should probably start with release mode -->
+
+## Headers
+
+There will be some kind of header format to store
+
+1. Macros
+2. Namespace information
+
 # Data and Types
 
 ## Bits Types
@@ -104,6 +143,8 @@ Common cases can be optimized:
 4. Inlining (Method at callsite is known and cannot change.)
 
 => think in terms of Callable, not Function/Closure/Procedure/Constructor...
+
+*Escaping functions must be multimethods to allow possible extension.*
 
 ## Callable
 
