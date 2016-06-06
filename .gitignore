@@ -9,3 +9,5 @@ scm-vm/ctri
 hs/ctrc
 *.hi
 *.o
+*.pyc
+
