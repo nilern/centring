@@ -1,3 +1,0 @@
-(def (constantly x) (fn (_) x))
-
-((constantly 5) 21)

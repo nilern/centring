@@ -1,9 +1,9 @@
-(module centring.value
-  *
+(module centring.util
+  (ns name ns-name)
 
   (import scheme chicken)
   (use (only (srfi 13) string-index))
-    
+
   (define (ns-name sym)
     (let* ((symstr (symbol->string sym))
            (i (string-index symstr #\/)))
@@ -16,11 +16,4 @@
     (receive (_ name) (ns-name sym) name))
 
   (define (ns sym)
-    (receive (ns _) (ns-name sym) ns))
-
-  (define-record Proc
-    name
-    instrs
-    consts
-    global-names
-    local-names))
+    (receive (ns _) (ns-name sym) ns)))

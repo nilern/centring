@@ -56,7 +56,3 @@
       (var-set! it v)
       (let ((var (make-Var (symbol-append (Ns-name ns) name) v)))
         (hash-table-set! (Ns-mappings ns) name var)))))
-    
-      
-      
-    

@@ -1,0 +1,19 @@
+(ns centring.core)
+
+;; (def (- a b) (and (: a Int) (: b Int))
+;;   (centring.intr/isub a b))
+
+;; (def (* a b) (and (: a Int) (: b Int))
+;;   (centring.intr/imul a b))
+
+;; (def (= a b) (and (: a Int) (: b Int))
+;;   (centring.intr/ieq a b #t #f))
+
+;; (def (> a b) (and (: a Int) (: b Int))
+;;   (centring.intr/igt a b #t #f))
+
+;; (def (zero? n) (: n Int)
+;;   (= n 0))
+
+;; (def (zero n) (: n Int)
+;;   0)

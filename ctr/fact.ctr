@@ -1,10 +1,8 @@
-(centring.intr/set-ns! 'fact.core)
+(ns fact)
+;; (require centring.core)
+;; (refer centring.core :all)
 
-(def (fact n :Int)
-  (letfn (((f m :Int acc :Int)
-            (if (< m 1)
-              1
-              (f (- m 1) (* acc m)))))
-    (f n 1)))
-
-(fact 5)
+;; (def fact
+;;   (fn
+;;     ((n) (? (zero? n)) 1)
+;;     ((n) (? (> n (zero n))) (* n (fact (- n 1))))))
