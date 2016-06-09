@@ -35,10 +35,10 @@
       ((? special-form?) (analyze-sf sexp))
       
       ((? intrinsic?) (analyze-intr sexp))
-
-      ((? symbol?) (analyze-id sexp))
       
       ((? literal?) (make <const> 'val sexp))
+
+      ((? symbol?) (analyze-id sexp))
 
       (_ (error "unable to analyze" sexp))))
 

@@ -39,10 +39,10 @@
   ;; Fetch the var:
   (define (resolve registry ns ns-name name)
     (if ns-name
-      (-> (or (hash-table-ref/default (Ns-aliases ns) ns-name #f)
-              (hash-table-ref registry ns-name))
-          Ns-mappings
-          (hash-table-ref/default name #f)
+      (or (-> (or (hash-table-ref/default (Ns-aliases ns) ns-name #f)
+                  (hash-table-ref registry ns-name))
+              Ns-mappings
+              (hash-table-ref/default name #f))
           (error "unbound variable" ns-name name))
       (or (hash-table-ref/default (Ns-mappings ns) name #f)
           (hash-table-ref/default (Ns-refers ns) name #f)
@@ -57,4 +57,12 @@
     (aif (hash-table-ref/default (Ns-mappings ns) name #f)
       (var-set! it v)
       (let ((var (make-Var (symbol-append (Ns-name ns) name) v)))
-        (hash-table-set! (Ns-mappings ns) name var)))))
+        (hash-table-set! (Ns-mappings ns) name var))))
+
+  (define (alias! ns other as)
+    (hash-table-set! (Ns-aliases ns) as other))
+
+  (define (rename! into from name as)
+    (aif (hash-table-ref/default (Ns-mappings from) name #f)
+      (hash-table-set! (Ns-refers into) as it)
+      (error "cannot refer" (Ns-name from) name))))

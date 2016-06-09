@@ -1,6 +1,6 @@
 (ns fact)
 (require centring.core)
-;; (refer centring.core :all)
+(import centring.core)
 
 ;; (def fact
 ;;   (fn
