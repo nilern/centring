@@ -1,8 +1,10 @@
 (module centring.util
-  (ns name ns-name)
+  (ns name ns-name doseq)
 
   (import scheme chicken)
-  (use (only (srfi 13) string-index))
+  (use (only (srfi 13) string-index)
+       (only sequences for)
+       (only miscmacros define-syntax-rule))
 
   (define (ns-name sym)
     (let* ((symstr (symbol->string sym))
@@ -16,4 +18,7 @@
     (receive (_ name) (ns-name sym) name))
 
   (define (ns sym)
-    (receive (ns _) (ns-name sym) ns)))
+    (receive (ns _) (ns-name sym) ns))
+
+  (define-syntax-rule (doseq (v coll) body ...)
+    (for (lambda (v) body ...) coll)))

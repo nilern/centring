@@ -18,7 +18,7 @@
   (define-class <const> (<ast>)
     ((val :accessor .val)))
   (define-class <global> (<ast>)
-    (;(res-ns accessor: .res-ns)
+    ((res-ns :accessor .res-ns)
      (ns :accessor .ns)
      (name :accessor .name)))
 
@@ -39,6 +39,8 @@
       ((? literal?) (make <const> 'val sexp))
 
       ((? symbol?) (analyze-id sexp))
+
+      ((? pair?) (make <primop> 'op 'call 'args (smap #() analyze sexp)))
 
       (_ (error "unable to analyze" sexp))))
 

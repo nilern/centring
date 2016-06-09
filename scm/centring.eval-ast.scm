@@ -10,7 +10,8 @@
        (only centring.expand expand-all)
        centring.analyze
        (prefix centring.ns ns:)
-       (only centring.rt read-ns))
+       (only centring.rt read-ns)
+       (only centring.util doseq))
 
   ;;;;
 
@@ -77,8 +78,8 @@
        (let ((into (.curr-ns interpreter))
              (from (hash-table-ref (.ns-reg interpreter)
                                    (.val (vector-ref (.args ast) 0)))))
-         (for (lambda (name) (ns:rename! into from name name))
-              (hash-table-keys (ns:Ns-mappings from))))
+         (doseq (name (hash-table-keys (ns:Ns-mappings from)))
+           (ns:rename! into from name name)))
        #t)
       ((set-global!)
        (ns:extend! (.curr-ns interpreter) (.val (vector-ref (.args ast) 0))
