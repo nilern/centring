@@ -42,9 +42,11 @@
       (-> (or (hash-table-ref/default (Ns-aliases ns) ns-name #f)
               (hash-table-ref registry ns-name))
           Ns-mappings
-          (hash-table-ref name))
+          (hash-table-ref/default name #f)
+          (error "unbound variable" ns-name name))
       (or (hash-table-ref/default (Ns-mappings ns) name #f)
-          (hash-table-ref (Ns-refers ns) name))))
+          (hash-table-ref/default (Ns-refers ns) name #f)
+          (error "unbound variable" ns-name name))))
 
   ;; Fetch the value in a var:
   (define (lookup registry ns ns-name name)

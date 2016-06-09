@@ -1,5 +1,5 @@
 (ns fact)
-;; (require centring.core)
+(require centring.core)
 ;; (refer centring.core :all)
 
 ;; (def fact

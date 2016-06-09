@@ -25,17 +25,17 @@
 
         (args:make-option (h help) :none "Display this text.")))
 
-(define (batch sexp options)
+(define (batch sexp options path)
   (cond
    ((assq 'esxp options)
     (->> sexp expand-all pretty-print))
    ((assq 'iana options)
     (->> sexp expand-all analyze ast->sexp pretty-print))
    (else
-    (->> sexp expand-all analyze (eval-ast (make-interpreter)) pretty-print))))
+    (->> sexp expand-all analyze (eval-ast (make-interpreter path)) pretty-print))))
 
-(define (repl)
-  (let* ((itp (make-interpreter))
+(define (repl path)
+  (let* ((itp (make-interpreter path))
          (prompt (lambda () (sprintf "~S> " (Ns-name (.curr-ns itp)))))
          (get-message (condition-property-accessor 'exn 'message))
          (get-arguments (condition-property-accessor 'exn 'arguments)))
@@ -58,12 +58,12 @@
                       (list (current-directory)))))
       (acond
        ((pair? operands)
-        (batch `(do ,@(read-file (car operands))) options))
+        (batch `(do ,@(read-file (car operands))) options ctr-path))
        ((assq 'e options)
-        (batch (read (open-input-string (cdr it))) options))
+        (batch (read (open-input-string (cdr it))) options ctr-path))
        ((assq 'h options)
         (print (args:usage opts)))
-       (else (repl)))))
+       (else (repl ctr-path)))))
   (exit 0))
 
 (main (command-line-arguments))

@@ -1,13 +1,15 @@
 (module centring.analyze
   (analyze ast->sexp
-   <const> <do> <primop>
-   .val .stmts .op .args)
+   <const> <global> <do> <primop>
+   .val .ns .name .stmts .op .args)
 
   (import scheme chicken)
   (use matchable
        sequences
        coops
-       (only centring.util ns name))
+       (only anaphora aif)
+        
+       (only centring.util ns name ns-name))
 
   ;;;;
 
@@ -15,6 +17,10 @@
 
   (define-class <const> (<ast>)
     ((val :accessor .val)))
+  (define-class <global> (<ast>)
+    (;(res-ns accessor: .res-ns)
+     (ns :accessor .ns)
+     (name :accessor .name)))
 
   (define-class <do> (<ast>)
     ((stmts :accessor .stmts)))
@@ -29,6 +35,8 @@
       ((? special-form?) (analyze-sf sexp))
       
       ((? intrinsic?) (analyze-intr sexp))
+
+      ((? symbol?) (analyze-id sexp))
       
       ((? literal?) (make <const> 'val sexp))
 
@@ -48,6 +56,10 @@
     (make <primop>
       'op (name (car sexp))
       'args (smap #() analyze (cdr sexp))))
+
+  (define (analyze-id id)
+    (call-with-values (lambda () (ns-name id))
+      (cute make <global> 'ns <> 'name <>)))
 
   (define (special-form? sexp)
     (and (pair? sexp)
@@ -71,6 +83,11 @@
       (if (and (symbol? v) (not (keyword? v)))
         `($quote ,v)
         v)))
+
+  (define-method (ast->sexp (ast <global>))
+    (aif (.ns ast)
+      (symbol-append it '/ (.name ast))
+      (.name ast)))
 
   (define-method (ast->sexp (ast <do>))
     `($do ,@(smap '() ast->sexp (.stmts ast))))

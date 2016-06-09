@@ -19,6 +19,8 @@
        `(centring.intr/require! (quote ,ns-name)))
       (('refer ns-name (? (cute eq? :all <>)))
        `(centring.intr/refer! (quote ,ns-name) :all))
+      (('def var val)
+       `(centring.intr/set-global! (quote ,var) ,val))
 
       (_ sexp)))
 
