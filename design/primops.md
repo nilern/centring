@@ -97,7 +97,16 @@ Unary `-`.
 
 =, !=, >, <, >= and <=.
 
-# Calls
+# Branches
+
+\((c) \rightarrow \kappa_1()|\kappa_2()
+  \quad\mathrm{where}\quad c: Bool\)
+
+    (%brf c ($cont () ...1) ($cont () ...2))
+
+If c is `True`, evaluate `...1`. Else evaluate `...2`.
+
+<!-- If this is used to implement dispatch, how to ensure `(: c Bool)`? -->
 
 \((f, as...) \rightarrow \top(d)|\bot(UnCallable|ArgCount|NoMethod...)
   \quad\mathrm{where}\quad f::Callable\)

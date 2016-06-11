@@ -2,7 +2,7 @@
 (require centring.core)
 (import centring.core)
 
-;; (def fact
-;;   (fn
-;;     ((n) (? (zero? n)) 1)
-;;     ((n) (? (> n (zero n))) (* n (fact (- n 1))))))
+(def fact
+  (fn
+    ((n) (zero? n) 1)
+    ((n) (> n (zero n)) (* n (fact (- n 1))))))

@@ -1,7 +1,9 @@
 (module centring.analyze
   (analyze ast->sexp
-   <const> <global> <do> <primop>
-   .val .ns .name .stmts .op .args)
+   <const> <global>
+   .val .res-ns .ns .name
+   <do> <fn> <primop> <fix> <do>
+   .arg .cases .op .args .bindings .body .stmts)
 
   (import scheme chicken)
   (use matchable
@@ -22,11 +24,17 @@
      (ns :accessor .ns)
      (name :accessor .name)))
 
-  (define-class <do> (<ast>)
-    ((stmts :accessor .stmts)))
+  (define-class <fn> (<ast>)
+    ((arg :accessor .arg)
+     (cases :accessor .cases)))
   (define-class <primop> (<ast>)
     ((op :accessor .op)
      (args :accessor .args)))
+  (define-class <fix> (<ast>)
+    ((bindings :accessor .bindings)
+     (body :accessor .body)))
+  (define-class <do> (<ast>)
+    ((stmts :accessor .stmts)))
 
   ;;;;
 
@@ -46,13 +54,25 @@
 
   (define (analyze-sf sexp)
     (match (cons (name (car sexp)) (cdr sexp))
+      (('fn arg . cases)
+       (make <fn>
+         'arg arg
+         'cases (map (cute smap #() analyze <>) cases)))
+
+      (('letrec bindings body)
+       (make <fix>
+         'bindings (smap #()
+                         (match-lambda ((var val) (cons var (analyze val))))
+                         bindings)
+         'body (analyze body)))
+      
       (('do . stmts)
        (make <do> 'stmts (smap #() analyze stmts)))
       
       (('quote (and v (or (? literal?) (? symbol?))))
        (make <const> 'val v))
 
-      (_ (error "ivalid special form" sexp))))
+      (_ (error "invalid special form" sexp))))
 
   (define (analyze-intr sexp)
     (make <primop>
@@ -87,13 +107,20 @@
         v)))
 
   (define-method (ast->sexp (ast <global>))
-    (aif (.ns ast)
-      (symbol-append it '/ (.name ast))
-      (.name ast)))
+    (symbol-append (aif (.ns ast) it '@@) '/ (.name ast)))
 
-  (define-method (ast->sexp (ast <do>))
-    `($do ,@(smap '() ast->sexp (.stmts ast))))
+  (define-method (ast->sexp (ast <fn>))
+    `($fn ,(.arg ast) ,@(map (cute smap '() ast->sexp <>) (.cases ast))))
 
   (define-method (ast->sexp (ast <primop>))
     `(,(symbol-append '% (.op ast))
-      ,@(smap '() ast->sexp (.args ast)))))
+      ,@(smap '() ast->sexp (.args ast))))
+
+  (define-method (ast->sexp (ast <fix>))
+    `($letrec ,(smap '()
+                     (match-lambda ((var . val) (list var (ast->sexp val))))
+                     (.bindings ast))
+              ,(ast->sexp (.body ast))))
+
+  (define-method (ast->sexp (ast <do>))
+    `($do ,@(smap '() ast->sexp (.stmts ast)))))
