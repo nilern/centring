@@ -16,9 +16,9 @@
   ;;;;
 
   (define-class <interpreter> ()
-    ((ns-reg :accessor .ns-reg)
-     (curr-ns :accessor .curr-ns)
-     (path :accessor .path)))
+    ((ns-reg accessor: .ns-reg)
+     (curr-ns accessor: .curr-ns)
+     (path accessor: .path)))
 
   (define (make-interpreter path)
     (let* ((ns-reg (make-hash-table))

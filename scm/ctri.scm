@@ -5,34 +5,40 @@
      (only clojurian-syntax ->>)
      (only anaphora aif acond awhile)
      (only linenoise linenoise history-add)
+     (only data-structures o)
      args
      
      (only centring.expand expand-all)
-     (only centring.analyze analyze ast->sexp)
+     (only centring.analyze analyze alphatize&specialize ast->sexp)
      (only centring.eval-ast make-interpreter eval-ast .curr-ns)
      (only centring.ns Ns-name))
 
 (keyword-style #:prefix)
 
 (define opts
-  (list (args:make-option (esxp) :none "Just expand S-expr.")
-        (args:make-option (iana) :none "Just build and print AST.")
+  (list (args:make-option (esxp) none: "Just expand S-expr.")
+        (args:make-option (iana) none: "Just build and print AST.")
+        (args:make-option (fana) none: "Just build, alphatize and print AST.")
 
-        (args:make-option (e) (:required "EXPR") "Use EXPR as input.")
+        (args:make-option (e) (required: "EXPR") "Use EXPR as input.")
 
-        (args:make-option (path) (:required "PATH")
+        (args:make-option (path) (required: "PATH")
                           "Use PATH (colon-separated) as the CTR_PATH")
 
-        (args:make-option (h help) :none "Display this text.")))
+        (args:make-option (h help) none: "Display this text.")))
 
-(define (batch sexp options path)
+(define (make-action options path)
   (cond
    ((assq 'esxp options)
-    (->> sexp expand-all pretty-print))
+    expand-all)
    ((assq 'iana options)
-    (->> sexp expand-all analyze ast->sexp pretty-print))
+    (o ast->sexp analyze expand-all))
+   ((assq 'fana options)
+    (o ast->sexp
+       (cute alphatize&specialize 'centring.user <>) analyze expand-all))
    (else
-    (->> sexp expand-all analyze (eval-ast (make-interpreter path)) pretty-print))))
+    (o (cute eval-ast (make-interpreter path) <>)
+       analyze expand-all))))
 
 (define (repl path)
   (let* ((itp (make-interpreter path))
@@ -58,9 +64,11 @@
                       (list (current-directory)))))
       (acond
        ((pair? operands)
-        (batch `(do ,@(read-file (car operands))) options ctr-path))
+        (pretty-print
+         ((make-action options ctr-path) `(do ,@(read-file (car operands))))))
        ((assq 'e options)
-        (batch (read (open-input-string (cdr it))) options ctr-path))
+        (pretty-print
+         ((make-action options ctr-path) (read (open-input-string (cdr it))))))
        ((assq 'h options)
         (print (args:usage opts)))
        (else (repl ctr-path)))))

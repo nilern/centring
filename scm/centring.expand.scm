@@ -33,6 +33,7 @@
                binds)
          (do ,@body)))
       (('fn . cases)
+       ;; FIXME: prevent macroexpansion of logical connectives in conditions:
        (define (prefix-bindings axs body)
          (hash-table-fold axs (lambda (k v acc) `(let* ((,k ,v)) ,acc)) body))
        (define (replace rpls e)
@@ -42,7 +43,8 @@
            ,@(map (match-lambda
                    ((formals cond . body)
                     (receive (ltest axs) (destructure arg formals)
-                      `((and ,ltest ,(postwalk (cute replace axs <>) cond))
+                      `((and (: ,arg centring.lang/Tuple) ,ltest
+                             ,(postwalk (cute replace axs <>) cond))
                         ,(prefix-bindings axs `(do ,@body))))))
                    cases))))
       
@@ -72,7 +74,7 @@
             (if (and (centring.intr/defined? (quote ,name))
                      (: ,name centring.lang/Fn))
               (centring.intr/fn-merge! ,name ,new-case)
-              (centring.intr/set-global! ,name ,new-case)))))
+              (centring.intr/set-global! (quote ,name) ,new-case)))))
       (('let* ((var val) . binds) . body)
        `(centring.intr/apply
          (centring.sf/fn ,var (#t (let* ,binds ,@body)))
@@ -82,7 +84,9 @@
       (('if cond then else)
        (let ((c (gensym 'c)))
          `(centring.intr/apply
-           (centring.sf/fn ,c (,c ,then) (#t ,else))
+           (centring.sf/fn ,c
+                           ((= ,c #t) ,then)
+                           ((= ,c #f) ,else))
            ,cond)))
 
       (_ sexp)))
@@ -92,10 +96,10 @@
     (let ((accesses (make-hash-table)))
       (let recur ((pat pat) (i 0))
         (if (null? pat)
-          (values `(= (centring.intr/block-length ,arg) ,i) accesses)
+          (values `(= (centring.intr/rlen ,arg) ,i) accesses)
           (begin
             (hash-table-set! accesses (car pat)
-                             `(centring.intr/block-ref ,arg ,i))
+                             `(centring.intr/rref ,arg ,i))
             (recur (cdr pat) (add1 i)))))))
 
   (define (expand expr)

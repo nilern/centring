@@ -37,10 +37,34 @@ Import all the vars in the namespace named by `ns` into the current namespace.
 \((n, v) \rightarrow \kappa() \quad\mathrm{where}\quad n: Symbol\)
 
     (%set-global! n v [($cont () ...)])
-Set the value of the var called `name` in the current namespace to `val`.
+Set the value of the var called `n` in the current namespace to `v`.
+
+\((n, v) \rightarrow \kappa(d)
+  \quad\mathrm{where}\quad n: Symbol \land d: Bool\)
+
+    (%defined? n [($cont (d) ...)])
+
+Will dereferencing the var called `n` yield a value?
 
 <!-- These should probably say `(? (unqualified-symbol? ns-name))` or sth. -->
 <!-- Need to address public/private and syntax/runtime distinctions -->
+
+# Records
+
+    (%rec t vs...)
+
+
+    (%srec)
+
+\((r) \rightarrow \kappa(l) \quad\mathrm{where}\quad r::Record \land l: Int\)
+
+    (%rlen r)
+
+
+    (%rref r i)
+
+
+    (%rset! r i v)
 
 # Arithmetic
 
@@ -126,3 +150,11 @@ If c is `True`, evaluate `...1`. Else evaluate `...2`.
 
 *"in `f`" is taken to mean the methods of `f` (if `(: f Fn)`) or the methods of
   `centring.lang/call` pertaining to `f` otherwise.*
+
+\((f, a) \rightarrow \top(d)|\bot(UnCallable|ArgCount|NoMethod...)
+  \quad\mathrm{where}\quad f::Callable\)
+
+   (%apply f a)
+
+Like `%call` but just uses `a` as the argument (i.e. doesn't construct a tuple
+in secret).
