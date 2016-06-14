@@ -3,19 +3,24 @@
    .val .res-ns .ns .name
    <do> <fn> <primop> <fix> <do>
    .arg .cases .op .args .bindings .body .stmts
-   analyze ast->sexp alphatize&specialize)
+   analyze ast->sexp alphatize&specialize dnf-convert)
 
   (import scheme chicken)
   (use matchable
        sequences
+       (srfi 42)
+       vector-lib
        coops
        persistent-hash-map
        (only miscmacros let/cc)
        (only anaphora aif awhen)
+       (only data-structures identity)
         
        (only centring.util ns name ns-name fmap-st doseq))
 
   ;;;; AST Classes
+
+  ;; FIXME: OO -> pattern matching
 
   (define-class <ast> ())
 
@@ -133,6 +138,40 @@
   (define-method (ast->sexp (ast <do>))
     `($do ,@(smap '() ast->sexp (.stmts ast))))
 
+  ;;;; Traversal
+
+  ;; HACK: Theoretically these are questionable:
+  (define-method (fmap (_ #t) (ast <const>)) ast)
+  (define-method (fmap (_ #t) (ast <global>)) ast)
+  (define-method (fmap (_ #t) (ast <local>)) ast)
+
+  (define-method (fmap (f #t) (ast <fn>))
+    (make <fn>
+      'arg (.arg ast)
+      'cases (map (smap #() f) (.cases ast))))
+  
+  (define-method (fmap (f #t) (ast <do>))
+    (make <do> 'stmts (smap #() f (.stmts ast))))
+  
+  (define-method (fmap (f #t) (ast <fix>))
+    (make <fix>
+      'bindings (smap #() f (.bindings ast))
+      'body (f (.body ast))))
+
+  (define-method (fmap (f #t) (ast <primop>))
+    (make <primop>
+      'op (.op ast)
+      'args (smap #() f (.args ast))))
+
+  (define (walk inner outer ast)
+    (outer (fmap inner ast)))
+
+  (define (postwalk f ast)
+    (walk (cute postwalk f <>) f ast))
+
+  (define (prewalk f ast)
+    (walk (cute prewalk f <>) identity (f ast)))
+
   ;;;; Alphatize & Specialize
   
   (define-record AEnv ns replacements)
@@ -209,4 +248,79 @@
         (values (make <do> 'stmts stmts*) env*)))
     
     (receive (ast* env) (alph&spec ast (make-AEnv init-ns (persistent-map)))
-      ast*)))
+      ast*))
+
+  ;;;; DNF conversion
+
+  (define-generic (dnf-node node))
+
+  (define-method (dnf-node (node #t))
+    (make-or (vector (make-and (vector node)))))
+
+  (define-method (dnf-node (node <primop>))
+    (case (.op node)
+      ((bior) ; convert children and concatenate:
+       (or-ors (smap #() dnf-node (.args node))))
+      ((band) ; convert children and distribute:
+       (and-ors (smap #() dnf-node (.args node))))
+      ((bnot) ; push `not` to leaves, reconvert result:
+       (not-node (vector-ref (.args node) 0)))
+      (else ; just wrap in `or` and `and`:
+       (make-or (vector (make-and (vector node)))))))
+
+  (define and-ors
+    (let ((combine (lambda (a b)
+                     (if a
+                       (vector-ec (:vector l a) (:vector r b)
+                                  (make-and (vector l r)))
+                       b))))
+      (match-lambda
+       (#() (make-or (vector (make-and (vector (make <const> 'val #t))))))
+       (#(a) a)
+       (#(a b) (make-or (combine (.args a) (.args b))))
+       ((and (? vector?) ors)
+        (make-or (foldl combine #f (smap #() .args ors)))))))
+
+  (define (or-ors ors)
+    (make-or (foldl (lambda (acc a) (vector-append acc (.args a))) #() ors)))
+
+  (define-generic (not-node a))
+  (define-method (not-node (a #t))
+    (make-or (vector (make-and (vector (make-not a))))))
+  (define-method (not-node (a <primop>))
+    (case (.op a)
+      ((bior) (dnf-node (make-and (smap #() make-not (.args a)))))
+      ((band) (dnf-node (make-or (smap #() make-not (.args a)))))
+      ((bnot) (dnf-node (make-or (vector (dnf-node (vector-ref (.args a) 0))))))
+      (else (make-or (vector (make-and (vector (make-not a))))))))
+
+  (define make-or (cute make <primop> 'op 'bior 'args <>))
+  (define make-and
+    (let* ((build (cute make <primop> 'op 'band 'args <>))
+           (clause (lambda (node)
+                     (if (and-node? node) (.args node) (vector node))))
+           (combine (lambda (a b)
+                      (build (vector-append (clause a) (clause b))))))
+      (match-lambda
+       (#() (build (vector (make <const> 'val #f))))
+       (#(a) (build (vector a)))
+       (#(a b) (combine a b))
+       ((and (? vector?) as) (build (foldl combine #() (smap #() .args as)))))))
+  (define make-not (o (cute make <primop> 'op 'bnot 'args <>) vector))
+
+  (define (and-node? node)
+    (and (eq? (class-of node) <primop>) (eq? (.op node) 'band)))
+
+  (define-generic (dnf-convert ast))
+
+  (define-method (dnf-convert (ast #t))
+    (fmap dnf-convert ast))
+    
+  (define-method (dnf-convert (ast <fn>))
+    (make <fn>
+      'arg (.arg ast)
+      'cases (map (match-lambda
+                   (#(cond body)
+                    (vector (dnf-node cond) (dnf-convert body))))
+                  (.cases ast)))))
+    

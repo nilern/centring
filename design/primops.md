@@ -66,6 +66,8 @@ Will dereferencing the var called `n` yield a value?
 
     (%rset! r i v)
 
+    (%inst? r t)
+
 # Arithmetic
 
 \((a, b) \rightarrow \kappa(d)|\bot(Overflow|DivideByZero...)
@@ -107,6 +109,25 @@ Unary `-`.
 
 ~.
 
+# Boolean Operations
+
+Anything except `#f` is considered truthy.
+
+\((a, b) \rightarrow \kappa(d)
+  \quad\mathrm{where}\quad a::Any \land b::Any \land d: Bool\)
+
+    (%band a b [($cont (d) ...)])
+    (%bior a b [($cont (d) ...)])
+    (%bxor a b [($cont (d) ...)])
+
+<!-- Are these actually needed aside from the IR representation of Fn case
+ conditions? -->
+
+\((a, b) \rightarrow \kappa(d)
+  \quad\mathrm{where}\quad a::Any \land d: Bool\)
+
+    (%bnot a [($cont (d) ...)])
+
 # Comparisons
 
 \((a, b) \rightarrow \kappa(d)
@@ -121,16 +142,21 @@ Unary `-`.
 
 =, !=, >, <, >= and <=.
 
+\((a, b) \rightarrow \kappa(d)
+  \quad\mathrm{where}\quad a::Any \land b::Any \land d: Bool\)
+
+    (%bit-eq? a b)
+
+Pointer/bit equality (like Scheme `eq?`).
+
 # Branches
 
 \((c) \rightarrow \kappa_1()|\kappa_2()
-  \quad\mathrm{where}\quad c: Bool\)
+  \quad\mathrm{where}\quad c::Any\)
 
     (%brf c ($cont () ...1) ($cont () ...2))
 
-If c is `True`, evaluate `...1`. Else evaluate `...2`.
-
-<!-- If this is used to implement dispatch, how to ensure `(: c Bool)`? -->
+If c is not `#f`, evaluate `...1`. Else evaluate `...2`.
 
 \((f, as...) \rightarrow \top(d)|\bot(UnCallable|ArgCount|NoMethod...)
   \quad\mathrm{where}\quad f::Callable\)

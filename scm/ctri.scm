@@ -9,7 +9,7 @@
      args
      
      (only centring.expand expand-all)
-     (only centring.analyze analyze alphatize&specialize ast->sexp)
+     (only centring.analyze analyze alphatize&specialize dnf-convert ast->sexp)
      (only centring.eval-ast make-interpreter eval-ast .curr-ns)
      (only centring.ns Ns-name))
 
@@ -35,9 +35,11 @@
     (o ast->sexp analyze expand-all))
    ((assq 'fana options)
     (o ast->sexp
-       (cute alphatize&specialize 'centring.user <>) analyze expand-all))
+       dnf-convert (cute alphatize&specialize 'centring.user <>)
+       analyze expand-all))
    (else
     (o (cute eval-ast (make-interpreter path) <>)
+       dnf-convert (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))))
 
 (define (repl path)
@@ -54,6 +56,8 @@
         (->> (read (open-input-string it))
              expand-all
              analyze
+             (cute alphatize&specialize 'centring.user <>)
+             dnf-convert
              (eval-ast itp)
              (printf "~S~%"))))))
 

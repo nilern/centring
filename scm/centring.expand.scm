@@ -42,9 +42,10 @@
          `(centring.sf/fn ,arg
            ,@(map (match-lambda
                    ((formals cond . body)
-                    (receive (ltest axs) (destructure arg formals)
-                      `((and (: ,arg centring.lang/Tuple) ,ltest
-                             ,(postwalk (cute replace axs <>) cond))
+                    (receive (tests axs) (destructure arg formals)
+                      `(,(lower-condition
+                          `(and ,@tests
+                                ,(postwalk (cute replace axs <>) cond)))
                         ,(prefix-bindings axs `(do ,@body))))))
                    cases))))
       
@@ -77,16 +78,14 @@
               (centring.intr/set-global! (quote ,name) ,new-case)))))
       (('let* ((var val) . binds) . body)
        `(centring.intr/apply
-         (centring.sf/fn ,var (#t (let* ,binds ,@body)))
+         (fn (,var #t (let* ,binds ,@body)))
          ,val))
       (('let* () . body)
        `(do ,@body))
       (('if cond then else)
        (let ((c (gensym 'c)))
          `(centring.intr/apply
-           (centring.sf/fn ,c
-                           ((= ,c #t) ,then)
-                           ((= ,c #f) ,else))
+           (fn (,c (= ,c #f) ,else) (,c (not (= ,c #f)) ,then))
            ,cond)))
 
       (_ sexp)))
@@ -94,13 +93,30 @@
   (define (destructure arg pat)
     ;; ATM just does a non-nested arglist without varargs i.e. (x y z)
     (let ((accesses (make-hash-table)))
-      (let recur ((pat pat) (i 0))
-        (if (null? pat)
-          (values `(= (centring.intr/rlen ,arg) ,i) accesses)
-          (begin
-            (hash-table-set! accesses (car pat)
-                             `(centring.intr/rref ,arg ,i))
-            (recur (cdr pat) (add1 i)))))))
+      (if (symbol? pat)
+        (begin
+          (hash-table-set! accesses pat arg)
+          (values '() accesses))
+        (let recur ((pat pat) (i 0))
+          (if (null? pat)
+            (values `((: ,arg centring.lang/Tuple)
+                      (= (centring.intr/rlen ,arg) ,i))
+                    accesses)
+            (begin
+              (hash-table-set! accesses (car pat)
+                               `(centring.intr/rref ,arg ,i))
+              (recur (cdr pat) (add1 i))))))))
+
+  (define (lower-condition cond)
+    (define lower
+      (match-lambda
+       (('and . args) `(centring.intr/band ,@args))
+       (('or . args) `(centring.intr/bior ,@args))
+       (('not . args) `(centring.intr/bnot ,@args))
+       ((': . args) `(centring.intr/inst? ,@args))
+       (('= . args) `(centring.intr/bit-eq? ,@args))
+       (expr expr)))
+    (postwalk lower cond))
 
   (define (expand expr)
     (let ((expansion (expand-1 expr)))
