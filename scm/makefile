@@ -1,5 +1,6 @@
-ctri: centring.util.import.so centring.expand.import.so centring.analyze.import.so \
-      centring.rt.import.so centring.ns.import.so centring.eval-ast.import.so \
+ctri: centring.util.import.so centring.ast.import.so \
+      centring.expand.import.so centring.analyze.import.so \
+      centring.rt.import.so centring.ns.import.so \
       ctri.scm 
 	csc ctri.scm
 

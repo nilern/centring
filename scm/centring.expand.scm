@@ -78,7 +78,7 @@
               (centring.intr/set-global! (quote ,name) ,new-case)))))
       (('let* ((var val) . binds) . body)
        `(centring.intr/apply
-         (fn (,var #t (let* ,binds ,@body)))
+         (centring.sf/fn ,var (#t (let* ,binds ,@body)))
          ,val))
       (('let* () . body)
        `(do ,@body))

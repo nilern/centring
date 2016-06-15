@@ -1,50 +1,16 @@
 (module centring.analyze
-  (<const> <global>
-   .val .res-ns .ns .name
-   <do> <fn> <primop> <fix> <do>
-   .arg .cases .op .args .bindings .body .stmts
-   analyze ast->sexp alphatize&specialize dnf-convert)
+  *
 
   (import scheme chicken)
   (use matchable
        sequences
-       (srfi 42)
        vector-lib
-       coops
        persistent-hash-map
-       (only miscmacros let/cc)
-       (only anaphora aif awhen)
-       (only data-structures identity)
-        
-       (only centring.util ns name ns-name fmap-st doseq))
+       (only anaphora aif)
 
-  ;;;; AST Classes
-
-  ;; FIXME: OO -> pattern matching
-
-  (define-class <ast> ())
-
-  (define-class <const> (<ast>)
-    ((val accessor: .val)))
-  (define-class <global> (<ast>)
-    ((res-ns accessor: .res-ns initform: #f)
-     (ns accessor: .ns)
-     (name accessor: .name)))
-  (define-class <local> (<ast>)
-    ((name accessor: .name)))
-
-  (define-class <fn> (<ast>)
-    ((arg accessor: .arg)
-     (cases accessor: .cases)))
-  (define-class <primop> (<ast>)
-    ((op accessor: .op)
-     (args accessor: .args)))
-  (define-class <fix> (<ast>)
-    ((bindings accessor: .bindings)
-     (body accessor: .body)))
-  (define-class <do> (<ast>)
-    ((stmts accessor: .stmts)))
-
+       centring.util
+       centring.ast)
+  
   ;;;; Turn S-exprs into AST:s
 
   (define (analyze sexp)
@@ -53,44 +19,40 @@
       
       ((? intrinsic?) (analyze-intr sexp))
       
-      ((? literal?) (make <const> 'val sexp))
+      ((? literal?) (Const sexp (persistent-map)))
 
       ((? symbol?) (analyze-id sexp))
 
-      ((? pair?) (make <primop> 'op 'call 'args (smap #() analyze sexp)))
+      ((? pair?) (Primop 'call (mapv analyze sexp) (persistent-map)))
 
       (_ (error "unable to analyze" sexp))))
-
+  
   (define (analyze-sf sexp)
     (match (cons (name (car sexp)) (cdr sexp))
       (('fn arg . cases)
-       (make <fn>
-         'arg arg
-         'cases (map (cute smap #() analyze <>) cases)))
+       (Fn arg (map (cute mapv analyze <>) cases) (persistent-map)))
 
       (('letrec bindings body)
-       (make <fix>
-         'bindings (smap #()
-                         (match-lambda ((var val) (cons var (analyze val))))
-                         bindings)
-         'body (analyze body)))
+       (Fix (mapv
+             (match-lambda ((var val) (cons var (analyze val))))
+             bindings)
+            (analyze body)
+            (persistent-map)))
       
       (('do . stmts)
-       (make <do> 'stmts (smap #() analyze stmts)))
+       (Do (mapv analyze stmts) (persistent-map)))
       
       (('quote (and v (or (? literal?) (? symbol?))))
-       (make <const> 'val v))
+       (Const v (persistent-map)))
 
       (_ (error "invalid special form" sexp))))
 
   (define (analyze-intr sexp)
-    (make <primop>
-      'op (name (car sexp))
-      'args (smap #() analyze (cdr sexp))))
+    (Primop (name (car sexp)) (mapv analyze (cdr sexp)) (persistent-map)))
 
   (define (analyze-id id)
     (call-with-values (lambda () (ns-name id))
-      (cute make <global> 'ns <> 'name <>)))
+      (cute Global #f <> <> (persistent-map))))
 
   (define (special-form? sexp)
     (and (pair? sexp)
@@ -105,222 +67,143 @@
   (define (literal? v)
     (or (fixnum? v) (boolean? v) (keyword? v)))
 
-  ;;;; Turn AST:s into S-exprs for Debugging
+  ;;;; Turn AST:s into S-exprs
 
-  (define-generic (ast->sexp ast))
-
-  (define-method (ast->sexp (ast <const>))
-    (let ((v (.val ast)))
-      (if (and (symbol? v) (not (keyword? v)))
-        `($quote ,v)
-        v)))
-
-  (define-method (ast->sexp (ast <global>))
-    (symbol-append (or (.ns ast) '@@)
-                   '/ (.name ast) #|'<= (or (.res-ns ast) '??)|#))
-
-  (define-method (ast->sexp (ast <local>))
-    (.name ast))
-
-  (define-method (ast->sexp (ast <fn>))
-    `($fn ,(.arg ast) ,@(map (cute smap '() ast->sexp <>) (.cases ast))))
-
-  (define-method (ast->sexp (ast <primop>))
-    `(,(symbol-append '% (.op ast))
-      ,@(smap '() ast->sexp (.args ast))))
-
-  (define-method (ast->sexp (ast <fix>))
-    `($letrec ,(smap '()
-                     (match-lambda ((var . val) (list var (ast->sexp val))))
-                     (.bindings ast))
-              ,(ast->sexp (.body ast))))
-
-  (define-method (ast->sexp (ast <do>))
-    `($do ,@(smap '() ast->sexp (.stmts ast))))
-
-  ;;;; Traversal
-
-  ;; HACK: Theoretically these are questionable:
-  (define-method (fmap (_ #t) (ast <const>)) ast)
-  (define-method (fmap (_ #t) (ast <global>)) ast)
-  (define-method (fmap (_ #t) (ast <local>)) ast)
-
-  (define-method (fmap (f #t) (ast <fn>))
-    (make <fn>
-      'arg (.arg ast)
-      'cases (map (smap #() f) (.cases ast))))
-  
-  (define-method (fmap (f #t) (ast <do>))
-    (make <do> 'stmts (smap #() f (.stmts ast))))
-  
-  (define-method (fmap (f #t) (ast <fix>))
-    (make <fix>
-      'bindings (smap #() f (.bindings ast))
-      'body (f (.body ast))))
-
-  (define-method (fmap (f #t) (ast <primop>))
-    (make <primop>
-      'op (.op ast)
-      'args (smap #() f (.args ast))))
-
-  (define (walk inner outer ast)
-    (outer (fmap inner ast)))
-
-  (define (postwalk f ast)
-    (walk (cute postwalk f <>) f ast))
-
-  (define (prewalk f ast)
-    (walk (cute prewalk f <>) identity (f ast)))
+  (define (ast->sexp ast)
+    (match ast
+      (($ Fn arg cases _)
+       `($fn ,arg ,@(map (cute smap '() ast->sexp <>) cases)))
+      (($ Primop op args _)
+       `(,(symbol-append '% op) ,@(smap '() ast->sexp args)))
+      (($ Fix bindings body _)
+       `($letrec ,(smap '() (match-lambda
+                             ((var . expr) (cons var (ast->sexp expr))))
+                        bindings)
+                 ,(ast->sexp body)))
+      (($ Do stmts _)
+       `($do ,@(smap '() ast->sexp stmts)))
+      (($ Const val _) val)
+      (($ Global _ ns name _) (symbol-append (or ns '@@) ns-sep name))
+      (($ Local name _) name)
+      (_ (error "unable to display as S-expr" ast))))
 
   ;;;; Alphatize & Specialize
+
+  (define (alphatize&specialize curr-ns ast)
+    ;; TODO: throw errors if set-ns! is found outside toplevel or
+    ;; set-global! is used on a qualified var
+    (define (add-local env localname)
+      (map-add env localname (gensym localname)))
+
+    (define (add-locals env localnames)
+      (let ((rpls* (map->transient-map env)))
+        (doseq (name localnames)
+               (map-add! rpls* name (gensym name)))
+        (persist-map! rpls*)))
   
-  (define-record AEnv ns replacements)
+    (define (alph&spec env ast)
+      (match ast
+       (($ Fn arg cases ann)
+        (let ((env* (add-local env arg)))
+          (Fn (map-ref env* arg)
+              (map (cute mapv (cute alph&spec env* <>) <>) cases)
+              ann)))
+       ((and ($ Primop 'set-ns! #(($ Ann ($ Const (and (? symbol?) ns-name)) _)) _)
+             node)
+        (set! curr-ns ns-name)
+        node)
+       (($ Primop op args ann)
+        (Primop op (mapv (cute alph&spec env <>) args) ann))
+       (($ Fix bindings body ann)
+        (let ((env* (add-locals env (mapv car bindings))))
+          (Fix
+           (mapv (match-lambda
+                  ((var . expr) (cons (map-ref env* var) (alph&spec env* expr))))
+                 bindings)
+           (alph&spec env* body)
+           ann)))
+       (($ Do stmts ann)
+        (Do (mapv (cute alph&spec env <>) stmts) ann))
+       ((and (? Const?) node) node)
+       (($ Global _ #f name ann)
+        (aif (map-ref env name #f)
+             (Local it ann)
+             (Global curr-ns #f name ann)))
+       (($ Global _ ns name ann) (Global curr-ns ns name ann))
+       (_ (error "unable to alphatize etc." ast))))
+    (alph&spec (persistent-map) ast)))
 
-  (define (add-local env localname)
-    (make-AEnv (AEnv-ns env)
-               (map-add (AEnv-replacements env) localname (gensym localname))))
+;;   ;;;; DNF conversion
 
-  (define (add-locals env localnames)
-    (let ((rpls* (map->transient-map (AEnv-replacements env))))
-      (doseq (name localnames)
-        (map-add! rpls* name (gensym name)))
-      (make-AEnv (AEnv-ns env) (persist-map! rpls*))))
+;;   (define-generic (dnf-node node))
 
-  (define (replace-sym env sym)
-    (map-ref (AEnv-replacements env) sym))
+;;   (define-method (dnf-node (node #t))
+;;     (make-or (vector (make-and (vector node)))))
 
-  (define (alphatize&specialize init-ns ast)
-    ;; FIXME: get rid of all this multiple return values -mucking
-    (define-generic (alph&spec ast))
+;;   (define-method (dnf-node (node <primop>))
+;;     (case (.op node)
+;;       ((bior) ; convert children and concatenate:
+;;        (or-ors (mapv dnf-node (.args node))))
+;;       ((band) ; convert children and distribute:
+;;        (and-ors (mapv dnf-node (.args node))))
+;;       ((bnot) ; push `not` to leaves, reconvert result:
+;;        (not-node (vector-ref (.args node) 0)))
+;;       (else ; just wrap in `or` and `and`:
+;;        (make-or (vector (make-and (vector node)))))))
 
-    (define-method (alph&spec (ast <const>) env)
-      (values ast env))
+;;   (define and-ors
+;;     (let ((combine (lambda (a b)
+;;                      (if a
+;;                        (vector-ec (:vector l a) (:vector r b)
+;;                                   (make-and (vector l r)))
+;;                        b))))
+;;       (match-lambda
+;;        (#() (make-or (vector (make-and (vector (make <const> 'val #t))))))
+;;        (#(a) a)
+;;        (#(a b) (make-or (combine (.args a) (.args b))))
+;;        ((and (? vector?) ors)
+;;         (make-or (foldl combine #f (mapv .args ors)))))))
 
-    (define-method (alph&spec (ast <global>) env)
-      (values
-       (let/cc return
-         (unless (.ns ast)
-           (awhen (replace-sym env (.name ast))
-             (return (make <local> 'name it))))
-         (make <global> 'res-ns (AEnv-ns env) 'ns (.ns ast) 'name (.name ast)))
-       env))
+;;   (define (or-ors ors)
+;;     (make-or (foldl (lambda (acc a) (vector-append acc (.args a))) #() ors)))
 
-    (define-method (alph&spec (ast <fn>) env)
-      (let* ((env* (add-local env (.arg ast))))
-        (receive (cases* env**) (fmap-st (cute fmap-st alph&spec <> <>)
-                                         (.cases ast) env*)
-          (values
-           (make <fn>
-             'arg (replace-sym env* (.arg ast))
-             'cases cases*)
-           (make-AEnv (AEnv-ns env**) (AEnv-replacements env))))))
+;;   (define-generic (not-node a))
+;;   (define-method (not-node (a #t))
+;;     (make-or (vector (make-and (vector (make-not a))))))
+;;   (define-method (not-node (a <primop>))
+;;     (case (.op a)
+;;       ((bior) (dnf-node (make-and (mapv make-not (.args a)))))
+;;       ((band) (dnf-node (make-or (mapv make-not (.args a)))))
+;;       ((bnot) (dnf-node (make-or (vector (dnf-node (vector-ref (.args a) 0))))))
+;;       (else (make-or (vector (make-and (vector (make-not a))))))))
 
-    (define-method (alph&spec (ast <primop>) env)
-      ;; TODO: throw errors if set-ns! is found outside toplevel or
-      ;; set-global! is used on a qualified var
-      (let ((env* (if (eq? (.op ast) 'set-ns!)
-                    (make-AEnv (.val (vector-ref (.args ast) 0))
-                               (AEnv-replacements env))
-                    env)))
-        (receive (args* env**) (fmap-st alph&spec (.args ast) env*)
-          (values (make <primop> 'op (.op ast) 'args args*) env**))))
+;;   (define make-or (cute make <primop> 'op 'bior 'args <>))
+;;   (define make-and
+;;     (let* ((build (cute make <primop> 'op 'band 'args <>))
+;;            (clause (lambda (node)
+;;                      (if (and-node? node) (.args node) (vector node))))
+;;            (combine (lambda (a b)
+;;                       (build (vector-append (clause a) (clause b))))))
+;;       (match-lambda
+;;        (#() (build (vector (make <const> 'val #f))))
+;;        (#(a) (build (vector a)))
+;;        (#(a b) (combine a b))
+;;        ((and (? vector?) as) (build (foldl combine #() (mapv .args as)))))))
+;;   (define make-not (o (cute make <primop> 'op 'bnot 'args <>) vector))
 
-    (define-method (alph&spec (ast <fix>) env)
-      (let* ((vars (smap '() car (.bindings ast)))
-             (vars* (map gensym vars))
-             (env* (add-locals env vars)))   
-        (receive (bindings* env**)
-          (fmap-st (match-lambda*
-                    (((var . val) env)
-                     (receive (val* env*) (alph&spec val env)
-                       (values
-                        (cons (replace-sym env var) val*)
-                              env*))))
-                   (.bindings ast)
-                   env*)
-          (receive (body* env***) (alph&spec (.body ast) env**)
-            (values
-             (make <fix> 'bindings bindings* 'body body*)
-             env***)))))
+;;   (define (and-node? node)
+;;     (and (eq? (class-of node) <primop>) (eq? (.op node) 'band)))
 
-    (define-method (alph&spec (ast <do>) env)
-      (receive (stmts* env*) (fmap-st alph&spec (.stmts ast) env)
-        (values (make <do> 'stmts stmts*) env*)))
+;;   (define-generic (dnf-convert ast))
+
+;;   (define-method (dnf-convert (ast #t))
+;;     (fmap dnf-convert ast))
     
-    (receive (ast* env) (alph&spec ast (make-AEnv init-ns (persistent-map)))
-      ast*))
-
-  ;;;; DNF conversion
-
-  (define-generic (dnf-node node))
-
-  (define-method (dnf-node (node #t))
-    (make-or (vector (make-and (vector node)))))
-
-  (define-method (dnf-node (node <primop>))
-    (case (.op node)
-      ((bior) ; convert children and concatenate:
-       (or-ors (smap #() dnf-node (.args node))))
-      ((band) ; convert children and distribute:
-       (and-ors (smap #() dnf-node (.args node))))
-      ((bnot) ; push `not` to leaves, reconvert result:
-       (not-node (vector-ref (.args node) 0)))
-      (else ; just wrap in `or` and `and`:
-       (make-or (vector (make-and (vector node)))))))
-
-  (define and-ors
-    (let ((combine (lambda (a b)
-                     (if a
-                       (vector-ec (:vector l a) (:vector r b)
-                                  (make-and (vector l r)))
-                       b))))
-      (match-lambda
-       (#() (make-or (vector (make-and (vector (make <const> 'val #t))))))
-       (#(a) a)
-       (#(a b) (make-or (combine (.args a) (.args b))))
-       ((and (? vector?) ors)
-        (make-or (foldl combine #f (smap #() .args ors)))))))
-
-  (define (or-ors ors)
-    (make-or (foldl (lambda (acc a) (vector-append acc (.args a))) #() ors)))
-
-  (define-generic (not-node a))
-  (define-method (not-node (a #t))
-    (make-or (vector (make-and (vector (make-not a))))))
-  (define-method (not-node (a <primop>))
-    (case (.op a)
-      ((bior) (dnf-node (make-and (smap #() make-not (.args a)))))
-      ((band) (dnf-node (make-or (smap #() make-not (.args a)))))
-      ((bnot) (dnf-node (make-or (vector (dnf-node (vector-ref (.args a) 0))))))
-      (else (make-or (vector (make-and (vector (make-not a))))))))
-
-  (define make-or (cute make <primop> 'op 'bior 'args <>))
-  (define make-and
-    (let* ((build (cute make <primop> 'op 'band 'args <>))
-           (clause (lambda (node)
-                     (if (and-node? node) (.args node) (vector node))))
-           (combine (lambda (a b)
-                      (build (vector-append (clause a) (clause b))))))
-      (match-lambda
-       (#() (build (vector (make <const> 'val #f))))
-       (#(a) (build (vector a)))
-       (#(a b) (combine a b))
-       ((and (? vector?) as) (build (foldl combine #() (smap #() .args as)))))))
-  (define make-not (o (cute make <primop> 'op 'bnot 'args <>) vector))
-
-  (define (and-node? node)
-    (and (eq? (class-of node) <primop>) (eq? (.op node) 'band)))
-
-  (define-generic (dnf-convert ast))
-
-  (define-method (dnf-convert (ast #t))
-    (fmap dnf-convert ast))
-    
-  (define-method (dnf-convert (ast <fn>))
-    (make <fn>
-      'arg (.arg ast)
-      'cases (map (match-lambda
-                   (#(cond body)
-                    (vector (dnf-node cond) (dnf-convert body))))
-                  (.cases ast)))))
+;;   (define-method (dnf-convert (ast <fn>))
+;;     (make <fn>
+;;       'arg (.arg ast)
+;;       'cases (map (match-lambda
+;;                    (#(cond body)
+;;                     (vector (dnf-node cond) (dnf-convert body))))
+;;                   (.cases ast)))))
     
