@@ -21,6 +21,10 @@
 
   (define (expand-1 sexp)
     (match sexp
+      (('do)
+       '(centring.intr/rec centring.lang/Tuple))
+      (('do stmt)
+       stmt)
       (('do . stmts)
        `(centring.sf/do ,@stmts))
       (('quote val)

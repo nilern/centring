@@ -54,7 +54,7 @@ Will dereferencing the var called `n` yield a value?
     (%rec t vs...)
 
 
-    (%srec)
+    (%srec t vs...)
 
 \((r) \rightarrow \kappa(l) \quad\mathrm{where}\quad r::Record \land l: Int\)
 
@@ -65,6 +65,9 @@ Will dereferencing the var called `n` yield a value?
 
 
     (%rset! r i v)
+
+\((r, t) \rightarrow \kappa(b)
+  \quad\mathrm{where}\quad r::Any \land t: Type \land b: Bool\)
 
     (%inst? r t)
 

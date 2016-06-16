@@ -136,6 +136,7 @@
 
   ;;;; DNF conversion
 
+  ;; DNF-convert a Fn case condition:
   (define (dnf ast)
     (define (wrap node)
       (Primop 'bior (vector (Primop 'band (vector node) (persistent-map)))
@@ -149,42 +150,43 @@
          (Primop 'bior
                  (foldl f (Primop-args (peek subnodes)) (pop subnodes))
                  ann))))
-
-    (define (or-dnfs vs ann)
-      (combine-dnfs-with (lambda (acc v) (vector-append acc (Primop-args v)))
-                         (wrap (Const #t ann)) vs ann))
-
-    (define (and-dnfs vs ann)
-      (combine-dnfs-with
-       (lambda (acc v) ; v is an `or`, l and r are `and`:s
-         (vector-ec (:vector l acc) (:vector r (Primop-args v))
-           (Primop 'band
-                   (vector-append (Primop-args l) (Primop-args r))
-                   (persistent-map))))
-       (wrap (Const #f ann)) vs ann))
-
-    (define (dnf-inverse node ann)
-      (match node
-        (($ Primop 'bior args ann)
-         (dnf (Primop 'band
-                      (mapv (lambda (v) (Primop 'bnot (vector v) (persistent-map)))
-                            args)
-                      ann)))
-        (($ Primop 'band args ann)
-         (dnf (Primop 'bior
-                      (mapv (lambda (v) (Primop 'bnot (vector v) (persistent-map)))
-                            args)
-                      ann)))
-        (($ Primop 'bnot #(arg) ann)
-         (dnf arg))
-        (_ (wrap (Primop 'bnot (vector node) ann)))))
     
     (match ast
-      (($ Primop 'bior args ann) (or-dnfs (mapv dnf args) ann))
-      (($ Primop 'band args ann) (and-dnfs (mapv dnf args) ann))
-      (($ Primop 'bnot #(arg) ann) (dnf-inverse arg ann))
-      (_ (wrap ast))))
+      (($ Primop 'bior args ann)
+       ;; convert args and flatten the resulting `or` of `or`:s:
+       (combine-dnfs-with (lambda (acc v) (vector-append acc (Primop-args v)))
+                          (wrap (Const #f ann)) (mapv dnf args) ann))
+      
+      (($ Primop 'band args ann)
+       ;; convert args and distribute `and` over them:
+       (combine-dnfs-with
+        (lambda (acc v)
+          (vector-ec (:vector l acc) (:vector r (Primop-args v))
+            (Primop 'band
+                    (vector-append (Primop-args l) (Primop-args r))
+                    (persistent-map))))
+        (wrap (Const #t ann)) (mapv dnf args) ann))
+      
+      (($ Primop 'bnot #(arg) ann)
+       ;; Use some Boolean algebra laws and reconvert:
+       (match arg
+         (($ Primop 'bior args ann) ; De Morgan
+          (dnf (Primop 'band
+                       (mapv (lambda (v) (Primop 'bnot (vector v) (persistent-map)))
+                             args)
+                       ann)))
+         (($ Primop 'band args ann) ; De Morgan
+          (dnf (Primop 'bior
+                       (mapv (lambda (v) (Primop 'bnot (vector v) (persistent-map)))
+                             args)
+                       ann)))
+         (($ Primop 'bnot #(arg) ann) ; double negation
+          (dnf arg))
+         (_ (wrap (Primop 'bnot (vector (dnf-convert arg)) ann)))))
+      
+      (_ (wrap (dnf-convert ast)))))
 
+  ;; Traverse an AST and DNF-convert Fn case conditions:
   (define (dnf-convert ast)
     (match ast
       (($ Fn arg cases ann)
