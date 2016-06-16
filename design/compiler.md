@@ -3,11 +3,12 @@
 1. read (with modified Chicken reader)
 2. analyze into AST
 3. alpha-convert
-4. CPS-convert
-5. optimize (eta-contract, beta-contract, eliminate dead values)
-6. closure-convert
-7. emit bytecode
-8. serialize bytecode
+4. DNF-convert
+5. CPS-convert
+6. optimize (eta-contract, beta-contract, eliminate dead values)
+7. closure-convert
+8. emit bytecode
+9. serialize bytecode
 
 # Pseudo-namespaces
 
@@ -17,31 +18,16 @@ Pseudo-namespaces are specially handled by the compiler and do not exist at runt
 
 These are the special forms:
 
-* if    (conditional branching)
-* letfn (define functions (with arbitrary mutual recursion)
-* def   (add a definition to the current module)
-* quote (don't evaluate a symbol (`'(foo)` -> (cons 'foo ()) instead))
+* fn
+* letrec
+* do
+* quote
 
 The special forms don't obey the normal evaluation rule.
 
 ## centring.intr
 
-These are the intrinsics (correspond to VM instructions):
-
-* const
-* local
-* clover
-
-* add
-* sub
-* mul
-* div
-
-* brf
-* halt
-
-* fn
-* call
+These are the intrinsics (correspond to VM instructions).
 
 The intrinsics can only be directly called so they are like 2nd-class functions.
 Unlike the special forms they handle their arguments normally.
@@ -51,35 +37,18 @@ Unlike the special forms they handle their arguments normally.
 ## Trivial Expressions (common to AST & CPS)
 
 1. Constants (`1`, `#t`...)
-2. Locals    (`a`, `b`...)
-3. Clovers   (`(@ 0)`...)
-4. Globals   (`@@/foo`, `centring.lang/Tuple`)
-
-### Pseudocode
-
-    (defenum TrivExp
-      (Constant val ann)
-      (Local name ann)
-      (Clover index ann)
-      (Global res-ns ns name ann))
+2. Globals   (`@@/foo`, `centring.lang/Tuple`)
+3. Locals    (`a`, `b`...)
+4. Clovers   (`(@ 0)`...)
 
 ## AST Representation
 
 1. Nontrivial Expressions
-    1. Do (`($do stmts ...)`)
-    2. Fn (`($fn x (cond body) ...)`)
+    1. Fn (`($fn x (cond body) ...)`)
+    2. Primop (`(%op arg ...)`)
     3. Fix (`($fix ((x expr) ...) body)`)
-    4. Call (`(%op arg ...)`)
+    4. Do (`($do stmts ...)`)
 2. Trivial Expressions
-
-### Pseudocode
-
-    (defenum AST
-      (Do stmts ann)
-      (Fn formals body ann)
-      (Fix bindings body ann)
-      (Call callee args ann)
-      (... TrivExp))
 
 ### Passes
 
@@ -108,14 +77,6 @@ Unlike the special forms they handle their arguments normally.
         * 'Linearized' away before the final stages
     3. Call (`(%op arg ... cont ...)`)
 2. Trivial Expressions
-
-### Pseudocode
-
-    (defenum CPS
-      (Fn formals body ann)
-      (Fix bindings body ann)
-      (Call callee args conts ann)
-      (... TrivExp))
 
 ## Symbol Table
 

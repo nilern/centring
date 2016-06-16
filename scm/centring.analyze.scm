@@ -6,6 +6,7 @@
        sequences
        vector-lib
        persistent-hash-map
+       (srfi 42)
        (only anaphora aif)
 
        centring.util
@@ -108,7 +109,7 @@
           (Fn (map-ref env* arg)
               (map (cute mapv (cute alph&spec env* <>) <>) cases)
               ann)))
-       ((and ($ Primop 'set-ns! #(($ Ann ($ Const (and (? symbol?) ns-name)) _)) _)
+       ((and ($ Primop 'set-ns! #(($ Const (and (? symbol?) ns-name) _)) _)
              node)
         (set! curr-ns ns-name)
         node)
@@ -131,79 +132,65 @@
              (Global curr-ns #f name ann)))
        (($ Global _ ns name ann) (Global curr-ns ns name ann))
        (_ (error "unable to alphatize etc." ast))))
-    (alph&spec (persistent-map) ast)))
+    (alph&spec (persistent-map) ast))
 
-;;   ;;;; DNF conversion
+  ;;;; DNF conversion
 
-;;   (define-generic (dnf-node node))
-
-;;   (define-method (dnf-node (node #t))
-;;     (make-or (vector (make-and (vector node)))))
-
-;;   (define-method (dnf-node (node <primop>))
-;;     (case (.op node)
-;;       ((bior) ; convert children and concatenate:
-;;        (or-ors (mapv dnf-node (.args node))))
-;;       ((band) ; convert children and distribute:
-;;        (and-ors (mapv dnf-node (.args node))))
-;;       ((bnot) ; push `not` to leaves, reconvert result:
-;;        (not-node (vector-ref (.args node) 0)))
-;;       (else ; just wrap in `or` and `and`:
-;;        (make-or (vector (make-and (vector node)))))))
-
-;;   (define and-ors
-;;     (let ((combine (lambda (a b)
-;;                      (if a
-;;                        (vector-ec (:vector l a) (:vector r b)
-;;                                   (make-and (vector l r)))
-;;                        b))))
-;;       (match-lambda
-;;        (#() (make-or (vector (make-and (vector (make <const> 'val #t))))))
-;;        (#(a) a)
-;;        (#(a b) (make-or (combine (.args a) (.args b))))
-;;        ((and (? vector?) ors)
-;;         (make-or (foldl combine #f (mapv .args ors)))))))
-
-;;   (define (or-ors ors)
-;;     (make-or (foldl (lambda (acc a) (vector-append acc (.args a))) #() ors)))
-
-;;   (define-generic (not-node a))
-;;   (define-method (not-node (a #t))
-;;     (make-or (vector (make-and (vector (make-not a))))))
-;;   (define-method (not-node (a <primop>))
-;;     (case (.op a)
-;;       ((bior) (dnf-node (make-and (mapv make-not (.args a)))))
-;;       ((band) (dnf-node (make-or (mapv make-not (.args a)))))
-;;       ((bnot) (dnf-node (make-or (vector (dnf-node (vector-ref (.args a) 0))))))
-;;       (else (make-or (vector (make-and (vector (make-not a))))))))
-
-;;   (define make-or (cute make <primop> 'op 'bior 'args <>))
-;;   (define make-and
-;;     (let* ((build (cute make <primop> 'op 'band 'args <>))
-;;            (clause (lambda (node)
-;;                      (if (and-node? node) (.args node) (vector node))))
-;;            (combine (lambda (a b)
-;;                       (build (vector-append (clause a) (clause b))))))
-;;       (match-lambda
-;;        (#() (build (vector (make <const> 'val #f))))
-;;        (#(a) (build (vector a)))
-;;        (#(a b) (combine a b))
-;;        ((and (? vector?) as) (build (foldl combine #() (mapv .args as)))))))
-;;   (define make-not (o (cute make <primop> 'op 'bnot 'args <>) vector))
-
-;;   (define (and-node? node)
-;;     (and (eq? (class-of node) <primop>) (eq? (.op node) 'band)))
-
-;;   (define-generic (dnf-convert ast))
-
-;;   (define-method (dnf-convert (ast #t))
-;;     (fmap dnf-convert ast))
+  (define (dnf ast)
+    (define (wrap node)
+      (Primop 'bior (vector (Primop 'band (vector node) (persistent-map)))
+              (persistent-map)))
     
-;;   (define-method (dnf-convert (ast <fn>))
-;;     (make <fn>
-;;       'arg (.arg ast)
-;;       'cases (map (match-lambda
-;;                    (#(cond body)
-;;                     (vector (dnf-node cond) (dnf-convert body))))
-;;                   (.cases ast)))))
+    (define (combine-dnfs-with f default subnodes ann)
+      (match subnodes
+        (#() default)
+        (#(node) node)
+        ((? vector?)
+         (Primop 'bior
+                 (foldl f (Primop-args (peek subnodes)) (pop subnodes))
+                 ann))))
+
+    (define (or-dnfs vs ann)
+      (combine-dnfs-with (lambda (acc v) (vector-append acc (Primop-args v)))
+                         (wrap (Const #t ann)) vs ann))
+
+    (define (and-dnfs vs ann)
+      (combine-dnfs-with
+       (lambda (acc v) ; v is an `or`, l and r are `and`:s
+         (vector-ec (:vector l acc) (:vector r (Primop-args v))
+           (Primop 'band
+                   (vector-append (Primop-args l) (Primop-args r))
+                   (persistent-map))))
+       (wrap (Const #f ann)) vs ann))
+
+    (define (dnf-inverse node ann)
+      (match node
+        (($ Primop 'bior args ann)
+         (dnf (Primop 'band
+                      (mapv (lambda (v) (Primop 'bnot (vector v) (persistent-map)))
+                            args)
+                      ann)))
+        (($ Primop 'band args ann)
+         (dnf (Primop 'bior
+                      (mapv (lambda (v) (Primop 'bnot (vector v) (persistent-map)))
+                            args)
+                      ann)))
+        (($ Primop 'bnot #(arg) ann)
+         (dnf arg))
+        (_ (wrap (Primop 'bnot (vector node) ann)))))
     
+    (match ast
+      (($ Primop 'bior args ann) (or-dnfs (mapv dnf args) ann))
+      (($ Primop 'band args ann) (and-dnfs (mapv dnf args) ann))
+      (($ Primop 'bnot #(arg) ann) (dnf-inverse arg ann))
+      (_ (wrap ast))))
+
+  (define (dnf-convert ast)
+    (match ast
+      (($ Fn arg cases ann)
+       (Fn arg
+           (map (match-lambda
+                 (#(cond body) (vector (dnf cond) (dnf-convert body))))
+                cases)
+           ann))
+      (_ (node-map dnf-convert ast)))))
