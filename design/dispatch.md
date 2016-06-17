@@ -40,7 +40,7 @@ Patterns can
 
 ## Functions
 
-The Chanbers-Chen paper "Efficient Multiple and Predicate Dispatching" has a
+The Chambers-Chen paper "Efficient Multiple and Predicate Dispatching" has a
 strategy that can be used. It doesn't handle dynamically adding methods though,
 but that can be supported by keeping the function cases and reoptimizing the
 function when new methods get added. (This can also be done 'lazily' so that the

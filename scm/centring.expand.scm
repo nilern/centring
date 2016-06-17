@@ -92,7 +92,8 @@
       (('if cond then else)
        (let ((c (gensym 'c)))
          `(centring.intr/apply
-           (fn (,c (= ,c #f) ,else) (,c (not (= ,c #f)) ,then))
+           (fn (,c (centring.lang/= ,c #f) ,else)
+               (,c (not (centring.lang/= ,c #f)) ,then))
            ,cond)))
 
       (_ sexp)))

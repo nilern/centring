@@ -76,6 +76,7 @@
                  ,(ast->sexp body)))
       (($ Do stmts _)
        `($do ,@(smap '() ast->sexp stmts)))
+      (($ Const (and (? symbol?) val) _) `(quote ,val))
       (($ Const val _) val)
       (($ Global _ ns name _) (symbol-append (or ns '@@) ns-sep name))
       (($ Local name _) name)
