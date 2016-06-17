@@ -38,32 +38,20 @@ Patterns can
 
 # Implementation
 
+## Functions
+
+The Chanbers-Chen paper "Efficient Multiple and Predicate Dispatching" has a
+strategy that can be used. It doesn't handle dynamically adding methods though,
+but that can be supported by keeping the function cases and reoptimizing the
+function when new methods get added. (This can also be done 'lazily' so that the
+actual reoptimization is performed on calls instead of redefinitions.)
+
 ## Pattern Matching
 
-This can be done with macros.
+Most pattern matching happens on the argument of a function. Other pattern
+matching structures can be desugared to that (for example, `match` is to the
+Centring `fn` what `let` is to a Scheme `lambda`).
 
-```
-(def match-code
-  (fn
-    (#(pat name cond env) (literal? pat)
-     #(`(and ,cond (centring.lang/= ,(lookup env name) ,pat)) env))
-
-    (#(pat name cond env) (: pat Symbol)
-     #(cond (prepend #(pat (lookup env name)) env)))
-
-    (#((and (patseq T & fields) pat) name cond env)
-     (let ((cond*
-            `(and ,cond
-                  (centring.lang/: ,(lookup env name) ,T)
-                  (centring.lang/= (centring.intr/rlen ,(lookup env name))
-                                   ,(count fields)))))
-       (foldl-indexed
-         (fn
-           (#(#(cond env) pat i)
-            (let ((n (gensym))
-              (match-code pat n cond
-                          (prepend #(n `(centring.intr/rref ,(lookup env name) i))
-                                   env)))))
-          #(cond* env) fields)))))
-       
-```
+Furthermore, the *tests* involved in pattern matching the function argument can
+be moved to the function case conditions and the *bindings* can be prefixed to
+the bodies of the function cases.

@@ -13,8 +13,6 @@
      ;(only centring.eval-ast make-interpreter eval-ast .curr-ns)
      (only centring.ns Ns-name))
 
-(keyword-style #:prefix)
-
 (define opts
   (list (args:make-option (esxp) none: "Just expand S-expr.")
         (args:make-option (iana) none: "Just build and print AST.")
@@ -62,6 +60,24 @@
              dnf-convert
              (eval-ast itp)
              (printf "~S~%"))))))
+
+(keyword-style #:prefix)
+
+(define ((read-ctor ctor-sym end-char) port)
+  (let loop ((c (peek-char port)) (exprs '()))
+    (cond
+     ((eof-object? c) (error "EOF reached while parsing #(...)!"))
+     ((char=? c end-char)
+      (read-char port)
+      `(,ctor-sym ,@(reverse exprs)))
+     ((char-whitespace? c)
+      (read-char port)
+      (loop (peek-char port) exprs))
+     (else
+      (let ((expr (read port)))
+        (loop (peek-char port) (cons expr exprs)))))))
+
+(set-sharp-read-syntax! #\( (read-ctor 'centring.lang/Tuple #\)))
 
 (define (main arglist)
   (receive (options operands) (args:parse arglist opts)

@@ -1,10 +1,13 @@
 (module centring.expand
-  (expand-all)
+  (expand-all process-pattern)
   
   (import scheme chicken)
   (use matchable
        (srfi 69)
-       (only data-structures identity))
+       data-structures
+       (only anaphora aif)
+
+       centring.util)
 
   ;;;;
 
@@ -37,20 +40,20 @@
                binds)
          (do ,@body)))
       (('fn . cases)
-       ;; FIXME: prevent macroexpansion of logical connectives in conditions:
-       (define (prefix-bindings axs body)
-         (hash-table-fold axs (lambda (k v acc) `(let* ((,k ,v)) ,acc)) body))
-       (define (replace rpls e)
-         (hash-table-ref/default rpls e e))
+       (define (prefix-bindings binds body)
+         (foldl (match-lambda*
+                 ((acc (var . axpath)) `(let* ((,var ,axpath)) ,acc)))
+                body binds))
+       (define (replace binds e)
+         (aif (assq e binds) (cdr it) e))
        (let ((arg (gensym 'x)))
          `(centring.sf/fn ,arg
-           ,@(map (match-lambda
-                   ((formals cond . body)
-                    (receive (tests axs) (destructure arg formals)
-                      `(,(lower-condition
-                          `(and ,@tests
-                                ,(postwalk (cute replace axs <>) cond)))
-                        ,(prefix-bindings axs `(do ,@body))))))
+            ,@(map (match-lambda
+                    ((formals cond . body)
+                     (receive (binds test) (process-pattern arg formals)
+                       `(,(prewalk (o lower-condition (cute replace binds <>))
+                                   `(and ,test ,cond))
+                         ,(prefix-bindings binds `(do ,@body))))))
                    cases))))
       
       (('ns ns-name)
@@ -75,7 +78,7 @@
 
       (('def (name . formals) cond . body)
        (let ((new-case (gensym 'f)))
-         `(let* ((,new-case (fn (,formals ,cond ,@body))))
+         `(let* ((,new-case (fn ((centring.lang/Tuple ,@formals) ,cond ,@body))))
             (if (and (centring.intr/defined? (quote ,name))
                      (: ,name centring.lang/Fn))
               (centring.intr/fn-merge! ,name ,new-case)
@@ -94,33 +97,40 @@
 
       (_ sexp)))
 
-  (define (destructure arg pat)
-    ;; ATM just does a non-nested arglist without varargs i.e. (x y z)
-    (let ((accesses (make-hash-table)))
-      (if (symbol? pat)
-        (begin
-          (hash-table-set! accesses pat arg)
-          (values '() accesses))
-        (let recur ((pat pat) (i 0))
-          (if (null? pat)
-            (values `((: ,arg centring.lang/Tuple)
-                      (= (centring.intr/rlen ,arg) ,i))
-                    accesses)
-            (begin
-              (hash-table-set! accesses (car pat)
-                               `(centring.intr/rref ,arg ,i))
-              (recur (cdr pat) (add1 i))))))))
+  (define (process-pattern arg pat)
+    (let ((patq (make-queue)))
+      (define (process-1 binds tests)
+        (if (queue-empty? patq)
+          (values binds tests)
+          (match-let (((axpath . pat) (queue-remove! patq)))
+            (match pat
+              ((? symbol?)
+               (process-1 (cons (cons pat axpath) binds) tests))
+              
+              ((? literal?)
+               (process-1 binds `(and ,tests (centring.lang/= ,axpath ,pat))))
 
-  (define (lower-condition cond)
-    (define lower
-      (match-lambda
-       (('and . args) `(centring.intr/band ,@args))
-       (('or . args) `(centring.intr/bior ,@args))
-       (('not . args) `(centring.intr/bnot ,@args))
-       ((': . args) `(centring.intr/inst? ,@args))
-       (('= . args) `(centring.intr/bit-eq? ,@args))
-       (expr expr)))
-    (postwalk lower cond))
+              (((and (? symbol?) type) . fields)
+               (let ((recname (gensym 'v)))
+                 (doseq ((field-pat i) fields)
+                   (queue-add! patq (cons `(centring.intr/rref ,recname ,i)
+                                          field-pat)))
+                 (process-1
+                  (cons (cons recname axpath) binds)
+                  `(and ,tests
+                        (,(string->symbol "centring.lang/:") ,axpath ,type)
+                        (centring.lang/= (centring.intr/rlen ,axpath)
+                                         ,(length fields))))))))))
+
+      (queue-add! patq (cons arg pat))
+      (process-1 '() '(and))))
+
+  (define lower-condition
+    (match-lambda
+      (('and . args) `(centring.intr/band ,@args))
+      (('or . args) `(centring.intr/bior ,@args))
+      (('not . args) `(centring.intr/bnot ,@args))
+      (expr expr)))
 
   (define (expand expr)
     (let ((expansion (expand-1 expr)))

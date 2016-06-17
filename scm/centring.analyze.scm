@@ -24,7 +24,13 @@
 
       ((? symbol?) (analyze-id sexp))
 
-      ((? pair?) (Primop 'call (mapv analyze sexp) (persistent-map)))
+      ((callee . args)
+       (Primop 'apply
+               (vector (analyze callee)
+                       (Primop 'rec
+                               (mapv analyze (cons 'centring.lang/Tuple args))
+                               (persistent-map)))
+               (persistent-map)))
 
       (_ (error "unable to analyze" sexp))))
   
@@ -54,19 +60,6 @@
   (define (analyze-id id)
     (call-with-values (lambda () (ns-name id))
       (cute Global #f <> <> (persistent-map))))
-
-  (define (special-form? sexp)
-    (and (pair? sexp)
-         (symbol? (car sexp))
-         (eq? (ns (car sexp)) 'centring.sf)))
-
-  (define (intrinsic? sexp)
-    (and (pair? sexp)
-         (symbol? (car sexp))
-         (eq? (ns (car sexp)) 'centring.intr)))
-
-  (define (literal? v)
-    (or (fixnum? v) (boolean? v) (keyword? v)))
 
   ;;;; Turn AST:s into S-exprs
 

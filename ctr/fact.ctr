@@ -4,7 +4,7 @@
 
 (def fact
   (fn
-    ((n) (zero? n)
+    (#(n) (zero? n)
      (one n))
-    ((n) (> n (zero n))
+    (#(n) (> n (zero n))
      (* n (fact (dec n))))))

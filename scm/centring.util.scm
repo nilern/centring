@@ -23,7 +23,27 @@
 
   (define ns-sep '/)
 
+  (define (special-form? sexp)
+    (and (pair? sexp)
+         (symbol? (car sexp))
+         (eq? (ns (car sexp)) 'centring.sf)))
+
+  (define (intrinsic? sexp)
+    (and (pair? sexp)
+         (symbol? (car sexp))
+         (eq? (ns (car sexp)) 'centring.intr)))
+
+  (define (literal? v)
+    (or (fixnum? v) (boolean? v) (keyword? v)))
+
   (define mapv (cute smap #() <> <>))
 
   (define-syntax-rule (doseq (v coll) body ...)
-    (for (lambda (v) body ...) coll)))
+    (for (lambda (v) body ...) coll))
+
+  (define-syntax doseq
+    (syntax-rules ()
+      ((doseq ((v i) coll) body ...)
+       (for* (lambda (coll it) (let ((i (index it)) (v (elt coll it))) body ...)) coll))
+      ((doseq (v coll) body ...)
+       (for (lambda (v) body ...) coll)))))
