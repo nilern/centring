@@ -19,3 +19,12 @@ Conceptually, every Centring value has two parts:
 * Can use any GC, probably a copying one
 
 ## Types
+
+## Closures
+
+* Argument name
+* Vector of clover values
+* Vector of clover names
+* Current body
+* Vector of cases used to construct current body
+* Queue of pending clovers
