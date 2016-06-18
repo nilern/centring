@@ -37,7 +37,7 @@
   (define (analyze-sf sexp)
     (match (cons (name (car sexp)) (cdr sexp))
       (('fn arg . cases)
-       (Fn arg (map (cute mapv analyze <>) cases) (persistent-map)))
+       (Fn arg (mapv (cute mapv analyze <>) cases) (persistent-map)))
 
       (('letrec bindings body)
        (Fix (mapv
@@ -66,7 +66,7 @@
   (define (ast->sexp ast)
     (match ast
       (($ Fn arg cases _)
-       `($fn ,arg ,@(map (cute smap '() ast->sexp <>) cases)))
+       `($fn ,arg ,@(smap '() (cute smap '() ast->sexp <>) cases)))
       (($ Primop op args _)
        `(,(symbol-append '% op) ,@(smap '() ast->sexp args)))
       (($ Fix bindings body _)
@@ -101,7 +101,7 @@
        (($ Fn arg cases ann)
         (let ((env* (add-local env arg)))
           (Fn (map-ref env* arg)
-              (map (cute mapv (cute alph&spec env* <>) <>) cases)
+              (mapv (cute mapv (cute alph&spec env* <>) <>) cases)
               ann)))
        ((and ($ Primop 'set-ns! #(($ Const (and (? symbol?) ns-name) _)) _)
              node)
@@ -185,8 +185,8 @@
     (match ast
       (($ Fn arg cases ann)
        (Fn arg
-           (map (match-lambda
-                 (#(cond body) (vector (dnf cond) (dnf-convert body))))
-                cases)
+           (mapv (match-lambda
+                  (#(cond body) (vector (dnf cond) (dnf-convert body))))
+                 cases)
            ann))
       (_ (node-map dnf-convert ast)))))

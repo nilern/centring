@@ -6,10 +6,13 @@
      (only anaphora aif acond awhile)
      (only linenoise linenoise history-add)
      (only data-structures o)
+     persistent-hash-map
      args
      
      (only centring.expand expand-all)
+     (prefix centring.ast ast:)
      (only centring.analyze analyze alphatize&specialize dnf-convert ast->sexp)
+     (prefix centring.cps cps:)
      ;(only centring.eval-ast make-interpreter eval-ast .curr-ns)
      (only centring.ns Ns-name))
 
@@ -17,6 +20,7 @@
   (list (args:make-option (esxp) none: "Just expand S-expr.")
         (args:make-option (iana) none: "Just build and print AST.")
         (args:make-option (fana) none: "Just build, alphatize and print AST.")
+        (args:make-option (icps) none: "Just CPS convert.")
 
         (args:make-option (e) (required: "EXPR") "Use EXPR as input.")
 
@@ -33,6 +37,12 @@
     (o ast->sexp analyze expand-all))
    ((assq 'fana options)
     (o ast->sexp
+       dnf-convert
+       (cute alphatize&specialize 'centring.user <>)
+       analyze expand-all))
+   ((assq 'icps options)
+    (o ast->sexp
+       (cute cps:cps-k <> (lambda (v) (ast:Primop 'halt (vector v) (persistent-map))))
        dnf-convert
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))
