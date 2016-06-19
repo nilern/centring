@@ -11,7 +11,8 @@
      
      (only centring.expand expand-all)
      (prefix centring.ast ast:)
-     (only centring.analyze analyze alphatize&specialize dnf-convert ast->sexp)
+     (only centring.ast ast->sexp)
+     (only centring.analyze analyze alphatize&specialize dnf-convert)
      (prefix centring.cps cps:)
      ;(only centring.eval-ast make-interpreter eval-ast .curr-ns)
      (only centring.ns Ns-name))
@@ -42,7 +43,8 @@
        analyze expand-all))
    ((assq 'icps options)
     (o ast->sexp
-       (cute cps:cps-k <> (lambda (v) (ast:Primop 'halt (vector v) (persistent-map))))
+       (cute cps:cps-k <>
+             (lambda (v) (ast:Primop 'halt (vector v) #() (persistent-map))))
        dnf-convert
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))

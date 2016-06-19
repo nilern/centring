@@ -25,12 +25,15 @@
            (not (any (o (cute eq? 'throw <>) car)
                      (Instr-conts instr))))))
 
-  (define (statement? op)
+  (define (op-purpose op)
     (let ((instr (hash-table-ref primops op)))
-      (not (or (Instr-pure? instr)
-               (any (lambda (cont)
-                      (and (eq? (car cont) 'cont) (not (null? (cdr cont)))))
-                    (Instr-conts instr))))))
+      (cond
+       ((eqv? (count (match-lambda (('cont _) #t) (_ #f)) (Instr-conts instr)) 1)
+        'expr)
+       ((eqv? (count (match-lambda (('cont) #t) (_ #f)) (Instr-conts instr)) 1)
+        'stmt)
+       (else
+        'ctrl))))
 
   ;;;;
 
@@ -103,6 +106,11 @@
 
   (define-primop idiv _ (a b) --> ((cont d) (throw Overflow) (throw ZeroDiv))
     ;; TODO: detect overflow, div by zero
-    (fx/ a b)))
+    (fx/ a b))
+
+  ;;;
+
+  (define-primop halt _ (v) -> ()
+    v))
 
   

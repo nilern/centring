@@ -3,9 +3,11 @@
   
   (import scheme chicken)
   (use persistent-hash-map
+       sequences
        matchable
 
-       centring.util)
+       centring.util
+       (only centring.primops op-purpose))
 
   ;;;; AST
 
@@ -17,10 +19,11 @@
     (ann Fn-ann))
 
   (define-record-type Primop
-    (Primop op args ann)
+    (Primop op args conts ann)
     Primop?
     (op Primop-op)
     (args Primop-args)
+    (conts Primop-conts)
     (ann Primop-ann))
 
   (define-record-type Fix
@@ -56,12 +59,46 @@
     (name Local-name)
     (ann Local-ann))
 
+  (define (ast->sexp ast)
+    (match ast
+      (($ Fn arg cases _)
+       `($fn ,arg ,@(smap '() (cute smap '() ast->sexp <>) cases)))
+      (($ Primop op args #f _)
+       `(,(symbol-append '% op) ,@(smap '() ast->sexp args)))
+      (($ Primop op args conts _)
+       (case (op-purpose op)
+         ((expr)
+          (match-let ((#(($ Fn #(res) #(#(_ cbody)) _)) conts))
+            `($let (,res (,(symbol-append '% op) ,@(smap '() ast->sexp args)))
+               ,(ast->sexp cbody))))
+         ((stmt)
+          (match-let ((#(($ Fn #() #(#(_ cbody)) _)) conts))
+            `($do (,(symbol-append '% op) ,@(smap '() ast->sexp args))
+                  ,(ast->sexp cbody))))
+         ((ctrl)
+          (match-let ((#(($ Fn #() #(#(_ cbody)) _) ...) conts))
+            `(,(symbol-append '% op) ,@(smap '() ast->sexp args)
+              ,@(smap '() ast->sexp cbody))))))
+      
+      (($ Fix bindings body _)
+       `($letrec ,(smap '() (match-lambda
+                             ((var . expr) (cons var (ast->sexp expr))))
+                        bindings)
+                 ,(ast->sexp body)))
+      (($ Do stmts _)
+       `($do ,@(smap '() ast->sexp stmts)))
+      (($ Const (and (? symbol?) val) _) `(quote ,val))
+      (($ Const val _) val)
+      (($ Global _ ns name _) (symbol-append (or ns '@@) ns-sep name))
+      (($ Local name _) name)
+      (_ (error "unable to display as S-expr" ast))))
+
   (define (node-map f node)
     (match node
       (($ Fn arg cases ann)
        (Fn arg (mapv (cute mapv f <>) cases) ann))
-      (($ Primop op args ann)
-       (Primop op (mapv f args) ann))
+      (($ Primop op args conts ann)
+       (Primop op (mapv f args) (if conts (mapv f conts) conts) ann))
       (($ Fix bindings body ann)
        (Fix (mapv (match-lambda ((var . expr) (cons var (f expr)))) bindings)
             (f body) ann))
