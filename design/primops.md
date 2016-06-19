@@ -66,10 +66,7 @@ Will dereferencing the var called `n` yield a value?
 
     (%rset! r i v)
 
-\((r, t) \rightarrow \kappa(b)
-  \quad\mathrm{where}\quad r::Any \land t: Type \land b: Bool\)
-
-    (%inst? r t)
+    (%type r)
 
 # Arithmetic
 
@@ -84,13 +81,6 @@ Will dereferencing the var called `n` yield a value?
     (%imod a b [($cont (d) ...)])
 
 +, -, *, /, rem, and mod.
-
-\((a) \rightarrow \kappa(d)|\bot(Overflow)
-  \quad\mathrm{where}\quad a: Int \land d: Int\)
-
-    (%ineg a [($cont (d) ...)])
-
-Unary `-`.
 
 # Bit operations
 
