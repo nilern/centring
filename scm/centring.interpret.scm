@@ -36,7 +36,7 @@
       (($ Primop 'halt #(v) _)
        (eval-trivial fiber v))
       
-      (($ Primop op args #(($ Fn #(resname) #(#(_ cbody)))))
+      (($ Primop op args #(($ Fn #(resname) #(#(_ cbody)) _)))
        (let ((impl (Instr-impl (hash-table-ref primops op)))
              (argvals (smap #() (cute eval-trivial fiber <>) args)))
          (fiber-local-set! fiber resname (impl fiber argvals))

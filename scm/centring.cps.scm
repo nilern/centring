@@ -37,7 +37,8 @@
                            (vector
                             (vector
                              (dnf (Const #t))
-                             (c (Local res)))))))))))
+                             (c (Local res))))
+                           #f)))))))
         (else (error "unable to convert primop with purpose" purpose)))))
 
   (define (cps-stmts stmts c)
@@ -57,7 +58,8 @@
            (Primop 'apply
                    (vector (Fn (gensym '_)
                                (vector (dnf (Const #t (persistent-map)))
-                                       stmt))
+                                       stmt)
+                               #f)
                            acc)
                    #f))
          (peek stmts)

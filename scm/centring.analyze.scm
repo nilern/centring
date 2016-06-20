@@ -37,7 +37,7 @@
   (define (analyze-sf sexp)
     (match (cons (name (car sexp)) (cdr sexp))
       (('fn arg . cases)
-       (Fn arg (mapv (cute mapv analyze <>) cases)))
+       (Fn arg (mapv (cute mapv analyze <>) cases) #f))
 
       (('letrec bindings body)
        (Fix (mapv
@@ -78,10 +78,11 @@
   
     (define (alph&spec env ast)
       (match ast
-       (($ Fn arg cases)
+       (($ Fn arg cases #f)
         (let ((env* (add-local env arg)))
           (Fn (map-ref env* arg)
-              (mapv (cute mapv (cute alph&spec env* <>) <>) cases))))
+              (mapv (cute mapv (cute alph&spec env* <>) <>) cases)
+              #f)))
        ((and ($ Primop 'set-ns! #(($ Const (and (? symbol?) ns-name))))
              node)
         (set! curr-ns ns-name)
@@ -162,9 +163,10 @@
   ;; Traverse an AST and DNF-convert Fn case conditions:
   (define (dnf-convert ast)
     (match ast
-      (($ Fn arg cases)
+      (($ Fn arg cases #f)
        (Fn arg
            (mapv (match-lambda
                   (#(cond body) (vector (dnf cond) (dnf-convert body))))
-                 cases)))
+                 cases)
+           #f))
       (_ (node-map dnf-convert ast)))))

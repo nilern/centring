@@ -12,10 +12,11 @@
   ;;;; AST
 
   (define-record-type Fn
-    (Fn arg cases)
+    (Fn arg cases body)
     Fn?
     (arg Fn-arg)
-    (cases Fn-cases))
+    (cases Fn-cases)
+    (body Fn-body))
 
   (define-record-type Primop
     (Primop op args conts)
@@ -54,22 +55,22 @@
 
   (define (ast->sexp ast)
     (match ast
-      (($ Fn arg cases)
+      (($ Fn arg cases _)
        `($fn ,arg ,@(smap '() (cute smap '() ast->sexp <>) cases)))
       (($ Primop op args #f)
        `(,(symbol-append '% op) ,@(smap '() ast->sexp args)))
       (($ Primop op args conts)
        (case (op-purpose op)
          ((expr)
-          (match-let ((#(($ Fn #(res) #(#(_ cbody)))) conts))
+          (match-let ((#(($ Fn #(res) #(#(_ cbody)) _)) conts))
             `($let (,res (,(symbol-append '% op) ,@(smap '() ast->sexp args)))
                ,(ast->sexp cbody))))
          ((stmt)
-          (match-let ((#(($ Fn #() #(#(_ cbody)))) conts))
+          (match-let ((#(($ Fn #() #(#(_ cbody)) _)) conts))
             `($do (,(symbol-append '% op) ,@(smap '() ast->sexp args))
                   ,(ast->sexp cbody))))
          ((ctrl)
-          (match-let ((#(($ Fn #() #(#(_ cbody))) ...) conts))
+          (match-let ((#(($ Fn #() #(#(_ cbody)) _) ...) conts))
             `(,(symbol-append '% op) ,@(smap '() ast->sexp args)
               ,@(smap '() ast->sexp cbody))))))
       
@@ -88,8 +89,8 @@
 
   (define (node-map f node)
     (match node
-      (($ Fn arg cases)
-       (Fn arg (mapv (cute mapv f <>) cases)))
+      (($ Fn arg cases body)
+       (Fn arg (mapv (cute mapv f <>) cases) (if body (f body) body)))
       (($ Primop op args conts)
        (Primop op (mapv f args) (if conts (mapv f conts) conts)))
       (($ Fix bindings body)
