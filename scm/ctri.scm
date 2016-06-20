@@ -14,7 +14,7 @@
      (only centring.ast ast->sexp)
      (only centring.analyze analyze alphatize&specialize dnf-convert)
      (prefix centring.cps cps:)
-     ;(only centring.eval-ast make-interpreter eval-ast .curr-ns)
+     (only centring.interpret make-fiber fiber-curr-ns eval-cps)
      (only centring.ns Ns-name))
 
 (define opts
@@ -49,14 +49,16 @@
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))
    (else
-    (o (cute eval-ast (make-interpreter path) <>)
+    (o (cute eval-cps (make-fiber) <>)
+       (cute cps:cps-k <>
+             (lambda (v) (ast:Primop 'halt (vector v) #() (persistent-map))))
        dnf-convert
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))))
 
 (define (repl path)
-  (let* ((itp (make-interpreter path))
-         (prompt (lambda () (sprintf "~S> " (Ns-name (.curr-ns itp)))))
+  (let* ((itp (make-fiber))
+         (prompt (lambda () (sprintf "~S> " (Ns-name (fiber-curr-ns itp)))))
          (get-message (condition-property-accessor 'exn 'message))
          (get-arguments (condition-property-accessor 'exn 'arguments)))
     (awhile (linenoise (prompt))
@@ -68,9 +70,11 @@
         (->> (read (open-input-string it))
              expand-all
              analyze
-             (cute alphatize&specialize 'centring.user <>)
+             (alphatize&specialize 'centring.user)
              dnf-convert
-             (eval-ast itp)
+             ((cute cps:cps-k <>
+                    (lambda (v) (ast:Primop 'halt (vector v) #() (persistent-map)))))
+             (eval-cps itp)
              (printf "~S~%"))))))
 
 (keyword-style #:prefix)

@@ -27,4 +27,4 @@ Conceptually, every Centring value has two parts:
 * Vector of clover names
 * Current body
 * Vector of cases used to construct current body
-* Queue of pending clovers
+* Queue of pending clovers to merge
