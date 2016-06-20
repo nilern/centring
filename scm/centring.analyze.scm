@@ -20,7 +20,7 @@
       
       ((? intrinsic?) (analyze-intr sexp))
       
-      ((? literal?) (Const sexp (persistent-map)))
+      ((? literal?) (Const sexp))
 
       ((? symbol?) (analyze-id sexp))
 
@@ -29,42 +29,38 @@
                (vector (analyze callee)
                        (Primop 'rec
                                (mapv analyze (cons 'centring.lang/Tuple args))
-                               #f
-                               (persistent-map)))
-               #f
-               (persistent-map)))
+                               #f))
+               #f))
 
       (_ (error "unable to analyze" sexp))))
   
   (define (analyze-sf sexp)
     (match (cons (name (car sexp)) (cdr sexp))
       (('fn arg . cases)
-       (Fn arg (mapv (cute mapv analyze <>) cases) (persistent-map)))
+       (Fn arg (mapv (cute mapv analyze <>) cases)))
 
       (('letrec bindings body)
        (Fix (mapv
              (match-lambda ((var val) (cons var (analyze val))))
              bindings)
-            (analyze body)
-            (persistent-map)))
+            (analyze body)))
       
       (('do . stmts)
-       (Do (mapv analyze stmts) (persistent-map)))
+       (Do (mapv analyze stmts)))
       
       (('quote (and v (or (? literal?) (? symbol?))))
-       (Const v (persistent-map)))
+       (Const v))
 
       (_ (error "invalid special form" sexp))))
 
   (define (analyze-intr sexp)
     (Primop (name (car sexp))
             (mapv analyze (cdr sexp))
-            #f
-            (persistent-map)))
+            #f))
 
   (define (analyze-id id)
     (call-with-values (lambda () (ns-name id))
-      (cute Global #f <> <> (persistent-map))))
+      (cute Global #f <> <>)))
 
   ;;;; Alphatize & Specialize
 
@@ -82,33 +78,31 @@
   
     (define (alph&spec env ast)
       (match ast
-       (($ Fn arg cases ann)
+       (($ Fn arg cases)
         (let ((env* (add-local env arg)))
           (Fn (map-ref env* arg)
-              (mapv (cute mapv (cute alph&spec env* <>) <>) cases)
-              ann)))
-       ((and ($ Primop 'set-ns! #(($ Const (and (? symbol?) ns-name) _)) _)
+              (mapv (cute mapv (cute alph&spec env* <>) <>) cases))))
+       ((and ($ Primop 'set-ns! #(($ Const (and (? symbol?) ns-name))))
              node)
         (set! curr-ns ns-name)
         node)
-       (($ Primop op args conts ann)
-        (Primop op (mapv (cute alph&spec env <>) args) conts ann))
-       (($ Fix bindings body ann)
+       (($ Primop op args conts)
+        (Primop op (mapv (cute alph&spec env <>) args) conts))
+       (($ Fix bindings body)
         (let ((env* (add-locals env (mapv car bindings))))
           (Fix
            (mapv (match-lambda
                   ((var . expr) (cons (map-ref env* var) (alph&spec env* expr))))
                  bindings)
-           (alph&spec env* body)
-           ann)))
-       (($ Do stmts ann)
-        (Do (mapv (cute alph&spec env <>) stmts) ann))
+           (alph&spec env* body))))
+       (($ Do stmts)
+        (Do (mapv (cute alph&spec env <>) stmts)))
        ((and (? Const?) node) node)
-       (($ Global _ #f name ann)
+       (($ Global _ #f name)
         (aif (map-ref env name #f)
-             (Local it ann)
-             (Global curr-ns #f name ann)))
-       (($ Global _ ns name ann) (Global curr-ns ns name ann))
+             (Local it)
+             (Global curr-ns #f name)))
+       (($ Global _ ns name) (Global curr-ns ns name))
        (_ (error "unable to alphatize etc." ast))))
     (alph&spec (persistent-map) ast))
 
@@ -117,68 +111,60 @@
   ;; DNF-convert a Fn case condition:
   (define (dnf ast)
     (define (wrap node)
-      (Primop 'bior
-              (vector (Primop 'band (vector node) #f (persistent-map)))
-              #f
-              (persistent-map)))
+      (Primop 'bior (vector (Primop 'band (vector node) #f)) #f))
     
-    (define (combine-dnfs-with f default subnodes ann)
+    (define (combine-dnfs-with f default subnodes)
       (match subnodes
         (#() default)
         (#(node) node)
         ((? vector?)
          (Primop 'bior
                  (foldl f (Primop-args (peek subnodes)) (pop subnodes))
-                 #f
-                 ann))))
+                 #f))))
     
     (match ast
-      (($ Primop 'bior args _ ann)
+      (($ Primop 'bior args _)
        ;; convert args and flatten the resulting `or` of `or`:s:
        (combine-dnfs-with (lambda (acc v) (vector-append acc (Primop-args v)))
-                          (wrap (Const #f ann)) (mapv dnf args) ann))
+                          (wrap (Const #f)) (mapv dnf args)))
       
-      (($ Primop 'band args _ ann)
+      (($ Primop 'band args _)
        ;; convert args and distribute `and` over them:
        (combine-dnfs-with
         (lambda (acc v)
           (vector-ec (:vector l acc) (:vector r (Primop-args v))
             (Primop 'band
                     (vector-append (Primop-args l) (Primop-args r))
-                    #f
-                    (persistent-map))))
-        (wrap (Const #t ann)) (mapv dnf args) ann))
+                    #f)))
+        (wrap (Const #t)) (mapv dnf args)))
       
-      (($ Primop 'bnot #(arg) _ ann)
+      (($ Primop 'bnot #(arg) _)
        ;; Use some Boolean algebra laws and reconvert:
        (match arg
-         (($ Primop 'bior args _ ann) ; De Morgan
+         (($ Primop 'bior args _) ; De Morgan
           (dnf (Primop 'band
                        (mapv (lambda (v)
-                               (Primop 'bnot (vector v) #f (persistent-map)))
+                               (Primop 'bnot (vector v) #f))
                              args)
-                       #f
-                       ann)))
-         (($ Primop 'band args _ ann) ; De Morgan
+                       #f)))
+         (($ Primop 'band args _) ; De Morgan
           (dnf (Primop 'bior
                        (mapv (lambda (v)
-                               (Primop 'bnot (vector v) #f (persistent-map)))
+                               (Primop 'bnot (vector v) #f))
                              args)
-                       #f
-                       ann)))
-         (($ Primop 'bnot #(arg) _ ann) ; double negation
+                       #f)))
+         (($ Primop 'bnot #(arg) _) ; double negation
           (dnf arg))
-         (_ (wrap (Primop 'bnot (vector (dnf-convert arg)) #f ann)))))
+         (_ (wrap (Primop 'bnot (vector (dnf-convert arg)) #f)))))
       
       (_ (wrap (dnf-convert ast)))))
 
   ;; Traverse an AST and DNF-convert Fn case conditions:
   (define (dnf-convert ast)
     (match ast
-      (($ Fn arg cases ann)
+      (($ Fn arg cases)
        (Fn arg
            (mapv (match-lambda
                   (#(cond body) (vector (dnf cond) (dnf-convert body))))
-                 cases)
-           ann))
+                 cases)))
       (_ (node-map dnf-convert ast)))))

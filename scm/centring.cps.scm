@@ -12,9 +12,9 @@
 
   (define (cps-k ast c)
     (match ast
-      (($ Primop op args _ ann)
-       (cps-primop op args ann c))
-      (($ Do stmts _)
+      (($ Primop op args _)
+       (cps-primop op args c))
+      (($ Do stmts)
        (cps-stmts stmts c))
        
       ((? Const?) (c ast))
@@ -23,7 +23,7 @@
 
       (_ (error "unable to CPS convert" ast))))
 
-  (define (cps-primop op args ann c)
+  (define (cps-primop op args c)
     (let ((purpose (ops:op-purpose op)))
       (case purpose
         ((expr)
@@ -36,10 +36,8 @@
                        (Fn (vector res)
                            (vector
                             (vector
-                             (dnf (Const #t (persistent-map)))
-                             (c (Local res (persistent-map)))))
-                           (persistent-map)))
-                      ann)))))
+                             (dnf (Const #t))
+                             (c (Local res)))))))))))
         (else (error "unable to convert primop with purpose" purpose)))))
 
   (define (cps-stmts stmts c)
@@ -47,7 +45,7 @@
       (#()
        (cps-k
         (Primop 'rec
-                (vector (Global 'centring.lang #f 'Tuple (persistent-map)))
+                (vector (Global 'centring.lang #f 'Tuple))
                 #f (persistent-map))
         c))
       (#(stmt)
@@ -59,10 +57,9 @@
            (Primop 'apply
                    (vector (Fn (gensym '_)
                                (vector (dnf (Const #t (persistent-map)))
-                                       stmt)
-                               (persistent-map)))
-                   #f
-                   acc))
+                                       stmt))
+                           acc)
+                   #f))
          (peek stmts)
          (pop stmts)) c))))
 

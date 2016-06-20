@@ -51,7 +51,7 @@
    (else
     (o (cute eval-cps (make-fiber) <>)
        (cute cps:cps-k <>
-             (lambda (v) (ast:Primop 'halt (vector v) #() (persistent-map))))
+             (lambda (v) (ast:Primop 'halt (vector v) #())))
        dnf-convert
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))))
@@ -73,7 +73,7 @@
              (alphatize&specialize 'centring.user)
              dnf-convert
              ((cute cps:cps-k <>
-                    (lambda (v) (ast:Primop 'halt (vector v) #() (persistent-map)))))
+                    (lambda (v) (ast:Primop 'halt (vector v) #()))))
              (eval-cps itp)
              (printf "~S~%"))))))
 

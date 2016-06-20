@@ -33,10 +33,10 @@
 
   (define (eval-cps fiber node)
     (match node
-      (($ Primop 'halt #(v) _ _)
+      (($ Primop 'halt #(v) _)
        (eval-trivial fiber v))
       
-      (($ Primop op args #(($ Fn #(resname) #(#(_ cbody)) _)) _)
+      (($ Primop op args #(($ Fn #(resname) #(#(_ cbody)))))
        (let ((impl (Instr-impl (hash-table-ref primops op)))
              (argvals (smap #() (cute eval-trivial fiber <>) args)))
          (fiber-local-set! fiber resname (impl fiber argvals))
@@ -46,6 +46,6 @@
 
   (define (eval-trivial fiber node)
     (match node
-      (($ Const val _) val)
-      (($ Local name _) (fiber-local-ref fiber name)))))
+      (($ Const val) val)
+      (($ Local name) (fiber-local-ref fiber name)))))
       
