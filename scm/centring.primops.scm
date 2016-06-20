@@ -7,7 +7,10 @@
        (srfi 69)
        matchable
        (only miscmacros define-syntax-rule)
-       (only clojurian-syntax ->))
+       (only clojurian-syntax ->)
+
+       centring.rt
+       centring.ns)
 
   ;;;;
 
@@ -65,6 +68,11 @@
                      (Instr (quote argpat) (quote conts) pure? name)))
 
   ;;;;
+
+  (define-primop set-global! fiber (name v) -> ((cont))
+    (Fiber-global-set! fiber name v))
+
+  ;;;
 
   (define-primop rec _ argv --> ((cont d))
     argv)

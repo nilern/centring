@@ -14,7 +14,8 @@
      (only centring.ast ast->sexp)
      (only centring.analyze analyze alphatize&specialize dnf-convert)
      (prefix centring.cps cps:)
-     (only centring.interpret make-fiber fiber-curr-ns eval-cps)
+     (only centring.rt make-Fiber Fiber-curr-ns)
+     (only centring.interpret eval-cps)
      (only centring.ns Ns-name))
 
 (define opts
@@ -44,12 +45,12 @@
    ((assq 'icps options)
     (o ast->sexp
        (cute cps:cps-k <>
-             (lambda (v) (ast:Primop 'halt (vector v) #() (persistent-map))))
+             (lambda (v) (ast:Primop 'halt (vector v) #())))
        dnf-convert
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))
    (else
-    (o (cute eval-cps (make-fiber) <>)
+    (o (cute eval-cps (make-Fiber) <>)
        (cute cps:cps-k <>
              (lambda (v) (ast:Primop 'halt (vector v) #())))
        dnf-convert
@@ -57,8 +58,8 @@
        analyze expand-all))))
 
 (define (repl path)
-  (let* ((itp (make-fiber))
-         (prompt (lambda () (sprintf "~S> " (Ns-name (fiber-curr-ns itp)))))
+  (let* ((itp (make-Fiber))
+         (prompt (lambda () (sprintf "~S> " (Ns-name (Fiber-curr-ns itp)))))
          (get-message (condition-property-accessor 'exn 'message))
          (get-arguments (condition-property-accessor 'exn 'arguments)))
     (awhile (linenoise (prompt))

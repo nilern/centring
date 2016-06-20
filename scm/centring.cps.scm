@@ -39,6 +39,24 @@
                              (dnf (Const #t))
                              (c (Local res))))
                            #f)))))))
+        ((stmt)
+         (cps-args
+          args
+          (lambda (as)
+            (Primop op as
+                    (vector
+                     (Fn #()
+                         (vector
+                          (vector
+                           (dnf (Const #t))
+                           (cps-k
+                            (Primop 'rec
+                                    (vector (Global 'centring.lang
+                                                    'centring.lang
+                                                    'Tuple))
+                                    #f)
+                            c)))
+                         #f))))))
         (else (error "unable to convert primop with purpose" purpose)))))
 
   (define (cps-stmts stmts c)
@@ -47,7 +65,7 @@
        (cps-k
         (Primop 'rec
                 (vector (Global 'centring.lang #f 'Tuple))
-                #f (persistent-map))
+                #f)
         c))
       (#(stmt)
        (cps-k stmt c))
@@ -57,7 +75,7 @@
          (lambda (acc stmt)
            (Primop 'apply
                    (vector (Fn (gensym '_)
-                               (vector (dnf (Const #t (persistent-map)))
+                               (vector (dnf (Const #t))
                                        stmt)
                                #f)
                            acc)
