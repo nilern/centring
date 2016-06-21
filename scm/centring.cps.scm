@@ -7,11 +7,19 @@
        sequences
 
        centring.ast
+       centring.util
        (only centring.analyze dnf)
        (prefix centring.primops ops:))
 
   (define (cps-k ast c)
     (match ast
+      ((? Fn?)
+       (let ((f (gensym 'f)))
+         (cps-k (Fix (vector (cons f ast)) (Local f)) c)))
+      (($ Fix bindings body)
+       (Fix (mapv (match-lambda ((var . f) (cons var (cps-fn f))))
+                  bindings)
+            (cps-k body c)))
       (($ Primop op args _)
        (cps-primop op args c))
       (($ Do stmts)
@@ -22,6 +30,19 @@
       ((? Local?) (c ast))
 
       (_ (error "unable to CPS convert" ast))))
+
+  (define (cps-fn f)
+    (match-let* ((($ Fn arg cases _) f)
+                 (ret (gensym 'r)))
+      (Fn (vector arg ret)
+          (mapv (match-lambda
+                 (#(cond body)
+                  (vector (cps-condition cond)
+                          (cps-k body
+                                 (lambda (v)
+                                   (Primop 'continue (vector (Local ret) v) #()))))))
+                cases)
+          #f)))
 
   (define (cps-primop op args c)
     (let ((purpose (ops:op-purpose op)))
@@ -57,6 +78,29 @@
                                     #f)
                             c)))
                          #f))))))
+        ((ctrl)
+         (case op
+           ((apply)
+            (match-let ((#(callee arg) args))
+              (cps-k
+               callee
+               (lambda (f)
+                 (let* ((ret (gensym 'r))
+                        (res (gensym 'v)))
+                   (Fix (vector
+                         (cons ret (Fn (vector res)
+                                       (vector (vector (dnf (Const #t))
+                                                       (c (Local res))))
+                                       #f)))
+                        (cps-k
+                         arg
+                         (lambda (a)
+                           (Primop 'apply (vector f a (Local ret)) #())))))))))
+           ((halt)
+            (match-let ((#(v) args))
+              (Primop 'halt (vector v) #())))
+           (else
+            (error "unable to convert control operation" op))))
         (else (error "unable to convert primop with purpose" purpose)))))
 
   (define (cps-stmts stmts c)
@@ -75,8 +119,7 @@
          (lambda (acc stmt)
            (Primop 'apply
                    (vector (Fn (gensym '_)
-                               (vector (dnf (Const #t))
-                                       stmt)
+                               (vector (vector (dnf (Const #t)) stmt))
                                #f)
                            acc)
                    #f))
@@ -91,4 +134,21 @@
           (k res)
           (cps-k (vector-ref vec i)
                  (lambda (v) (vector-set! res i v) (cpsv (add1 i))))))
-      (cpsv 0))))
+      (cpsv 0)))
+
+  (define (cps-condition cond)
+    (define cps-or
+      (match-lambda
+       (($ Primop 'bior ands _)
+        (Primop 'bior (mapv cps-and ands) #f))))
+    (define cps-and
+      (match-lambda
+       (($ Primop 'band els _)
+        (Primop 'band (mapv cps-el els) #f))))
+    (define cps-el
+      (match-lambda
+       (($ Primop 'bnot #(at) _)
+        (Primop 'bnot (vector (cps-el at)) #f))
+       (at
+        (cps-k at (lambda (v) (Primop 'yield (vector v) #()))))))
+    (cps-or cond)))

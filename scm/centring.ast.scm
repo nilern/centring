@@ -55,8 +55,10 @@
 
   (define (ast->sexp ast)
     (match ast
-      (($ Fn arg cases _)
+      (($ Fn (and (? symbol?) arg) cases _)
        `($fn ,arg ,@(smap '() (cute smap '() ast->sexp <>) cases)))
+      (($ Fn arg cases _)
+       `($fn ,(vector->list arg) ,@(smap '() (cute smap '() ast->sexp <>) cases)))
       (($ Primop op args #f)
        `(,(symbol-append '% op) ,@(smap '() ast->sexp args)))
       (($ Primop op args conts)
@@ -76,7 +78,7 @@
       
       (($ Fix bindings body)
        `($letrec ,(smap '() (match-lambda
-                             ((var . expr) (cons var (ast->sexp expr))))
+                             ((var . expr) (list var (ast->sexp expr))))
                         bindings)
                  ,(ast->sexp body)))
       (($ Do stmts)

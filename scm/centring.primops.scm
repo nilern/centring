@@ -29,14 +29,17 @@
                      (Instr-conts instr))))))
 
   (define (op-purpose op)
-    (let ((instr (hash-table-ref primops op)))
-      (cond
-       ((eqv? (count (match-lambda (('cont _) #t) (_ #f)) (Instr-conts instr)) 1)
-        'expr)
-       ((eqv? (count (match-lambda (('cont) #t) (_ #f)) (Instr-conts instr)) 1)
-        'stmt)
-       (else
-        'ctrl))))
+    (let* ((instr (hash-table-ref primops op))
+           (conts (Instr-conts instr)))
+      (if (list? conts)
+        (cond
+         ((eqv? (count (match-lambda (('cont _) #t) (_ #f)) conts) 1)
+          'expr)
+         ((eqv? (count (match-lambda (('cont) #t) (_ #f)) conts) 1)
+          'stmt)
+         (else
+          'ctrl))
+        'ctrl)))
 
   ;;;;
 
@@ -117,6 +120,15 @@
     (fx/ a b))
 
   ;;;
+
+  (define-primop apply itp (f a k) -> #t
+    (error "unimplemented!"))
+
+  (define-primop continue itp (k v) -> #t
+    (error "unimplemented!"))
+
+  (define-primop yield itp (v) -> #t
+    (error "unimplemented!"))
 
   (define-primop halt _ (v) -> ()
     v))
