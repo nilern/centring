@@ -3,8 +3,11 @@
 
   (import scheme chicken)
   (use matchable
+       (srfi 69)
        persistent-hash-map
        sequences
+       (only miscmacros inc!)
+       (only extras pretty-print)
 
        centring.ast
        centring.util
@@ -57,7 +60,7 @@
                        (Fn (vector res)
                            (vector
                             (vector
-                             (dnf (Const #t))
+                             (cps-condition (dnf (Const #t)))
                              (c (Local res))))
                            #f)))))))
         ((stmt)
@@ -69,7 +72,7 @@
                      (Fn #()
                          (vector
                           (vector
-                           (dnf (Const #t))
+                           (cps-condition (dnf (Const #t)))
                            (cps-k
                             (Primop 'rec
                                     (vector (Global 'centring.lang
@@ -89,8 +92,10 @@
                         (res (gensym 'v)))
                    (Fix (vector
                          (cons ret (Fn (vector res)
-                                       (vector (vector (dnf (Const #t))
-                                                       (c (Local res))))
+                                       (vector
+                                        (vector
+                                         (cps-condition (dnf (Const #t)))
+                                         (c (Local res))))
                                        #f)))
                         (cps-k
                          arg
@@ -151,4 +156,74 @@
         (Primop 'bnot (vector (cps-el at)) #f))
        (at
         (cps-k at (lambda (v) (Primop 'yield (vector v) #()))))))
-    (cps-or cond)))
+    (cps-or cond))
+
+  ;;;;
+
+  (define (census ast)
+    (let ((symtab (make-symtab)))
+      (define (census! ctx node)
+        (match node
+          (($ Fn args cases _)
+           (doseq (arg args) ; add entries for argnames
+             (add-id! symtab arg))
+           (doseq (case cases)
+             (match-let ((#(cond body) case))
+               (census! ctx cond)
+               (census! ctx body))))
+          (($ Fix bindings body)
+           (doseq (binding bindings) ; add entries for bound names
+             (match-let (((var . expr) binding))
+               (add-id! symtab var)))
+           (doseq (binding bindings)
+             (match-let (((var . expr) binding))
+               (census! (push-fname ctx var) expr)))
+           (census! ctx body))
+          (($ Primop op (and args #(callee _ ...)) conts)
+           (doseq (arg args)
+             (census! ctx arg))
+           (when conts
+             (doseq (cont conts)
+               (census! ctx cont)))
+           (when (and (or (eq? op 'apply) (eq? op 'continue))
+                      (Local? callee)) ; calling a local?
+             (inc-callcount! symtab (Local-name callee))))
+          
+          (($ Local name)
+           (inc-usecount! symtab name)
+           (when (parent-scope? ctx name)
+             (inc-rec-usecount! symtab name)))
+           
+          ((or (? Const?) (? Global?)))))
+      (census! (make-ctx) ast)
+      ast))
+
+  (define make-symtab make-hash-table)
+  (define (add-id! symtab name)
+    (hash-table-set! symtab name (make-CensusEntry 0 0 0)))
+  (define (inc-usecount! symtab name)
+    (let ((entry (hash-table-ref symtab name)))
+      (inc! (CensusEntry-usecount entry))))
+  (define (inc-rec-usecount! symtab name)
+    (let ((entry (hash-table-ref symtab name)))
+      (inc! (CensusEntry-rec-usecount entry))))
+  (define (inc-callcount! symtab name)
+    (let ((entry (hash-table-ref symtab name)))
+      (inc! (CensusEntry-callcount entry))))
+  
+  (define (make-ctx) '())
+  (define (push-fname ctx name)
+    (cons name ctx))
+  (define (parent-scope? ctx name)
+    (memq name ctx))
+
+  (define-record CensusEntry
+    (setter usecount)
+    (setter rec-usecount)
+    (setter callcount))
+
+  (define-record-printer (CensusEntry entry out)
+    (fprintf out "#,(CensusEntry ~S ~S ~S)"
+             (CensusEntry-usecount entry)
+             (CensusEntry-rec-usecount entry)
+             (CensusEntry-callcount entry))))
