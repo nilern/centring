@@ -53,6 +53,8 @@
     Local?
     (name Local-name))
 
+  ;;;; Convert to S-expr
+
   (define (ast->sexp ast)
     (match ast
       (($ Fn (and (? symbol?) arg) cases _)
@@ -88,6 +90,8 @@
       (($ Global _ ns name) (symbol-append (or ns '@@) ns-sep name))
       (($ Local name) name)
       (_ (error "unable to display as S-expr" ast))))
+
+  ;;;; Traversal
 
   (define (node-map f node)
     (match node

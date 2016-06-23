@@ -3,16 +3,23 @@
 
   (import scheme chicken)
   (use matchable
+       (srfi 1)
        (srfi 69)
        persistent-hash-map
        sequences
        (only miscmacros inc!)
+       (only anaphora aif)
        (only extras pretty-print)
 
        centring.ast
        centring.util
        (only centring.analyze dnf)
        (prefix centring.primops ops:))
+
+  ;;;; CPS Conversion
+
+  (define (convert ast)
+    (cps-k ast (lambda (v) (Primop 'halt (vector v) #()))))
 
   (define (cps-k ast c)
     (match ast
@@ -40,10 +47,11 @@
       (Fn (vector arg ret)
           (mapv (match-lambda
                  (#(cond body)
-                  (vector (cps-condition cond)
-                          (cps-k body
-                                 (lambda (v)
-                                   (Primop 'continue (vector (Local ret) v) #()))))))
+                  (vector
+                   (cps-condition cond)
+                   (cps-k body
+                          (lambda (v)
+                            (Primop 'continue (vector (Local ret) v) #()))))))
                 cases)
           #f)))
 
@@ -158,7 +166,15 @@
         (cps-k at (lambda (v) (Primop 'yield (vector v) #()))))))
     (cps-or cond))
 
-  ;;;;
+  ;;;; Utils
+
+  (define (call-op? op)
+    (or (eq? op 'apply) (eq? op 'continue)))
+
+  (define (replace-sym rpls sym)
+    (hash-table-ref/default rpls sym sym))
+    
+  ;;;; Analyses
 
   (define (census ast)
     (let ((symtab (make-symtab)))
@@ -185,8 +201,7 @@
            (when conts
              (doseq (cont conts)
                (census! ctx cont)))
-           (when (and (or (eq? op 'apply) (eq? op 'continue))
-                      (Local? callee)) ; calling a local?
+           (when (and (call-op? op) (Local? callee))
              (inc-callcount! symtab (Local-name callee))))
           
           (($ Local name)
@@ -226,4 +241,60 @@
     (fprintf out "#,(CensusEntry ~S ~S ~S)"
              (CensusEntry-usecount entry)
              (CensusEntry-rec-usecount entry)
-             (CensusEntry-callcount entry))))
+             (CensusEntry-callcount entry)))
+
+  ;;;; Eta Contraction
+
+  (define (eta-contract ast)
+    (let ((eta-rpls (make-hash-table)))
+      (define (etac! node)
+        (match node
+          (($ Fix bindings body)
+           (let ((bindings*
+                  (foldl
+                   (match-lambda*
+                    ((acc (var . (and ($ Fn args #(#(cond body))) expr)))
+                     (aif (and (tautology? cond)
+                               (eta-replacing-name args body))
+                       (begin
+                         (hash-table-set! eta-rpls var (replace-sym eta-rpls it))
+                         acc)
+                       (cons (cons var (etac! expr)) acc)))
+                    ((acc (var . expr))
+                     (cons (cons var (etac! expr)) acc)))
+                   '() bindings))
+                 (body* (etac! body)))
+             (if (null? bindings*)
+               body*
+               (Fix (reverse bindings*) body*))))
+          (($ Local name)
+           (Local (replace-sym eta-rpls name)))
+          (_ (node-map etac! node))))
+      (etac! ast)))
+
+  (define (eta-replacing-name formals body)
+    (define (maybe-Local-name node)
+      (match node
+        (($ Local name) name)
+        (_ #f)))
+    
+    (match body
+      (($ Primop (? call-op?) args _)
+       (if (equal? (mapv maybe-Local-name (pop args)) formals)
+         (Local-name (peek args))
+         #f))
+      (_ #f)))
+
+  (define (tautology? cond)
+    (match cond
+      (($ Primop 'bior #(args ...) _)
+       (any tautology? args))
+      (($ Primop 'band #(args ...) _)
+       (every tautology? args))
+      (($ Primop 'bnot #(($ Primop yield #(($ Const #f)) _)) _)
+       #t)
+      (($ Primop 'yield #((? tautology?)) _)
+       #t)
+      (($ Const #t)
+       #t)
+      (_ #f))))

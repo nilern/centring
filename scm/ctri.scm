@@ -18,18 +18,9 @@
      (only centring.interpret eval-cps)
      (only centring.ns Ns-name))
 
-(define opts
-  (list (args:make-option (esxp) none: "Just expand S-expr.")
-        (args:make-option (iana) none: "Just build and print AST.")
-        (args:make-option (fana) none: "Just build, alphatize and print AST.")
-        (args:make-option (icps) none: "Just CPS convert.")
+;;;;
 
-        (args:make-option (e) (required: "EXPR") "Use EXPR as input.")
-
-        (args:make-option (path) (required: "PATH")
-                          "Use PATH (colon-separated) as the CTR_PATH")
-
-        (args:make-option (h help) none: "Display this text.")))
+(define optimize-cps cps:eta-contract)
 
 (define (make-action options path)
   (cond
@@ -44,15 +35,21 @@
        analyze expand-all))
    ((assq 'icps options)
     (o ast->sexp
-       (cute cps:cps-k <>
-             (lambda (v) (ast:Primop 'halt (vector v) #())))
+       cps:convert
+       dnf-convert
+       (cute alphatize&specialize 'centring.user <>)
+       analyze expand-all))
+   ((assq 'fcps options)
+    (o ast->sexp
+       optimize-cps
+       cps:convert
        dnf-convert
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))
    (else
     (o (cute eval-cps (make-Fiber) <>)
-       (cute cps:cps-k <>
-             (lambda (v) (ast:Primop 'halt (vector v) #())))
+       optimize-cps
+       cps:convert
        dnf-convert
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))))
@@ -75,8 +72,11 @@
              dnf-convert
              ((cute cps:cps-k <>
                     (lambda (v) (ast:Primop 'halt (vector v) #()))))
+             optimize-cps
              (eval-cps itp)
              (printf "~S~%"))))))
+
+;;;; Reader Setup
 
 (keyword-style #:prefix)
 
@@ -95,6 +95,22 @@
         (loop (peek-char port) (cons expr exprs)))))))
 
 (set-sharp-read-syntax! #\( (read-ctor 'centring.lang/Tuple #\)))
+
+;;;; Main & Option Parsing
+
+(define opts
+  (list (args:make-option (esxp) none: "Just expand S-expr.")
+        (args:make-option (iana) none: "Just build and print AST.")
+        (args:make-option (fana) none: "Just build, alphatize and print AST.")
+        (args:make-option (icps) none: "Just CPS convert.")
+        (args:make-option (fcps) none: "CPS convert and optimize.")
+
+        (args:make-option (e) (required: "EXPR") "Use EXPR as input.")
+
+        (args:make-option (path) (required: "PATH")
+                          "Use PATH (colon-separated) as the CTR_PATH")
+
+        (args:make-option (h help) none: "Display this text.")))
 
 (define (main arglist)
   (receive (options operands) (args:parse arglist opts)
