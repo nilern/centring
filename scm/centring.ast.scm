@@ -56,25 +56,28 @@
   ;;;; Convert to S-expr
 
   (define (ast->sexp ast)
+    (define (map-pl f p)
+      (list (f (car p)) (f (cdr p))))
+    
     (match ast
       (($ Fn (and (? symbol?) arg) cases _)
-       `($fn ,arg ,@(smap '() (cute smap '() ast->sexp <>) cases)))
+       `($fn ,arg ,@(smap '() (cute map-pl ast->sexp <>) cases)))
       (($ Fn arg cases _)
-       `($fn ,(vector->list arg) ,@(smap '() (cute smap '() ast->sexp <>) cases)))
+       `($fn ,(vector->list arg) ,@(smap '() (cute map-pl ast->sexp <>) cases)))
       (($ Primop op args #f)
        `(,(symbol-append '% op) ,@(smap '() ast->sexp args)))
       (($ Primop op args conts)
        (case (op-purpose op)
          ((expr)
-          (match-let ((#(($ Fn #(res) #(#(_ cbody)) _)) conts))
+          (match-let ((#(($ Fn #(res) #((_ . cbody)) _)) conts))
             `($let (,res (,(symbol-append '% op) ,@(smap '() ast->sexp args)))
                ,(ast->sexp cbody))))
          ((stmt)
-          (match-let ((#(($ Fn #() #(#(_ cbody)) _)) conts))
+          (match-let ((#(($ Fn #() #((_ . cbody)) _)) conts))
             `($do (,(symbol-append '% op) ,@(smap '() ast->sexp args))
                   ,(ast->sexp cbody))))
          ((ctrl)
-          (match-let ((#(($ Fn #() #(#(_ cbody)) _) ...) conts))
+          (match-let ((#(($ Fn #() #((_ . cbody)) _) ...) conts))
             `(,(symbol-append '% op) ,@(smap '() ast->sexp args)
               ,@(smap '() ast->sexp cbody))))))
       
@@ -96,7 +99,7 @@
   (define (node-map f node)
     (match node
       (($ Fn arg cases body)
-       (Fn arg (mapv (cute mapv f <>) cases) (if body (f body) body)))
+       (Fn arg (mapv (cute map-pair f <>) cases) (if body (f body) body)))
       (($ Primop op args conts)
        (Primop op (mapv f args) (if conts (mapv f conts) conts)))
       (($ Fix bindings body)

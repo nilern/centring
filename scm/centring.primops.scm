@@ -121,6 +121,9 @@
 
   ;;;
 
+  (define-primop call itp args -> #t
+    (error "unimplemented!"))
+
   (define-primop apply itp (f a k) -> #t
     (error "unimplemented!"))
 

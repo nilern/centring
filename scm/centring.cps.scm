@@ -46,12 +46,12 @@
                  (ret (gensym 'r)))
       (Fn (vector arg ret)
           (mapv (match-lambda
-                 (#(cond body)
-                  (vector
+                 ((cond . body)
+                  (cons
                    (cps-condition cond)
                    (cps-k body
                           (lambda (v)
-                            (Primop 'continue (vector (Local ret) v) #()))))))
+                            (Primop 'call (vector (Local ret) v) #()))))))
                 cases)
           #f)))
 
@@ -67,7 +67,7 @@
                       (vector
                        (Fn (vector res)
                            (vector
-                            (vector
+                            (cons
                              (cps-condition (dnf (Const #t)))
                              (c (Local res))))
                            #f)))))))
@@ -79,7 +79,7 @@
                     (vector
                      (Fn #()
                          (vector
-                          (vector
+                          (cons
                            (cps-condition (dnf (Const #t)))
                            (cps-k
                             (Primop 'rec
@@ -101,14 +101,14 @@
                    (Fix (vector
                          (cons ret (Fn (vector res)
                                        (vector
-                                        (vector
+                                        (cons
                                          (cps-condition (dnf (Const #t)))
                                          (c (Local res))))
                                        #f)))
                         (cps-k
                          arg
                          (lambda (a)
-                           (Primop 'apply (vector f a (Local ret)) #())))))))))
+                           (Primop 'call (vector f a (Local ret)) #())))))))))
            ((halt)
             (match-let ((#(v) args))
               (Primop 'halt (vector v) #())))
@@ -130,9 +130,9 @@
        (cps-k
         (foldl
          (lambda (acc stmt)
-           (Primop 'apply
+           (Primop 'call
                    (vector (Fn (gensym '_)
-                               (vector (vector (dnf (Const #t)) stmt))
+                               (vector (cons (dnf (Const #t)) stmt))
                                #f)
                            acc)
                    #f))
@@ -168,9 +168,6 @@
 
   ;;;; Utils
 
-  (define (call-op? op)
-    (or (eq? op 'apply) (eq? op 'continue)))
-
   (define (replace-sym rpls sym)
     (hash-table-ref/default rpls sym sym))
     
@@ -201,7 +198,7 @@
            (when conts
              (doseq (cont conts)
                (census! ctx cont)))
-           (when (and (call-op? op) (Local? callee))
+           (when (and (eq? op 'call) (Local? callee))
              (inc-callcount! symtab (Local-name callee))))
           
           (($ Local name)
@@ -253,7 +250,7 @@
            (let ((bindings*
                   (foldl
                    (match-lambda*
-                    ((acc (var . (and ($ Fn args #(#(cond body))) expr)))
+                    ((acc (var . (and ($ Fn args #((cond . body))) expr)))
                      (aif (and (tautology? cond)
                                (eta-replacing-name args body))
                        (begin
@@ -279,7 +276,7 @@
         (_ #f)))
     
     (match body
-      (($ Primop (? call-op?) args _)
+      (($ Primop 'call args _)
        (if (equal? (mapv maybe-Local-name (pop args)) formals)
          (Local-name (peek args))
          #f))

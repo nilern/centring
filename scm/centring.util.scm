@@ -38,6 +38,9 @@
 
   (define mapv (cute smap #() <> <>))
 
+  (define (map-pair f p)
+    (cons (f (car p)) (f (cdr p))))
+
   (define-syntax-rule (doseq (v coll) body ...)
     (for (lambda (v) body ...) coll))
 
