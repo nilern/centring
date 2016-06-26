@@ -7,9 +7,10 @@
        (srfi 69)
        persistent-hash-map
        sequences
-       (only miscmacros inc!)
-       (only anaphora aif)
+       (only miscmacros inc! let/cc)
+       (only anaphora aif awhen)
        (only extras pretty-print)
+       (only data-structures o complement)
 
        centring.ast
        centring.util
@@ -90,7 +91,7 @@
                             c)))
                          #f))))))
         ((ctrl)
-         (case op
+         (case op ;; TODO: %call
            ((apply)
             (match-let ((#(callee arg) args))
               (cps-k
@@ -170,6 +171,12 @@
 
   (define (replace-sym rpls sym)
     (hash-table-ref/default rpls sym sym))
+
+  (define (replace-local rpls node)
+    (match node
+      (($ Local name)
+       (hash-table-ref/default rpls name (Local name)))
+      (_ node)))
     
   ;;;; Analyses
 
@@ -181,7 +188,7 @@
            (doseq (arg args) ; add entries for argnames
              (add-id! symtab arg))
            (doseq (case cases)
-             (match-let ((#(cond body) case))
+             (match-let (((cond . body) case))
                (census! ctx cond)
                (census! ctx body))))
           (($ Fix bindings body)
@@ -208,7 +215,7 @@
            
           ((or (? Const?) (? Global?)))))
       (census! (make-ctx) ast)
-      ast))
+      symtab))
 
   (define make-symtab make-hash-table)
   (define (add-id! symtab name)
@@ -263,22 +270,17 @@
                  (body* (etac! body)))
              (if (null? bindings*)
                body*
-               (Fix (reverse bindings*) body*))))
+               (Fix (list->vector (reverse bindings*)) body*))))
           (($ Local name)
            (Local (replace-sym eta-rpls name)))
           (_ (node-map etac! node))))
       (etac! ast)))
 
   (define (eta-replacing-name formals body)
-    (define (maybe-Local-name node)
-      (match node
-        (($ Local name) name)
-        (_ #f)))
-    
     (match body
       (($ Primop 'call args _)
        (if (equal? (mapv maybe-Local-name (pop args)) formals)
-         (Local-name (peek args))
+         (maybe-Local-name (peek args))
          #f))
       (_ #f)))
 
@@ -294,4 +296,69 @@
        #t)
       (($ Const #t)
        #t)
-      (_ #f))))
+      (_ #f)))
+  
+  (define (maybe-Local-name node)
+    (match node
+      (($ Local name) name)
+      (_ #f)))
+
+  ;;;; Beta Contraction
+
+  ;; TODO: polymorphic fns
+  (define (beta-contract symtab ast)
+    (let ((beta-rpls (make-hash-table)))
+      (define (contract! node)
+        (match node
+          (($ Fix bindings body)
+           (doseq (binding bindings)
+             (match binding
+               (((and (? (cute betable? symtab <>)) var) . f)
+                (hash-table-set! beta-rpls var f))
+               (_)))
+           node)
+          (($ Primop 'call args conts)
+           (let/cc ret
+             (awhen (maybe-Local-name (vector-ref args 0))
+               (awhen (hash-table-ref/default beta-rpls it #f)
+                 (match-let ((($ Fn formals #(((? tautology?) . body)) _) it))
+                   (when (eqv? (sub1 (vector-length args))
+                               (vector-length formals))
+                     (ret
+                      (contract!
+                       (postwalk
+                        (cute replace-local
+                              (hash-table-zip formals (pop args)) <>)
+                        body)))))))
+             node))
+          (_ node)))
+      (prewalk contract! ast)))
+
+  (define (betable? symtab name)
+    (aif (hash-table-ref/default symtab name #f)
+      (and (= (CensusEntry-usecount it) 1)
+           (= (CensusEntry-callcount it) 1)
+           (zero? (CensusEntry-rec-usecount it)))
+      #f))
+
+  ;;;; Useless Variable Elimination
+
+  ;; TODO: primops
+  (define (remove-useless symtab ast)
+    (define (remove node)
+      (match node
+        (($ Fix bindings body)
+         (let ((bindings* (filter #()
+                                  (complement (o (cute useless? symtab <>) car))
+                                  bindings)))
+           (if (zero? (vector-length bindings*))
+             (remove body)
+             (Fix bindings* body))))
+        (_ node)))
+    (prewalk remove ast))
+
+  (define (useless? symtab name)
+    (aif (hash-table-ref/default symtab name #f)
+      (< (- (CensusEntry-usecount it) (CensusEntry-rec-usecount it)) 1)
+      #f)))
+           

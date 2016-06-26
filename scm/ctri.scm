@@ -20,7 +20,12 @@
 
 ;;;;
 
-(define optimize-cps cps:eta-contract)
+(define (optimize-cps cexp)
+  (let* ((symtab (cps:census cexp))
+         (contracted
+          (->> cexp (cps:beta-contract symtab) cps:eta-contract))
+         (symtab* (cps:census contracted)))
+    (cps:remove-useless symtab* contracted)))
 
 (define (make-action options path)
   (cond

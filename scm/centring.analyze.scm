@@ -37,7 +37,9 @@
   (define (analyze-sf sexp)
     (match (cons (name (car sexp)) (cdr sexp))
       (('fn arg . cases)
-       (Fn arg (mapv (cute map-pair analyze <>) cases) #f))
+       (Fn arg (mapv (match-lambda
+                      ((cond body) (cons (analyze cond) (analyze body))))
+                     cases) #f))
 
       (('letrec bindings body)
        (Fix (mapv

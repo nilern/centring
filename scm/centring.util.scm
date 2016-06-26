@@ -3,6 +3,8 @@
 
   (import scheme chicken)
   (use (only (srfi 13) string-index)
+       (srfi 69)
+       vector-lib
        sequences
        coops coops-primitive-objects
        (only miscmacros define-syntax-rule))
@@ -40,6 +42,14 @@
 
   (define (map-pair f p)
     (cons (f (car p)) (f (cdr p))))
+
+  (define (hash-table-zip ks vs)
+    (let ((res (make-hash-table)))
+      (vector-for-each
+       (lambda (_ k v)
+         (hash-table-set! res k v))
+       ks vs)
+      res))
 
   (define-syntax-rule (doseq (v coll) body ...)
     (for (lambda (v) body ...) coll))

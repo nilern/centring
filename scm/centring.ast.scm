@@ -5,6 +5,7 @@
   (use persistent-hash-map
        sequences
        matchable
+       (only data-structures identity)
 
        centring.util
        (only centring.primops op-purpose))
@@ -108,5 +109,14 @@
       (($ Do stmts)
        (Do (mapv f stmts)))
       ((or (? Const?) (? Global?) (? Local?)) node)
-      (_ (error "(node-map): not a valid node" node)))))
+      (_ (error "(node-map): not a valid node" node))))
+
+  (define (walk inner outer ast)
+    (outer (node-map inner ast)))
+
+  (define (postwalk f ast)
+    (walk (cute postwalk f <>) f ast))
+
+  (define (prewalk f ast)
+    (walk (cute prewalk f <>) identity (f ast))))
     
