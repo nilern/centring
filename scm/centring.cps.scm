@@ -14,7 +14,7 @@
 
        centring.ast
        centring.util
-       (only centring.analyze dnf)
+       (only centring.dispatch dnf tautology?)
        (prefix centring.primops ops:))
 
   ;;;; CPS Conversion
@@ -283,20 +283,6 @@
          (maybe-Local-name (peek args))
          #f))
       (_ #f)))
-
-  (define (tautology? cond)
-    (match cond
-      (($ Primop 'bior #(args ...) _)
-       (any tautology? args))
-      (($ Primop 'band #(args ...) _)
-       (every tautology? args))
-      (($ Primop 'bnot #(($ Primop yield #(($ Const #f)) _)) _)
-       #t)
-      (($ Primop 'yield #((? tautology?)) _)
-       #t)
-      (($ Const #t)
-       #t)
-      (_ #f)))
   
   (define (maybe-Local-name node)
     (match node
@@ -321,15 +307,17 @@
            (let/cc ret
              (awhen (maybe-Local-name (vector-ref args 0))
                (awhen (hash-table-ref/default beta-rpls it #f)
-                 (match-let ((($ Fn formals #(((? tautology?) . body)) _) it))
-                   (when (eqv? (sub1 (vector-length args))
+                 (match it
+                   (($ Fn formals #(((? tautology?) . body)) _)
+                    (when (eqv? (sub1 (vector-length args))
                                (vector-length formals))
-                     (ret
-                      (contract!
-                       (postwalk
-                        (cute replace-local
-                              (hash-table-zip formals (pop args)) <>)
-                        body)))))))
+                      (ret
+                       (contract!
+                        (postwalk
+                         (cute replace-local
+                               (hash-table-zip formals (pop args)) <>)
+                         body)))))
+                   (_))))
              node))
           (_ node)))
       (prewalk contract! ast)))
@@ -361,4 +349,6 @@
     (aif (hash-table-ref/default symtab name #f)
       (< (- (CensusEntry-usecount it) (CensusEntry-rec-usecount it)) 1)
       #f)))
+
+  
            

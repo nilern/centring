@@ -59,10 +59,15 @@
   (define (ast->sexp ast)
     (define (map-pl f p)
       (list (f (car p)) (f (cdr p))))
+    (define (case->sexp case)
+      (match case
+        (((and (? vector?) cond) . body)
+         (ast->sexp (Primop 'bior (mapv (cute Primop 'band <> #f) cond) #f)))
+        (_ (map-pl ast->sexp case))))
     
     (match ast
       (($ Fn (and (? symbol?) arg) cases _)
-       `($fn ,arg ,@(smap '() (cute map-pl ast->sexp <>) cases)))
+       `($fn ,arg ,@(smap '() case->sexp cases)))
       (($ Fn arg cases _)
        `($fn ,(vector->list arg) ,@(smap '() (cute map-pl ast->sexp <>) cases)))
       (($ Primop op args #f)
