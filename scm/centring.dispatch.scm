@@ -100,3 +100,74 @@
       (($ Const #t)
        #t)
       (_ #f))))
+
+  ;;;;
+
+  ;; a `df` is a data structure that matches
+  ;; #((#((or ($ Primop 'band #(expr) _) expr) ...) . body-name) ...)
+
+  ;; (define (df-inject cases)
+  ;;   (define (handle-case case)
+  ;;     (match-let (((clauses . body) case)
+  ;;                 (body-name (gensym 'm)))
+  ;;       (values (mapv (cute cons <> body-name) clauses) body-name body)))
+  ;;   (mappendv (lambda (case)
+  ;;               (receive (cases body-name body) (handle-case case)
+  ;;                 (push! (cons body-name (Fn #() #(#t 
+
+  ;; (define (build-lookup-dag df)
+  ;;   (let* ((cases (dfc-inject df))
+  ;;          (exprs (dfc-exprs cases)))
+  ;;     (build-sub-dag cases exprs)))
+
+  ;; (define (build-sub-dag cases exprs)
+  ;;   (if (null? exprs)
+  ;;     (Primop 'apply
+  ;;             (Local (compute-target cases))
+  ;;             (Primop 'rec
+  ;;                     (vector (Global 'centring.lang 'centring.lang 'Tuple))
+  ;;                     #f)
+  ;;             #f)
+  ;;     (let ((expr (pick-expr exprs cases)))
+  ;;       (Primop 'brf (vector expr)
+  ;;               (mapv (lambda (truthy?)
+  ;;                       (call-with-values
+  ;;                           (lambda () (dfc-filter cases exprs expr truthy?))
+  ;;                         build-sub-dag))
+  ;;                     '(#t #f))))))
+
+  ;; (define (pick-expr exprs cases)
+  ;;   (car exprs))
+
+  ;; (define (compute-target cases)
+  ;;   (match cases
+  ;;     (((_ . f)) f)
+  ;;     ('() 'no-method)
+  ;;     (_ 'ambiguous-methods)))
+
+  ;; (define (dfc-inject cases)
+  ;;   (map '() vector->list cases))
+
+  ;; (define (dfc-filter cases exprs expr truthy?)
+  ;;   (let* ((cases* (filter '() (cute case-passes? expr truthy? <>) cases))
+  ;;          (exprs* (filter (cute equal? <> expr) (dfc-exprs cases))))
+  ;;     (values cases* exprs*)))
+
+  ;; (define (case-passes? expr truthy? case)
+  ;;   (every (cute atom-passes? expr truthy? <>) (car case)))
+
+  ;; (define (atom-passes? expr truthy? atom)
+  ;;   (match atom
+  ;;     (($ Primop 'bnot #((? (cute equal? <> expr) _)))
+  ;;      (not truthy?))
+  ;;     ((? (cute equal? <> expr))
+  ;;      truthy?)
+  ;;     (_ #t)))
+
+  ;; (define (dfc-exprs cases)
+  ;;   (append-map case-exprs cases))
+
+  ;; (define (case-exprs case)
+  ;;   (map (match-lambda (($ Primop 'bnot #(expr) _) expr) (expr expr))
+  ;;        (car case))))
+       

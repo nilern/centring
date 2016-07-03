@@ -2,7 +2,7 @@
      (only irregex irregex-split)
      (only posix current-directory)
      (only pathname-expand pathname-expand)
-     (only clojurian-syntax ->>)
+     (only clojurian-syntax -> ->>)
      (only anaphora aif acond awhile)
      (only linenoise linenoise history-add)
      (only data-structures o)
@@ -17,7 +17,8 @@
      (prefix centring.cps cps:)
      (only centring.rt make-Fiber Fiber-curr-ns)
      (only centring.interpret eval-cps)
-     (only centring.ns Ns-name))
+     (only centring.ns Ns-name)
+     (prefix centring.cek cek:))
 
 ;;;;
 
@@ -53,12 +54,16 @@
        (cute alphatize&specialize 'centring.user <>)
        analyze expand-all))
    (else
-    (o (cute eval-cps (make-Fiber) <>)
-       optimize-cps
-       cps:convert
-       dnf-convert
-       (cute alphatize&specialize 'centring.user <>)
-       analyze expand-all))))
+    (define alph&spec (cute alphatize&specialize 'centring.user <>))
+    (lambda (sexp)
+      (-> sexp
+          expand-all
+          analyze
+          alph&spec
+          dnf-convert
+          cek:inject
+          cek:interpret
+          cek:extract)))))
 
 (define (repl path)
   (let* ((itp (make-Fiber))
