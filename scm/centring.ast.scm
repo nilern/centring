@@ -62,7 +62,9 @@
     (define (case->sexp case)
       (match case
         (((and (? vector?) cond) . body)
-         (ast->sexp (Primop 'bior (mapv (cute Primop 'band <> #f) cond) #f)))
+         (list
+          (ast->sexp (Primop 'bior (mapv (cute Primop 'band <> #f) cond) #f))
+          (ast->sexp body)))
         (_ (map-pl ast->sexp case))))
     
     (match ast
