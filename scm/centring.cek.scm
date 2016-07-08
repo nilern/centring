@@ -38,22 +38,30 @@
   ;;;; Closures
 
   (define-record-type Closure
-    (Closure formal df cases caseq)
+    (Closure expr env)
     Closure?
-    (formal Closure-formal) ; symbol
-    (df Closure-df)         ; DispatchNode
-    (cases Closure-cases)   ; vector<#(AST, AST, Env)>
-    (caseq Closure-caseq (setter Closure-caseq))) ; queue<#(AST, AST, Env)>
+    (expr Closure-expr)
+    (env Closure-env))
 
-  (define (make-closure formal cases env)
+  ;;;; FnClosures
+
+  (define-record-type FnClosure
+    (FnClosure formal df cases caseq)
+    FnClosure?
+    (formal FnClosure-formal) ; symbol
+    (df FnClosure-df)         ; DispatchNode
+    (cases FnClosure-cases)   ; vector<#(AST, AST, Env)>
+    (caseq FnClosure-caseq (setter FnClosure-caseq))) ; queue<#(AST, AST, Env)>
+
+  (define (make-fn formal cases env)
     (let ((caseq (make-queue)))
       (doseq (case cases)
         (queue-add! caseq (vector (car case) (cdr case) env)))
-      (Closure formal #f #() caseq)))
+      (FnClosure formal #f #() caseq)))
 
-  (define (closure-merge! cl1 cl2)
-    (match-let* ((($ Closure formal1 _ _ caseq1) cl1)
-                 (($ Closure formal2 _ cases2 caseq2) cl2)
+  (define (fn-merge! cl1 cl2)
+    (match-let* ((($ FnClosure formal1 _ _ caseq1) cl1)
+                 (($ FnClosure formal2 _ cases2 caseq2) cl2)
                  (caseq2* (make-queue)))
       (define (replace-formal v)
         (match v
@@ -73,7 +81,7 @@
           (queue-add! caseq1 (replace-case-formal case))
           (queue-add! caseq2* case)))
       ;; undo the damage done to cl2:
-      (set! (Closure-caseq cl2) caseq2*)))
+      (set! (FnClosure-caseq cl2) caseq2*)))
 
   ;;;; Machine
 
@@ -88,9 +96,9 @@
 
   (define (step state)
     (match state
-      ;; Fn:
+      ;; FnClosure:
       (($ State ($ Fn formal cases _) env k)
-       (State (Const (make-closure formal cases env)) env k))
+       (State (Const (make-fn formal cases env)) env k))
 
       ;; Primops:
       (($ State ($ Primop op args _) env k)
