@@ -3,7 +3,7 @@ rs-vm/target
 git_stats
 scm/ctrc
 scm/ctri
-scm-vm/ctri
+cek/ctri
 *.so
 *.import.scm
 hs/ctrc
