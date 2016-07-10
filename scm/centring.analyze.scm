@@ -17,7 +17,17 @@
      
      ((? symbol?) (call-with-values (lambda () (ns-name sexp)) Symbol))
 
-     ((? literal?) (Const sexp))))
+     ((? literal?) (Const sexp))
+
+     ((callee . args)
+      (Primop 'apply
+              (vector (analyze callee)
+                      (Primop 'rec
+                              (mapv analyze (cons 'centring.lang/Tuple args))
+                              #f))
+              #f))
+
+     (_ (error "unable to analyze" sexp))))
   
   (define (analyze-sf sexp)
     (match (cons (name (car sexp)) (cdr sexp))
