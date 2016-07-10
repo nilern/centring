@@ -6,13 +6,13 @@
        (only clojurian-syntax doto)
        vector-lib
        (srfi 69)
-       persistent-hash-map
        data-structures
        (only miscmacros until)
 
        centring.util
        centring.value
        centring.ast
+       centring.env
        (only centring.primops primops Instr-impl))
 
   ;;;; State
@@ -43,8 +43,8 @@
   ;;; * no explicit State, pass as args instead
   ;;; * no {Const, Local}-wrapping and -unwrapping
 
-  (define (inject ctrl)
-    (State ctrl (persistent-map) (Halt-cont)))
+  (define (inject ns-name ctrl)
+    (State ctrl (make-env (ns-ref ns-name)) (Halt-cont)))
 
   (define extract (o Const-val State-ctrl))
 
