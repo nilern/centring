@@ -2,90 +2,51 @@
      (only irregex irregex-split)
      (only posix current-directory)
      (only pathname-expand pathname-expand)
-     (only clojurian-syntax -> ->>)
      (only anaphora aif acond awhile)
      (only linenoise linenoise history-add)
-     (only data-structures o)
-     persistent-hash-map
      args
      
-     (only centring.expand expand-all)
+     (prefix centring.expand exp:)
+     (prefix centring.analyze ana:)
      (prefix centring.ast ast:)
-     (only centring.ast ast->sexp)
-     (only centring.analyze analyze alphatize&specialize)
-     (only centring.dispatch dnf-convert)
-     (prefix centring.cps cps:)
-     (only centring.rt make-Fiber Fiber-curr-ns)
-     (only centring.interpret eval-cps)
-     (only centring.ns Ns-name)
+     (prefix centring.dispatch dis:)
      (prefix centring.cek cek:))
 
 ;;;;
 
-(define (optimize-cps cexp)
-  (let* ((symtab (cps:census cexp))
-         (contracted
-          (->> cexp (cps:beta-contract symtab) cps:eta-contract))
-         (symtab* (cps:census contracted)))
-    (cps:remove-useless symtab* contracted)))
-
 (define (make-action options path)
   (cond
    ((assq 'esxp options)
-    expand-all)
-   ((assq 'iana options)
-    (o ast->sexp analyze expand-all))
-   ((assq 'fana options)
-    (o ast->sexp
-       dnf-convert
-       (cute alphatize&specialize 'centring.user <>)
-       analyze expand-all))
-   ((assq 'icps options)
-    (o ast->sexp
-       cps:convert
-       dnf-convert
-       (cute alphatize&specialize 'centring.user <>)
-       analyze expand-all))
-   ((assq 'fcps options)
-    (o ast->sexp
-       optimize-cps
-       cps:convert
-       dnf-convert
-       (cute alphatize&specialize 'centring.user <>)
-       analyze expand-all))
+    exp:expand-all)
+   ((assq 'ana options)
+    (o ast:ast->sexp
+       ana:analyze exp:expand-all))
    (else
-    (define alph&spec (cute alphatize&specialize 'centring.user <>))
-    (lambda (sexp)
-      (-> sexp
-          expand-all
-          analyze
-          alph&spec
-          dnf-convert
-          cek:inject
-          cek:interpret
-          cek:extract)))))
+    (o cek:extract cek:interpret (cute cek:inject 'centring.user <>)
+       ana:analyze exp:expand-all))))
 
 (define (repl path)
-  (let* ((itp (make-Fiber))
-         (prompt (lambda () (sprintf "~S> " (Ns-name (Fiber-curr-ns itp)))))
-         (get-message (condition-property-accessor 'exn 'message))
-         (get-arguments (condition-property-accessor 'exn 'arguments)))
-    (awhile (linenoise (prompt))
-      (history-add it)
-      (handle-exceptions exn
-        (fprintf (current-error-port) "Error: ~A: ~S~%"
-                 (get-message exn)
-                 (get-arguments exn))
-        (->> (read (open-input-string it))
-             expand-all
-             analyze
-             (alphatize&specialize 'centring.user)
-             dnf-convert
-             ((cute cps:cps-k <>
-                    (lambda (v) (ast:Primop 'halt (vector v) #()))))
-             optimize-cps
-             (eval-cps itp)
-             (printf "~S~%"))))))
+  (error "REPL unimplemented"))
+  ;; (let* ((itp (make-Fiber))
+  ;;        (prompt (lambda () (sprintf "~S> " (Ns-name (Fiber-curr-ns itp)))))
+  ;;        (get-message (condition-property-accessor 'exn 'message))
+  ;;        (get-arguments (condition-property-accessor 'exn 'arguments)))
+  ;;   (awhile (linenoise (prompt))
+  ;;     (history-add it)
+  ;;     (handle-exceptions exn
+  ;;       (fprintf (current-error-port) "Error: ~A: ~S~%"
+  ;;                (get-message exn)
+  ;;                (get-arguments exn))
+  ;;       (->> (read (open-input-string it))
+  ;;            expand-all
+  ;;            analyze
+  ;;            (alphatize&specialize 'centring.user)
+  ;;            dnf-convert
+  ;;            ((cute cps:cps-k <>
+  ;;                   (lambda (v) (ast:Primop 'halt (vector v) #()))))
+  ;;            optimize-cps
+  ;;            (eval-cps itp)
+  ;;            (printf "~S~%"))))))
 
 ;;;; Reader Setup
 
@@ -111,10 +72,7 @@
 
 (define opts
   (list (args:make-option (esxp) none: "Just expand S-expr.")
-        (args:make-option (iana) none: "Just build and print AST.")
-        (args:make-option (fana) none: "Just build, alphatize and print AST.")
-        (args:make-option (icps) none: "Just CPS convert.")
-        (args:make-option (fcps) none: "CPS convert and optimize.")
+        (args:make-option (ana) none: "Just build and print AST.")
 
         (args:make-option (e) (required: "EXPR") "Use EXPR as input.")
 

@@ -7,8 +7,11 @@
        vector-lib
        sequences
        (srfi 42)
+       data-structures
+       (only miscmacros until)
 
        centring.util
+       centring.value
        centring.ast)
 
   ;;;; DNF conversion
@@ -99,7 +102,33 @@
        #t)
       (($ Const #t)
        #t)
-      (_ #f))))
+      (_ #f)))
+
+  ;;;;
+
+  (define (fn-merge! cl1 cl2)
+    (match-let* ((($ FnClosure formal1 _ _ caseq1) cl1)
+                 (($ FnClosure formal2 _ cases2 caseq2) cl2)
+                 (caseq2* (make-queue)))
+      (define (replace-formal v)
+        (match v
+          (($ Symbol #f (? (cute eq? formal1 <>))) (Symbol #f formal2))
+          (_ v)))
+      (define (replace-case-formal case)
+        (match-let ((#(cond body env) case))
+          (vector (postwalk replace-formal cond)
+                  (postwalk replace-formal body)
+                  env)))
+      ;; cases already in use at cl2:
+      (doseq (case cases2)
+        (queue-add! caseq1 (replace-case-formal case)))
+      ;; pending cases of cl2:
+      (until (queue-empty? caseq2)
+        (let ((case (queue-remove! caseq2)))
+          (queue-add! caseq1 (replace-case-formal case))
+          (queue-add! caseq2* case)))
+      ;; undo the damage done to cl2:
+      (set! (FnClosure-caseq cl2) caseq2*))))
 
   ;;;;
 

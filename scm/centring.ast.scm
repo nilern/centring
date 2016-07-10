@@ -8,6 +8,7 @@
        (only data-structures identity)
 
        centring.util
+       centring.value
        (only centring.primops op-purpose))
 
   ;;;; AST
@@ -37,22 +38,16 @@
     Do?
     (stmts Do-stmts))
 
+  (define-record-type Closure
+    (Closure expr env)
+    Closure?
+    (expr Closure-expr)
+    (env Closure-env))
+
   (define-record-type Const
     (Const val)
     Const?
     (val Const-val))
-
-  (define-record-type Global
-    (Global res-ns ns name)
-    Global?
-    (res-ns Global-res-ns)
-    (ns Global-ns)
-    (name Global-name))
-
-  (define-record-type Local
-    (Local name)
-    Local?
-    (name Local-name))
 
   ;;;; Convert to S-expr
 
@@ -96,10 +91,10 @@
                  ,(ast->sexp body)))
       (($ Do stmts)
        `($do ,@(smap '() ast->sexp stmts)))
-      (($ Const (and (? symbol?) val)) `(quote ,val))
+      (($ Const (and (? Symbol?) val)) `(quote ,(ast->sexp val)))
       (($ Const val) val)
-      (($ Global _ ns name) (symbol-append (or ns '@@) ns-sep name))
-      (($ Local name) name)
+      (($ Symbol #f name) name)
+      (($ Symbol ns name) (symbol-append ns ns-sep name))
       (_ (error "unable to display as S-expr" ast))))
 
   ;;;; Traversal
@@ -115,7 +110,7 @@
             (f body)))
       (($ Do stmts)
        (Do (mapv f stmts)))
-      ((or (? Const?) (? Global?) (? Local?)) node)
+      ((or (? Const?) (? Symbol?)) node)
       (_ (error "(node-map): not a valid node" node))))
 
   (define (walk inner outer ast)

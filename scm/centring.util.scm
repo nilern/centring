@@ -6,7 +6,6 @@
        (srfi 69)
        vector-lib
        sequences
-       coops coops-primitive-objects
        (only miscmacros define-syntax-rule))
 
   (define (ns-name sym)
@@ -24,16 +23,6 @@
     (receive (ns _) (ns-name sym) ns))
 
   (define ns-sep '/)
-
-  (define (special-form? sexp)
-    (and (pair? sexp)
-         (symbol? (car sexp))
-         (eq? (ns (car sexp)) 'centring.sf)))
-
-  (define (intrinsic? sexp)
-    (and (pair? sexp)
-         (symbol? (car sexp))
-         (eq? (ns (car sexp)) 'centring.intr)))
 
   (define (literal? v)
     (or (fixnum? v) (boolean? v) (keyword? v)))

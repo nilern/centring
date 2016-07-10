@@ -6,11 +6,7 @@
   (use (srfi 1)
        (srfi 69)
        matchable
-       (only miscmacros define-syntax-rule)
-       (only clojurian-syntax ->)
-
-       centring.rt
-       centring.ns)
+       (only miscmacros define-syntax-rule))
 
   ;;;;
 
@@ -73,7 +69,8 @@
   ;;;;
 
   (define-primop set-global! fiber (name v) -> ((cont))
-    (Fiber-global-set! fiber name v))
+    ;; (Fiber-global-set! fiber name v)
+    (error "unimplemented!"))
 
   ;;;
 
@@ -135,5 +132,3 @@
 
   (define-primop halt _ (v) -> ()
     v))
-
-  
