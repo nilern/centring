@@ -22,7 +22,7 @@
     (o ast:ast->sexp
        ana:analyze exp:expand-all))
    (else
-    (o cek:extract cek:interpret (cute cek:inject 'centring.user <>)
+    (o (cute cek:interpret 'centring.user <>)
        ana:analyze exp:expand-all))))
 
 (define (repl path)

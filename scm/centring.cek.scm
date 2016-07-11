@@ -13,20 +13,9 @@
        centring.value
        centring.ast
        centring.env
-       (only centring.primops primops Instr-impl))
-
-  ;;;; State
-
-  (define-record-type State
-    (State ctrl env kont)
-    State?
-    (ctrl State-ctrl)
-    (env State-env)
-    (kont State-kont))
+       (only centring.primops primops))
 
   ;;;; Continuations
-
-  (define-record-type Halt-cont (Halt-cont) Halt-cont?)
   
   (define-record-type Primop-cont
     (Primop-cont op vals asts index cont)
@@ -37,46 +26,65 @@
     (index Primop-cont-index)
     (cont Primop-cont-cont))
 
+  (define-record-type Do-cont
+    (Do-cont args index cont)
+    Do-cont?
+    (args Do-cont-args)
+    (index Do-cont-index)
+    (cont Do-cont-cont))
+
+  (define-record-type Halt-cont (Halt-cont) Halt-cont?)
+
   ;;;; Machine
 
-  ;;; OPTIMIZE:
-  ;;; * no explicit State, pass as args instead
-  ;;; * no {Const, Local}-wrapping and -unwrapping
-
-  (define (inject ns-name ctrl)
-    (State ctrl (make-env (ns-ref ns-name)) (Halt-cont)))
-
-  (define extract (o Const-val State-ctrl))
-
-  (define (step state)
-    (match state
-      ;; FnClosure:
-      (($ State ($ Fn formal cases _) env k)
-       (State (Const (make-fn formal cases env)) env k))
-
-      ;; Primops:
-      (($ State ($ Primop op args _) env k)
-       (State (vector-ref args 0)
+  (define (interpret ns-name ctrl)
+    (define (run ctrl env k)
+      (match ctrl
+        ;; When ctrl is complex, start from first subexpr
+        ;; and build a continuation:
+        (($ Primop op args _)
+         (run (vector-ref args 0)
               env
               (Primop-cont op
                            (make-vector (vector-length args))
-                           (mapv (cute cons <> env) args)
+                           args
                            0 k)))
-      (($ State ($ Const v) env ($ Primop-cont op vals args i k))
-       (let ((i* (add1 i))
-             (vals* (doto (vector-copy vals) (vector-set! i v))))
-         (if (= i* (vector-length args))
-           (let ((impl (Instr-impl (hash-table-ref primops op))))
-             (State (Const (impl state vals*)) env k))
-           (match-let (((arg . env) (vector-ref args i*)))
-             (State arg env (Primop-cont op vals* args i* k))))))
-      
-      ;; Halt:
-      (($ State ($ Const v) _ ($ Halt-cont))
-       state)))
+        (($ Do stmts)
+         (run (vector-ref stmts 0) env (Do-cont stmts 0 k)))
 
-  (define (interpret state)
-    (let ((state* (step state)))
-      (if (eq? state* state)
-        state
-        (interpret state*)))))
+        ;; When down to a constant, need to examine continuation:
+        (($ Const v)
+         (match k
+           (($ Primop-cont op vals args i k)
+            (let ((i* (add1 i))
+                  (vals* (doto (vector-copy vals) (vector-set! i v))))
+              (if (= i* (vector-length args))
+                ;; perform operation:
+                (match (hash-table-ref primops op)
+                  (($ ExprOp impl)
+                   (run (Const (impl vals*)) env k))
+                  (($ StmtOp impl)
+                   ;; TODO: empty tuple as ctrl:
+                   (run (Const '()) (impl env vals*) k)))
+                ;; evaluate next argument:
+                (run (vector-ref args i*)
+                     env
+                     (Primop-cont op vals* args i* k)))))
+           (($ Do-cont stmts i k)
+            (if (= i (sub1 (vector-length stmts)))
+              ;; last value gets passed to the continuation of the Do:
+              (run ctrl env k)
+              ;; throw value away and evaluate the next statement:
+              (let ((i* (add1 i)))
+                (run (vector-ref stmts i*) env (Do-cont stmts i* k)))))
+           (($ Halt-cont)
+            v)))
+
+        ;; For Fns, build a closure:
+        (($ Fn formal cases _)
+         (run (Const (make-fn formal cases env)) env k))
+
+        ;; For Symbols, look up the corresponding value:
+        (($ Symbol ns name)
+         (run (Const (env-lookup env ns name)) env k))))
+    (run ctrl (make-env (ns-ref ns-name)) (Halt-cont))))
