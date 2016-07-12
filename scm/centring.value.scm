@@ -15,11 +15,7 @@
 
   ;;;; Symbol
 
-  (define-record-type Symbol
-    (Symbol ns name)
-    Symbol?
-    (ns Symbol-ns)      ; Option<symbol>
-    (name Symbol-name)) ; symbol
+  (defrecord (Symbol ns name))
 
   ;;;; FnClosure
 

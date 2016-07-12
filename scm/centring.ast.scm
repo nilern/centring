@@ -13,41 +13,12 @@
 
   ;;;; AST
 
-  (define-record-type Fn
-    (Fn arg cases body)
-    Fn?
-    (arg Fn-arg)
-    (cases Fn-cases)
-    (body Fn-body))
-
-  (define-record-type Primop
-    (Primop op args conts)
-    Primop?
-    (op Primop-op)
-    (args Primop-args)
-    (conts Primop-conts))
-
-  (define-record-type Fix
-    (Fix bindings body)
-    Fix?
-    (bindings Fix-bindings)
-    (body Fix-body))
-
-  (define-record-type Do
-    (Do stmts)
-    Do?
-    (stmts Do-stmts))
-
-  (define-record-type Closure
-    (Closure expr env)
-    Closure?
-    (expr Closure-expr)
-    (env Closure-env))
-
-  (define-record-type Const
-    (Const val)
-    Const?
-    (val Const-val))
+  (defrecord (Fn arg cases body))
+  (defrecord (Primop op args conts))
+  (defrecord (Fix bindings body))
+  (defrecord (Do stmts))
+  (defrecord (Closure expr env))
+  (defrecord (Const val))
 
   ;;;; Convert to S-expr
 

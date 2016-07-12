@@ -6,6 +6,7 @@
        matchable
        (only miscmacros define-syntax-rule)
 
+       centring.util
        centring.value
        centring.env)
 
@@ -13,25 +14,10 @@
 
   (define primops (make-hash-table))
 
-  (define-record-type ExprOp
-    (ExprOp impl)
-    ExprOp?
-    (impl ExprOp-impl))
-
-  (define-record-type StmtOp
-    (StmtOp impl)
-    StmtOp?
-    (impl StmtOp-impl))
-
-  (define-record-type ScopeOp
-    (ScopeOp impl)
-    ScopeOp?
-    (impl ScopeOp-impl))
-
-  (define-record-type CtrlOp
-    (CtrlOp impl)
-    CtrlOp?
-    (impl CtrlOp-impl))
+  (defrecord (ExprOp impl))
+  (defrecord (StmtOp impl))
+  (defrecord (ScopeOp impl))
+  (defrecord (CtrlOp impl))
 
   (define-syntax-rule (define-expression (name args ...) body ...)
     (define-primop name

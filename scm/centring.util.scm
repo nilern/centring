@@ -8,6 +8,18 @@
        sequences
        (only miscmacros define-syntax-rule))
 
+  (define-syntax defrecord
+    (er-macro-transformer
+     (lambda (sexp r _)
+       (let ((name (caadr sexp))
+             (fields (cdadr sexp)))
+         `(,(r 'define-record-type) ,name
+           (,name ,@fields)
+           ,(symbol-append name '?)
+           ,@(map (lambda (field)
+                    (list field (symbol-append name '- field)))
+                  fields))))))
+
   (define (ns-name sym)
     (let* ((symstr (symbol->string sym))
            (i (string-index symstr #\/)))

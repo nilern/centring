@@ -9,7 +9,7 @@
        (only anaphora aif))
 
   ;;;; Vars
-
+  
   (define-record Var
     name
     val)

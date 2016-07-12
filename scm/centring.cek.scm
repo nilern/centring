@@ -16,25 +16,10 @@
        (only centring.primops primops))
 
   ;;;; Continuations
-  
-  (define-record-type Primop-cont
-    (Primop-cont op vals asts index conts cont)
-    Primop-cont?
-    (op Primop-cont-op)
-    (vals Primop-cont-vals)
-    (asts Primop-cont-asts)
-    (index Primop-cont-index)
-    (conts Primop-cont-conts)
-    (cont Primop-cont-cont))
 
-  (define-record-type Do-cont
-    (Do-cont args index cont)
-    Do-cont?
-    (args Do-cont-args)
-    (index Do-cont-index)
-    (cont Do-cont-cont))
-
-  (define-record-type Halt-cont (Halt-cont) Halt-cont?)
+  (defrecord (Primop-cont op vals asts index conts cont))
+  (defrecord (Do-cont args index cont))
+  (defrecord (Halt-cont))
 
   ;;;; Machine
 
