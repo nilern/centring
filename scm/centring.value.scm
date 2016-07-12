@@ -9,6 +9,10 @@
 
        centring.util)
 
+  ;;; Int:s are just fixnums
+
+  ;;; Bool:s are just booleans
+
   ;;;; Symbol
 
   (define-record-type Symbol

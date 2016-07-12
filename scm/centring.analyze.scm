@@ -7,6 +7,7 @@
        centring.util
        centring.value
        centring.ast
+       (only centring.primops op-purpose)
        (only centring.dispatch dnf inject-dnf))
 
   (define (analyze sexp)
@@ -55,9 +56,15 @@
       (_ (error "invalid special form" sexp))))
 
   (define (analyze-intr sexp)
-    (Primop (name (car sexp))
-            (mapv analyze (cdr sexp))
-            #f))
+    (case (op-purpose (name (car sexp)))
+      ((ctrl)
+       (Primop (name (car sexp))
+               (vector (analyze (cadr sexp)))
+               (mapv analyze (cddr sexp))))
+      (else
+       (Primop (name (car sexp))
+               (mapv analyze (cdr sexp))
+               #f))))
 
   (define (special-form? sexp)
     (and (pair? sexp)

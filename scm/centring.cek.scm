@@ -18,12 +18,13 @@
   ;;;; Continuations
   
   (define-record-type Primop-cont
-    (Primop-cont op vals asts index cont)
+    (Primop-cont op vals asts index conts cont)
     Primop-cont?
     (op Primop-cont-op)
     (vals Primop-cont-vals)
     (asts Primop-cont-asts)
     (index Primop-cont-index)
+    (conts Primop-cont-conts)
     (cont Primop-cont-cont))
 
   (define-record-type Do-cont
@@ -42,34 +43,42 @@
       (match ctrl
         ;; When ctrl is complex, start from first subexpr
         ;; and build a continuation:
-        (($ Primop op args _)
+        (($ Primop op args conts)
          (run (vector-ref args 0)
               env
               (Primop-cont op
                            (make-vector (vector-length args))
                            args
-                           0 k)))
+                           0
+                           conts k)))
         (($ Do stmts)
          (run (vector-ref stmts 0) env (Do-cont stmts 0 k)))
 
         ;; When down to a constant, need to examine continuation:
         (($ Const v)
          (match k
-           (($ Primop-cont op vals args i k)
+           (($ Primop-cont op vals args i conts k)
             (let ((i* (add1 i))
                   (vals* (doto (vector-copy vals) (vector-set! i v))))
               (if (= i* (vector-length args))
                 ;; perform operation:
+                ;; TODO: embed *Instr in AST to remove the hash-ref:
                 (match (hash-table-ref primops op)
                   (($ ExprOp impl)
                    (run (Const (impl vals*)) env k))
                   (($ StmtOp impl)
+                   (impl vals*)
                    ;; TODO: empty tuple as ctrl:
-                   (run (Const '()) (impl env vals*) k)))
+                   (run (Const '()) env k))
+                  (($ ScopeOp impl)
+                   ;; TODO: empty tuple as ctrl:
+                   (run (Const '()) (impl env vals*) k))
+                  (($ CtrlOp impl)
+                   (run (impl conts vals*) env k)))
                 ;; evaluate next argument:
                 (run (vector-ref args i*)
                      env
-                     (Primop-cont op vals* args i* k)))))
+                     (Primop-cont op vals* args i* conts k)))))
            (($ Do-cont stmts i k)
             (if (= i (sub1 (vector-length stmts)))
               ;; last value gets passed to the continuation of the Do:

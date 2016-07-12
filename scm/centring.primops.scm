@@ -23,34 +23,58 @@
     StmtOp?
     (impl StmtOp-impl))
 
+  (define-record-type ScopeOp
+    (ScopeOp impl)
+    ScopeOp?
+    (impl ScopeOp-impl))
+
+  (define-record-type CtrlOp
+    (CtrlOp impl)
+    CtrlOp?
+    (impl CtrlOp-impl))
+
   (define-syntax-rule (define-expression (name args ...) body ...)
-    (begin
-      (define name
-        (ExprOp (match-lambda
-                 (#(args ...) body ...))))
-      (hash-table-set! primops (quote name) name)))
+    (define-primop name
+      (ExprOp (lambda (argv)
+                (match-let ((#(args ...) argv)) body ...)))))
 
-  (define-syntax-rule (define-statement (name env args ...) body ...)
+  (define-syntax-rule (define-statement (name args ...) body ...)
+    (define-primop name
+      (StmtOp (lambda (argv)
+                (match-let ((#(args ...) argv)) body ...)))))
+
+  (define-syntax-rule (define-scopement (name env args ...) body ...)
+    (define-primop name
+      (ScopeOp (lambda (env argv)
+                 (match-let ((#(args ...) argv)) body ...)))))
+
+  (define-syntax-rule (define-controller (name conts args ...) body ...)
+    (define-primop name
+      (CtrlOp (lambda (conts argv)
+                (match-let ((#(args ...) argv)) body ...)))))
+
+  (define-syntax-rule (define-primop name val)
     (begin
-      (define name
-        (StmtOp (lambda (env argv)
-                  (match-let ((#(args ...) argv)) body ...))))
+      (define name val)
       (hash-table-set! primops (quote name) name)))
 
   ;;;;
 
-  (define op-purpose
-    (match-lambda
-     ((? ExprOp) 'expr)
-     ((? StmtOp) 'stmt)))
+  (define (op-purpose op-name)
+    (match (hash-table-ref/default primops op-name #f)
+     ((? ExprOp?) 'expr)
+     ((? StmtOp?) 'stmt)
+     ((? ScopeOp?) 'scope)
+     ((? CtrlOp?) 'ctrl)
+     (_ #f)))
 
-  ;;;;
+  ;;;; Namespace Operations
 
-  (define-statement (set-global! env name val)
+  (define-scopement (set-global! env name val)
     (ns-extend! (Env-ns env) (Symbol-name name) val)
     env)
 
-  ;;;;
+  ;;;; Arithmetic Operations
 
   ;;; TODO: detect overflow, div by zero:
 
@@ -64,7 +88,14 @@
     (fx* a b))
 
   (define-expression (idiv a b)
-    (fx/ a b)))
+    (fx/ a b))
+
+  ;;;; Branches
+
+  (define-controller (brf conts c)
+    (if c
+      (vector-ref conts 0)
+      (vector-ref conts 1))))
 
 ;;   ;;;
 

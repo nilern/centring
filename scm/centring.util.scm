@@ -25,7 +25,7 @@
   (define ns-sep '/)
 
   (define (literal? v)
-    (or (fixnum? v) (boolean? v) (keyword? v)))
+    (or (fixnum? v) (boolean? v)))
 
   (define mapv (cute smap #() <> <>))
 
