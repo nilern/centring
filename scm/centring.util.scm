@@ -6,7 +6,9 @@
        (srfi 69)
        vector-lib
        sequences
-       (only miscmacros define-syntax-rule))
+       dyn-vector
+       (only data-structures complement)
+       (only miscmacros define-syntax-rule let/cc))
 
   (define-syntax defrecord
     (er-macro-transformer
@@ -50,6 +52,40 @@
        (lambda (_ k v)
          (hash-table-set! res k v))
        ks vs)
+      res))
+
+  (define dynvector-empty? (o zero? dynvector-length))
+
+  (define (dynvector-push! dvec v)
+    (dynvector-set! dvec (dynvector-length dvec) v))
+
+  (define (dynvector-member? dvec val)
+    (let/cc return
+      (dynvector-for-each
+       (lambda (_ v)
+         (when (equal? v val)
+           (return #t)))
+       dvec)
+      #f))
+
+  (define (dynvector-filter pred? dvec)
+    (let ((res (make-dynvector 0 #f)))
+      (dynvector-fold
+       (lambda (_ _ v)
+         (when (pred? v) (dynvector-push! res v)))
+       #f dvec)
+      res))
+
+  (define (dynvector-remove pred? dvec)
+    (dynvector-filter (complement pred?) dvec))
+
+  (define (dvset-intersection dvset1 dvset2)
+    (let ((res (dynvector-copy dvset1)))
+      (dynvector-for-each
+       (lambda (_ v)
+         (when (dynvector-member? res v)
+           (dynvector-push! res v)))
+       dvset2)
       res))
 
   (define-syntax-rule (doseq (v coll) body ...)

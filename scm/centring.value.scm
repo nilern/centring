@@ -22,10 +22,10 @@
   (define-record-type FnClosure
     (FnClosure formal df cases caseq)
     FnClosure?
-    (formal FnClosure-formal) ; symbol
-    (df FnClosure-df)         ; DispatchNode
-    (cases FnClosure-cases)   ; vector<#(AST, AST, Env)>
-    (caseq FnClosure-caseq (setter FnClosure-caseq))) ; queue<#(AST, AST, Env)>
+    (formal FnClosure-formal)
+    (df FnClosure-df)
+    (cases FnClosure-cases)
+    (caseq FnClosure-caseq (setter FnClosure-caseq)))
 
   (define (make-fn formal cases env)
     (let ((caseq (make-queue)))

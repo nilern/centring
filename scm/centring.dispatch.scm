@@ -8,7 +8,8 @@
        sequences
        (srfi 42)
        data-structures
-       (only miscmacros until)
+       (only miscmacros until inc!)
+       dyn-vector
 
        centring.util
        centring.value
@@ -89,23 +90,6 @@
 
   ;;;;
 
-  (define (tautology? cond)
-    ;; TODO: don't make lists just for `any` and `every`:
-    (match cond
-      (($ Primop 'bior #(args ...) _)
-       (any tautology? args))
-      (($ Primop 'band #(args ...) _)
-       (every tautology? args))
-      (($ Primop 'bnot #(($ Primop yield #(($ Const #f)) _)) _)
-       #t)
-      (($ Primop 'yield #((? tautology?)) _)
-       #t)
-      (($ Const #t)
-       #t)
-      (_ #f)))
-
-  ;;;;
-
   (define (fn-merge! cl1 cl2)
     (match-let* ((($ FnClosure formal1 _ _ caseq1) cl1)
                  (($ FnClosure formal2 _ cases2 caseq2) cl2)
@@ -128,75 +112,88 @@
           (queue-add! caseq1 (replace-case-formal case))
           (queue-add! caseq2* case)))
       ;; undo the damage done to cl2:
-      (set! (FnClosure-caseq cl2) caseq2*))))
+      (set! (FnClosure-caseq cl2) caseq2*)))
 
   ;;;;
 
-  ;; a `df` is a data structure that matches
-  ;; #((#((or ($ Primop 'band #(expr) _) expr) ...) . body-name) ...)
+  ;;; OPTIMIZE: prevent (Const (or #t #f)) from getting to the dag-construction
+  ;;; OPTIMIZE: emit (case (type ...) ...) instead of (brf ...)
 
-  ;; (define (df-inject cases)
-  ;;   (define (handle-case case)
-  ;;     (match-let (((clauses . body) case)
-  ;;                 (body-name (gensym 'm)))
-  ;;       (values (mapv (cute cons <> body-name) clauses) body-name body)))
-  ;;   (mappendv (lambda (case)
-  ;;               (receive (cases body-name body) (handle-case case)
-  ;;                 (push! (cons body-name (Fn #() #(#t 
+  ;;; a `df` is a dynvector<#(#(AST ...) AST env)>
 
-  ;; (define (build-lookup-dag df)
-  ;;   (let* ((cases (dfc-inject df))
-  ;;          (exprs (dfc-exprs cases)))
-  ;;     (build-sub-dag cases exprs)))
+  (define (build-lookup-dag df)
+    ;; OPTIMIZE: memoization
+    (define (build-sub-dag/assuming expr truthy? cs es)
+      (let* ((cs* (target-cases expr truthy? cs))
+             (es* (target-expr-cls expr cs* es)))
+        (build-sub-dag cs* es*)))
+    (define (build-sub-dag cs es)
+      (if (dynvector-empty? es)
+        (compute-target cs)
+        (let ((cond-cl (pick-expr-cl es cs)))
+          (Primop 'brf
+                  (vector cond-cl)
+                  (vector
+                   (build-sub-dag/assuming (Closure-expr cond-cl) #t cs es)
+                   (build-sub-dag/assuming (Closure-expr cond-cl) #f cs es))))))
+    (build-sub-dag df (df-expr-cls df)))
 
-  ;; (define (build-sub-dag cases exprs)
-  ;;   (if (null? exprs)
-  ;;     (Primop 'apply
-  ;;             (Local (compute-target cases))
-  ;;             (Primop 'rec
-  ;;                     (vector (Global 'centring.lang 'centring.lang 'Tuple))
-  ;;                     #f)
-  ;;             #f)
-  ;;     (let ((expr (pick-expr exprs cases)))
-  ;;       (Primop 'brf (vector expr)
-  ;;               (mapv (lambda (truthy?)
-  ;;                       (call-with-values
-  ;;                           (lambda () (dfc-filter cases exprs expr truthy?))
-  ;;                         build-sub-dag))
-  ;;                     '(#t #f))))))
+  (define (compute-target cs)
+    ;; TODO: deal with overrides ("min<=_method")
+    ;; TODO: emit actual throwing code
+    (case (dynvector-length cs)
+      ((0) (Const (Symbol 'Exception 'NoMethod)))
+      ((1) (let ((case (dynvector-ref cs 0)))
+             (Closure (vector-ref case 1) (vector-ref case 2))))
+      (else (Const (Symbol 'Exception 'AmbiguousMethod)))))
 
-  ;; (define (pick-expr exprs cases)
-  ;;   (car exprs))
+  (define (target-cases expr truthy? cs)
+    (define (atom-passes? atom)
+      (if truthy?
+        (match atom
+          (($ Primop 'bnot #((? (cute equal? expr <>))) _) #f)
+          (_ #t))
+        (match atom
+          ((? (cute equal? expr <>)) #f)
+          (_ #t))))
+    (define (case-passes? case)
+      (all? atom-passes? (vector-ref case 0)))
+    (dynvector-filter case-passes? cs))
 
-  ;; (define (compute-target cases)
-  ;;   (match cases
-  ;;     (((_ . f)) f)
-  ;;     ('() 'no-method)
-  ;;     (_ 'ambiguous-methods)))
+  (define (target-expr-cls expr cs* es)
+    (dvset-intersection
+     (dynvector-remove (o (cute equal? expr <>) Closure-expr) es)
+     (df-expr-cls cs*)))
 
-  ;; (define (dfc-inject cases)
-  ;;   (map '() vector->list cases))
+  (define (pick-expr-cl es cs)
+    ;; OPTIMIZE: implement heuristics
+    (dynvector-ref es 0))
 
-  ;; (define (dfc-filter cases exprs expr truthy?)
-  ;;   (let* ((cases* (filter '() (cute case-passes? expr truthy? <>) cases))
-  ;;          (exprs* (filter (cute equal? <> expr) (dfc-exprs cases))))
-  ;;     (values cases* exprs*)))
+  (define (df-inject cl)
+    (match-let* ((($ FnClosure _ _ cases caseq) cl)
+                 (casel (queue->list caseq))
+                 (res (make-dynvector 0 #f))
+                 (i 0))
+      (define (inject-seq! coll)
+        (doseq (case coll)
+          (match-let ((#(cond body env) case))              
+            (doseq (clause cond)
+              (dynvector-set! res i (vector clause body env))
+              (inc! i 1)))))
+      (inject-seq! cases)
+      (inject-seq! casel)
+      res))
 
-  ;; (define (case-passes? expr truthy? case)
-  ;;   (every (cute atom-passes? expr truthy? <>) (car case)))
-
-  ;; (define (atom-passes? expr truthy? atom)
-  ;;   (match atom
-  ;;     (($ Primop 'bnot #((? (cute equal? <> expr) _)))
-  ;;      (not truthy?))
-  ;;     ((? (cute equal? <> expr))
-  ;;      truthy?)
-  ;;     (_ #t)))
-
-  ;; (define (dfc-exprs cases)
-  ;;   (append-map case-exprs cases))
-
-  ;; (define (case-exprs case)
-  ;;   (map (match-lambda (($ Primop 'bnot #(expr) _) expr) (expr expr))
-  ;;        (car case))))
-       
+  (define (df-expr-cls df)
+    (define atom-expr
+      (match-lambda
+        (($ Primop 'bnot #(expr) _) expr)
+        (expr expr)))
+    (let ((res (make-dynvector 0 #f)))
+      (dynvector-for-each
+       (lambda (_ case)
+         (doseq (atom (vector-ref case 0))
+           (dynvector-push! res (Closure (atom-expr atom)
+                                         (vector-ref case 2)))))
+       df)
+      res)))
