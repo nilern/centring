@@ -5,6 +5,7 @@
   
   (use matchable
        data-structures
+       dyn-vector
        (only miscmacros until)
 
        centring.util)
@@ -23,12 +24,14 @@
     (FnClosure formal df cases caseq)
     FnClosure?
     (formal FnClosure-formal)
-    (df FnClosure-df)
+    (df FnClosure-body (setter FnClosure-body))
     (cases FnClosure-cases)
     (caseq FnClosure-caseq (setter FnClosure-caseq)))
 
   (define (make-fn formal cases env)
     (let ((caseq (make-queue)))
       (doseq (case cases)
-        (queue-add! caseq (vector (car case) (cdr case) env)))
-      (FnClosure formal #f #() caseq))))
+        (match-let (((cond . body) case))
+          (doseq (clause cond)
+            (queue-add! caseq (vector clause body env)))))
+      (FnClosure formal #f (make-dynvector 0 #f) caseq))))

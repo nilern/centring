@@ -94,6 +94,7 @@
     (match-let* ((($ FnClosure formal1 _ _ caseq1) cl1)
                  (($ FnClosure formal2 _ cases2 caseq2) cl2)
                  (caseq2* (make-queue)))
+      ;; OPTIMIZE: make all args have the same name at analysis-time
       (define (replace-formal v)
         (match v
           (($ Symbol #f (? (cute eq? formal1 <>))) (Symbol #f formal2))
@@ -104,8 +105,10 @@
                   (postwalk replace-formal body)
                   env)))
       ;; cases already in use at cl2:
-      (doseq (case cases2)
-        (queue-add! caseq1 (replace-case-formal case)))
+      (dynvector-for-each
+       (lambda (_ case)
+         (queue-add! caseq1 (replace-case-formal case)))
+       cases2)
       ;; pending cases of cl2:
       (until (queue-empty? caseq2)
         (let ((case (queue-remove! caseq2)))
@@ -169,20 +172,11 @@
     ;; OPTIMIZE: implement heuristics
     (dynvector-ref es 0))
 
-  (define (df-inject cl)
-    (match-let* ((($ FnClosure _ _ cases caseq) cl)
-                 (casel (queue->list caseq))
-                 (res (make-dynvector 0 #f))
-                 (i 0))
-      (define (inject-seq! coll)
-        (doseq (case coll)
-          (match-let ((#(cond body env) case))              
-            (doseq (clause cond)
-              (dynvector-set! res i (vector clause body env))
-              (inc! i 1)))))
-      (inject-seq! cases)
-      (inject-seq! casel)
-      res))
+  (define (df-inject! cl)
+    (match-let ((($ FnClosure _ _ cases caseq) cl))
+      (until (queue-empty? caseq)
+        (dynvector-push! cases (queue-remove! caseq)))
+      cases))
 
   (define (df-expr-cls df)
     (define atom-expr

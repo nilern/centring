@@ -7,12 +7,14 @@
        vector-lib
        (srfi 69)
        data-structures
+       persistent-hash-map
        (only miscmacros until)
 
        centring.util
        centring.value
        centring.ast
        centring.env
+       (only centring.dispatch build-lookup-dag df-inject!)
        (only centring.primops primops))
 
   ;;;; Continuations
@@ -22,6 +24,8 @@
   (defrecord (Halt-cont))
 
   ;;;; Machine
+
+  ;;; FIXME: sort out closures and environments
 
   (define (interpret ns-name ctrl)
     (define (run ctrl env k)
@@ -48,18 +52,23 @@
               (if (= i* (vector-length args))
                 ;; perform operation:
                 ;; TODO: embed *Instr in AST to remove the hash-ref:
-                (match (hash-table-ref primops op)
-                  (($ ExprOp impl)
-                   (run (Const (impl vals*)) env k))
-                  (($ StmtOp impl)
-                   (impl vals*)
-                   ;; TODO: empty tuple as ctrl:
-                   (run (Const '()) env k))
-                  (($ ScopeOp impl)
-                   ;; TODO: empty tuple as ctrl:
-                   (run (Const '()) (impl env vals*) k))
-                  (($ CtrlOp impl)
-                   (run (impl conts vals*) env k)))
+                (if (eq? op 'apply)
+                  (receive (ctrl env) (cek-apply (vector-ref vals* 0)
+                                                 (vector-ref vals* 1)
+                                                 env)
+                    (run ctrl env k))
+                  (match (hash-table-ref primops op)
+                    (($ ExprOp impl)
+                     (run (Const (impl vals*)) env k))
+                    (($ StmtOp impl)
+                     (impl vals*)
+                     ;; TODO: empty tuple as ctrl:
+                     (run (Const '()) env k))
+                    (($ ScopeOp impl)
+                     ;; TODO: empty tuple as ctrl:
+                     (run (Const '()) (impl env vals*) k))
+                    (($ CtrlOp impl)
+                     (run (impl conts vals*) env k))))
                 ;; evaluate next argument:
                 (run (vector-ref args i*)
                      env
@@ -80,5 +89,22 @@
 
         ;; For Symbols, look up the corresponding value:
         (($ Symbol ns name)
-         (run (Const (env-lookup env ns name)) env k))))
-    (run ctrl (make-env (ns-ref ns-name)) (Halt-cont))))
+         (run (Const (env-lookup env ns name)) env k))
+
+        ;; For Closures, restore the env and merge the current one in.
+        ;; the current one should always be just {formal arg}.
+        (($ Closure expr env*)
+         (run expr
+              (Env (map-merge (Env-mappings env*) (Env-mappings env))
+                   (Env-ns env*))
+              k))
+
+        (_ (error "unable to interpret" ctrl))))
+    (run ctrl (make-env (ns-ref ns-name)) (Halt-cont)))
+
+  (define (cek-apply fn arg env)
+    (unless (queue-empty? (FnClosure-caseq fn))
+      (set! (FnClosure-body fn) (build-lookup-dag (df-inject! fn))))
+    (let ((body (FnClosure-body fn)))
+      (values body (Env (persistent-map (FnClosure-formal fn) arg)
+                        (Env-ns env))))))
