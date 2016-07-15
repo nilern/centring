@@ -17,7 +17,7 @@
   (defrecord (Primop op args conts))
   (defrecord (Fix bindings body))
   (defrecord (Do stmts))
-  (defrecord (Closure expr env))
+  (defrecord (Closure expr env ns))
   (defrecord (Const val))
 
   ;;;; Convert to S-expr

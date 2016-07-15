@@ -16,7 +16,6 @@
 
   (defrecord (ExprOp impl))
   (defrecord (StmtOp impl))
-  (defrecord (ScopeOp impl))
   (defrecord (CtrlOp impl))
 
   (define-syntax-rule (define-expression (name args ...) body ...)
@@ -28,11 +27,6 @@
     (define-primop name
       (StmtOp (lambda (argv)
                 (match-let ((#(args ...) argv)) body ...)))))
-
-  (define-syntax-rule (define-scopement (name env args ...) body ...)
-    (define-primop name
-      (ScopeOp (lambda (env argv)
-                 (match-let ((#(args ...) argv)) body ...)))))
 
   (define-syntax-rule (define-controller (name conts args ...) body ...)
     (define-primop name
@@ -50,15 +44,16 @@
     (match (hash-table-ref/default primops op-name #f)
      ((? ExprOp?) 'expr)
      ((? StmtOp?) 'stmt)
-     ((? ScopeOp?) 'scope)
      ((? CtrlOp?) 'ctrl)
      (_ #f)))
 
   ;;;; Namespace Operations
 
-  (define-scopement (set-global! env name val)
-    (ns-extend! (Env-ns env) (Symbol-name name) val)
-    env)
+  (define-statement (set-global! name val)
+    (ns-extend! (current-ns) (Symbol-name name) val))
+
+  (define-statement (set-ns! name)
+    (current-ns (ns-ref (Symbol-name name))))
 
   ;;;; Arithmetic Operations
 

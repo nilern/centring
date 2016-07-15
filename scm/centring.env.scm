@@ -45,6 +45,8 @@
                            (make-hash-table))))
           (hash-table-set! ns-registry name ns)
           ns))))
+  
+  (define current-ns (make-parameter (ns-ref 'centring.user)))
 
   ;; Fetch the var:
   (define (ns-resolve ns ns-name name)
@@ -90,22 +92,16 @@
 
   ;;;; Env
 
-  (define-record-type Env
-    (Env mappings ns)
-    Env?
-    (mappings Env-mappings)
-    (ns Env-ns))
-
-  (define (make-env ns)
-    (Env (persistent-map) ns))
+  (define make-env persistent-map)
 
   (define (env-lookup env ns-name name)
     (if ns-name
-      (ns-lookup (Env-ns env) ns-name name)
-      (let ((mappings-res (map-ref (Env-mappings env) name '())))
-        (if (null? mappings-res)
-          (ns-lookup (Env-ns env) ns-name name)
-          mappings-res))))
+      (ns-lookup (current-ns) ns-name name)
+      (let ((env-res (map-ref env name '())))
+        (if (null? env-res)
+          (ns-lookup (current-ns) ns-name name)
+          env-res))))
 
-  (define (env-extend env name val)
-    (Env (map-add (Env-mappings env) name val) (Env-ns env))))
+  (define env-extend map-add)
+
+  (define env-merge map-merge))

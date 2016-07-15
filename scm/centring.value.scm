@@ -8,7 +8,8 @@
        dyn-vector
        (only miscmacros until)
 
-       centring.util)
+       centring.util
+       centring.env)
 
   ;;; Int:s are just fixnums
 
@@ -33,5 +34,5 @@
       (doseq (case cases)
         (match-let (((cond . body) case))
           (doseq (clause cond)
-            (queue-add! caseq (vector clause body env)))))
+            (queue-add! caseq (vector clause body env (current-ns))))))
       (FnClosure formal #f (make-dynvector 0 #f) caseq))))

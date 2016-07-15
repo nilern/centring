@@ -21,11 +21,10 @@
 
   (defrecord (Primop-cont op vals asts index conts env cont))
   (defrecord (Do-cont args index env cont))
+  (defrecord (NsCont ns cont))
   (defrecord (Halt-cont))
 
   ;;;; Machine
-
-  ;;; FIXME: sort out closures and environments
 
   (define (interpret ns-name ctrl)
     (define (run ctrl env k)
@@ -56,7 +55,7 @@
                   (receive (ctrl env) (cek-apply (vector-ref vals* 0)
                                                  (vector-ref vals* 1)
                                                  env)
-                    (run ctrl env k))
+                           (run ctrl env k))
                   (match (hash-table-ref primops op)
                     (($ ExprOp impl)
                      (run (Const (impl vals*)) env* k))
@@ -64,9 +63,6 @@
                      (impl vals*)
                      ;; TODO: empty tuple as ctrl:
                      (run (Const '()) env* k))
-                    (($ ScopeOp impl)
-                     ;; TODO: empty tuple as ctrl:
-                     (run (Const '()) (impl env* vals*) k))
                     (($ CtrlOp impl)
                      (run (impl conts vals*) env* k))))
                 ;; evaluate next argument:
@@ -80,6 +76,9 @@
               ;; throw value away and evaluate the next statement:
               (let ((i* (add1 i)))
                 (run (vector-ref stmts i*) env* (Do-cont stmts i* env* k)))))
+           (($ NsCont ns* k)
+            (current-ns ns*)
+            (run ctrl env k))
            (($ Halt-cont)
             v)))
 
@@ -93,18 +92,16 @@
 
         ;; For Closures, restore the env and merge the current one in.
         ;; the current one should always be just {formal arg}.
-        (($ Closure expr env*)
-         (run expr
-              (Env (map-merge (Env-mappings env*) (Env-mappings env))
-                   (Env-ns env*))
-              k))
+        (($ Closure expr env* ns*)
+         (let ((ns (current-ns)))
+           (current-ns ns*)
+           (run expr (env-merge env* env) (NsCont ns k))))
 
         (_ (error "unable to interpret" ctrl))))
-    (run ctrl (make-env (ns-ref ns-name)) (Halt-cont)))
+    (run ctrl (make-env) (Halt-cont)))
 
   (define (cek-apply fn arg env)
     (unless (queue-empty? (FnClosure-caseq fn))
       (set! (FnClosure-body fn) (build-lookup-dag (df-inject! fn))))
     (let ((body (FnClosure-body fn)))
-      (values body (Env (persistent-map (FnClosure-formal fn) arg)
-                        (Env-ns env))))))
+      (values body (env-extend (make-env) (FnClosure-formal fn) arg)))))

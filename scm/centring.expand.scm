@@ -90,11 +90,21 @@
       (('let* () . body)
        `(do ,@body))
       (('if cond then else)
-       (let ((c (gensym 'c)))
-         `(centring.intr/apply
-           (fn (,c ,c ,then)
-               (,c (not ,c) ,else))
-           ,cond)))
+       `(centring.intr/brf ,cond ,then ,else))
+      (('and)
+       #t)
+      (('and atom)
+       atom)
+      (('and atom . ratoms)
+       `(if ,atom
+          (and ,@ratoms)
+          #f))
+      (('or)
+       #f)
+      (('or atom . ratoms)
+       `(if ,atom
+          ,atom
+          (or ,@ratoms)))
 
       (_ sexp)))
 
