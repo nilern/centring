@@ -88,8 +88,12 @@
        dvset2)
       res))
 
-  (define-syntax-rule (doseq (v coll) body ...)
-    (for (lambda (v) body ...) coll))
+  (define-syntax try
+    (syntax-rules (catch)
+      ((try body ... (catch exn handling ...))
+       (handle-exceptions exn
+         (begin handling ...)
+         body ...))))
 
   (define-syntax doseq
     (syntax-rules ()

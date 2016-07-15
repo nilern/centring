@@ -6,7 +6,9 @@
        (srfi 69)
        persistent-hash-map
        (only clojurian-syntax ->)
-       (only anaphora aif))
+       (only anaphora aif)
+
+       (only centring.util try))
 
   ;;;; Vars
   
@@ -30,27 +32,37 @@
 
   (define ns-registry (make-hash-table))
 
+  ;;; FIXME: can't use #f as default as it is a valid Centring value
+
   ;; Fetch the ns if it exists, else create it:
   (define (ns-ref name)
-    (or (hash-table-ref/default ns-registry name #f)
+    (try
+      (hash-table-ref ns-registry name)
+      (catch _
         (let ((ns (make-Ns name
                            (make-hash-table)
                            (make-hash-table)
                            (make-hash-table))))
           (hash-table-set! ns-registry name ns)
-          ns)))
+          ns))))
 
   ;; Fetch the var:
   (define (ns-resolve ns ns-name name)
     (if ns-name
-      (or (-> (or (hash-table-ref/default (Ns-aliases ns) ns-name #f)
-                  (hash-table-ref ns-registry ns-name))
-              Ns-mappings
-              (hash-table-ref/default name #f))
-          (error "unbound variable" ns-name name))
-      (or (hash-table-ref/default (Ns-mappings ns) name #f)
-          (hash-table-ref/default (Ns-refers ns) name #f)
-          (error "unbound variable" ns-name name))))
+      (try
+        (-> (or (hash-table-ref/default (Ns-aliases ns) ns-name #f)
+                (hash-table-ref ns-registry ns-name))
+            Ns-mappings
+            (hash-table-ref name))
+        (catch _
+          (error "unbound variable" ns-name name)))
+      (try
+        (hash-table-ref (Ns-mappings ns) name)
+        (catch _
+          (try
+            (hash-table-ref (Ns-refers ns) name)
+            (catch _
+              (error "unbound variable" ns-name name)))))))
 
   ;; Add an alias to ns:
   (define (ns-alias! ns other as)
@@ -58,9 +70,11 @@
 
   ;; Add a renaming to ns:
   (define (ns-rename! into from name as)
-    (aif (hash-table-ref/default (Ns-mappings from) name #f)
-      (hash-table-set! (Ns-refers into) as it)
-      (error "cannot refer" (Ns-name from) name)))
+    (try
+      (let ((var (hash-table-ref (Ns-mappings from) name)))
+        (hash-table-set! (Ns-refers into) as var))
+      (catch _
+        (error "cannot refer" (Ns-name from) name))))
 
   ;; Fetch the value in a var:
   (define (ns-lookup ns ns-name name)
@@ -68,10 +82,11 @@
 
   ;; Reset the var if it exists in the mappings of ns, else create it:
   (define (ns-extend! ns name v)
-    (aif (hash-table-ref/default (Ns-mappings ns) name #f)
-      (var-set! it v)
-      (let ((var (make-Var (symbol-append (Ns-name ns) name) v)))
-        (hash-table-set! (Ns-mappings ns) name var))))
+    (try
+      (var-set! (hash-table-ref (Ns-mappings ns) name) v)
+      (catch _
+        (let ((var (make-Var (symbol-append (Ns-name ns) name) v)))
+          (hash-table-set! (Ns-mappings ns) name var)))))
 
   ;;;; Env
 
@@ -85,9 +100,12 @@
     (Env (persistent-map) ns))
 
   (define (env-lookup env ns-name name)
-    (or (and (not ns-name)
-             (map-ref (Env-mappings env) name))
-        (ns-lookup (Env-ns env) ns-name name)))
+    (if ns-name
+      (ns-lookup (Env-ns env) ns-name name)
+      (let ((mappings-res (map-ref (Env-mappings env) name '())))
+        (if (null? mappings-res)
+          (ns-lookup (Env-ns env) ns-name name)
+          mappings-res))))
 
   (define (env-extend env name val)
     (Env (map-add (Env-mappings env) name val) (Env-ns env))))
