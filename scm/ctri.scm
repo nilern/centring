@@ -22,8 +22,7 @@
     (o ast:ast->sexp
        ana:analyze exp:expand-all))
    (else
-    (o (cute cek:interpret 'centring.user <>)
-       ana:analyze exp:expand-all))))
+    (o cek:interpret ana:analyze exp:expand-all))))
 
 (define (repl path)
   (error "REPL unimplemented"))
@@ -86,6 +85,7 @@
     (let ((ctr-path (aif (assq 'path options)
                       (map pathname-expand (irregex-split #\: (cdr it)))
                       (list (current-directory)))))
+      (cek:ctr-path ctr-path)
       (acond
        ((pair? operands)
         (pretty-print

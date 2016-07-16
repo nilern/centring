@@ -78,6 +78,10 @@
       (catch _
         (error "cannot refer" (Ns-name from) name))))
 
+  (define (ns-import! into from)
+    (hash-table-for-each (Ns-mappings from)
+     (cute hash-table-set! (Ns-refers into) <> <>)))
+
   ;; Fetch the value in a var:
   (define (ns-lookup ns ns-name name)
     (var-ref (ns-resolve ns ns-name name)))

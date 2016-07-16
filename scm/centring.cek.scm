@@ -9,9 +9,15 @@
        data-structures
        persistent-hash-map
        (only miscmacros until)
+       (only clojurian-syntax ->)
+       (only extras read-file)
+       (only files make-pathname)
+       (only irregex irregex-split)
 
        centring.util
        centring.value
+       (prefix centring.expand exp:)
+       (prefix centring.analyze ana:)
        centring.ast
        centring.env
        (only centring.dispatch build-lookup-dag df-inject!)
@@ -26,7 +32,7 @@
 
   ;;;; Machine
 
-  (define (interpret ns-name ctrl)
+  (define (interpret ctrl)
     (define (run ctrl env k)
       (match ctrl
         ;; When ctrl is complex, start from first subexpr
@@ -51,20 +57,32 @@
               (if (= i* (vector-length args))
                 ;; perform operation:
                 ;; TODO: embed *Instr in AST to remove the hash-ref:
-                (if (eq? op 'apply)
-                  (receive (ctrl env) (cek-apply (vector-ref vals* 0)
-                                                 (vector-ref vals* 1)
-                                                 env)
-                           (run ctrl env k))
-                  (match (hash-table-ref primops op)
-                    (($ ExprOp impl)
-                     (run (Const (impl vals*)) env* k))
-                    (($ StmtOp impl)
-                     (impl vals*)
-                     ;; TODO: empty tuple as ctrl:
-                     (run (Const '()) env* k))
-                    (($ CtrlOp impl)
-                     (run (impl conts vals*) env* k))))
+                (case op ; HACK
+                  ((apply)
+                   (receive (ctrl env) (cek-apply (vector-ref vals* 0)
+                                                  (vector-ref vals* 1)
+                                                  env)
+                            (run ctrl env k)))
+                  ((require!)
+                   (-> (vector-ref vals* 0) Symbol-name read-ns
+                       exp:expand-all ana:analyze (run env* k)))
+                  ((defined?)
+                   (try
+                     (match-let ((#(($ Symbol ns name)) vals*))
+                       (env-lookup env* ns name)
+                       #t)
+                     (catch _
+                       #f)))
+                  (else
+                   (match (hash-table-ref primops op)
+                     (($ ExprOp impl)
+                      (run (Const (impl vals*)) env* k))
+                     (($ StmtOp impl)
+                      (impl vals*)
+                      ;; TODO: empty tuple as ctrl:
+                      (run (Const '()) env* k))
+                     (($ CtrlOp impl)
+                      (run (impl conts vals*) env* k)))))
                 ;; evaluate next argument:
                 (run (vector-ref args i*)
                      env*
@@ -104,4 +122,18 @@
     (unless (queue-empty? (FnClosure-caseq fn))
       (set! (FnClosure-body fn) (build-lookup-dag (df-inject! fn))))
     (let ((body (FnClosure-body fn)))
-      (values body (env-extend (make-env) (FnClosure-formal fn) arg)))))
+      (values body (env-extend (make-env) (FnClosure-formal fn) arg))))
+
+  (define ctr-path (make-parameter '()))
+    
+  (define (read-ns ns-name)
+    (let recur ((path (ctr-path)))
+      (if (pair? path)
+        (let* ((ns-components (irregex-split #\. (symbol->string ns-name)))
+               (filename
+                (make-pathname
+                 (car path) (foldl make-pathname "" ns-components) ".ctr")))
+          (if (file-exists? filename)
+            `(do ,@(read-file filename))
+            (recur (cdr path))))
+        (error "unable to locate ns with path" ns-name (ctr-path))))))

@@ -49,11 +49,46 @@
 
   ;;;; Namespace Operations
 
+  (define-statement (set-ns! ns-name)
+    (current-ns (ns-ref (Symbol-name ns-name))))
+
+  (define-statement (alias! ns-name as)
+    (ns-alias! (current-ns)
+               (ns-ref (Symbol-name ns-name))
+               (Symbol-name as)))
+
+  (define-statement (rename! var-name as)
+    (ns-rename! (current-ns)
+                (ns-ref (Symbol-ns var-name))
+                (Symbol-name var-name)
+                (Symbol-name as)))
+
+  (define-statement (import! ns-name)
+    (ns-import! (current-ns) (ns-ref (Symbol-name ns-name))))
+
   (define-statement (set-global! name val)
     (ns-extend! (current-ns) (Symbol-name name) val))
 
-  (define-statement (set-ns! name)
-    (current-ns (ns-ref (Symbol-name name))))
+  ;;;; Type
+
+  (define-expression (type v)
+    (match v
+      (#(t _ ...) t)
+      (_ (error "(type) only implemented for records atm."))))
+
+  ;;;; Records
+
+  (define-primop rec
+    (ExprOp (lambda (r) r)))
+
+  (define-expression (rref r i)
+    (vector-ref r (add1 i)))
+
+  (define-statement (rset! r i v)
+    (vector-set! r (add1 i) v))
+
+  (define-expression (rlen r)
+    (sub1 (vector-length r)))
 
   ;;;; Arithmetic Operations
 
@@ -77,27 +112,6 @@
     (if c
       (vector-ref conts 0)
       (vector-ref conts 1))))
-
-;;   ;;;
-
-;;   (define-primop rec _ argv --> ((cont d))
-;;     argv)
-
-;;   (define-primop rref _ (rec i) --> ((cont d) (throw Type) (throw Range))
-;;     ;; TODO: better error messages:
-;;     (vector-ref rec (add1 i)))
-
-;;   (define-primop rset! _ (rec i v) -> ((cont) (throw Type) (throw Range))
-;;     ;; TODO: better error messages:
-;;     (vector-set! rec (add1 i) v))
-  
-;;   (define-primop rlen _ (rec) --> ((cont l) (throw Type) (throw Range))
-;;     ;; TODO: better error messages:
-;;     (sub1 (vector-length rec)))
-
-;;   (define-primop type _ (v) --> ((cont d))
-;;     ;; TODO: types of bits types (3, #f etc.):
-;;     (vector-ref v 0))
 
 ;;   ;;;
 
