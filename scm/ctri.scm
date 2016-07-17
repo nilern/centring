@@ -4,8 +4,10 @@
      (only pathname-expand pathname-expand)
      (only anaphora aif acond awhile)
      (only linenoise linenoise history-add)
+     (only clojurian-syntax ->)
      args
-     
+
+     (only centring.util try)
      (prefix centring.expand exp:)
      (prefix centring.analyze ana:)
      (prefix centring.ast ast:)
@@ -16,7 +18,7 @@
 
 ;;;;
 
-(define (make-action options path)
+(define (make-action options)
   (cond
    ((assq 'esxp options)
     exp:expand-all)
@@ -26,28 +28,18 @@
    (else
     (o cek:interpret ana:analyze exp:expand-all))))
 
-(define (repl path)
-  (error "REPL unimplemented"))
-  ;; (let* ((itp (make-Fiber))
-  ;;        (prompt (lambda () (sprintf "~S> " (Ns-name (Fiber-curr-ns itp)))))
-  ;;        (get-message (condition-property-accessor 'exn 'message))
-  ;;        (get-arguments (condition-property-accessor 'exn 'arguments)))
-  ;;   (awhile (linenoise (prompt))
-  ;;     (history-add it)
-  ;;     (handle-exceptions exn
-  ;;       (fprintf (current-error-port) "Error: ~A: ~S~%"
-  ;;                (get-message exn)
-  ;;                (get-arguments exn))
-  ;;       (->> (read (open-input-string it))
-  ;;            expand-all
-  ;;            analyze
-  ;;            (alphatize&specialize 'centring.user)
-  ;;            dnf-convert
-  ;;            ((cute cps:cps-k <>
-  ;;                   (lambda (v) (ast:Primop 'halt (vector v) #()))))
-  ;;            optimize-cps
-  ;;            (eval-cps itp)
-  ;;            (printf "~S~%"))))))
+(define (repl action)
+  (let ((prompt (lambda () (sprintf "~S> " (env:Ns-name (env:current-ns)))))
+        (get-message (condition-property-accessor 'exn 'message))
+        (get-arguments (condition-property-accessor 'exn 'arguments)))
+    (awhile (linenoise (prompt))
+      (history-add it)
+      (try
+       (-> it open-input-string read action print)
+       (catch exn
+         (fprintf (current-error-port) "Error: ~A: ~S~%"
+                  (get-message exn)
+                  (get-arguments exn)))))))
 
 ;;;; Reader Setup
 
@@ -83,21 +75,21 @@
         (args:make-option (h help) none: "Display this text.")))
 
 (define (main arglist)
-  (receive (options operands) (args:parse arglist opts)
-    (let ((ctr-path (aif (assq 'path options)
-                      (map pathname-expand (irregex-split #\: (cdr it)))
-                      (list (current-directory)))))
-      (env:ctr-path ctr-path)
-      (acond
-       ((pair? operands)
-        (pretty-print
-         ((make-action options ctr-path) `(do ,@(read-file (car operands))))))
-       ((assq 'e options)
-        (pretty-print
-         ((make-action options ctr-path) (read (open-input-string (cdr it))))))
-       ((assq 'h options)
-        (print (args:usage opts)))
-       (else (repl ctr-path)))))
-  (exit 0))
+  (let-values (((options operands) (args:parse arglist opts)))
+    (env:ctr-path
+     (aif (assq 'path options)
+       (map pathname-expand (irregex-split #\: (cdr it)))
+       (list (current-directory))))
+    (acond
+     ((pair? operands)
+      (pretty-print
+       ((make-action options) `(do ,@(read-file (car operands))))))
+     ((assq 'e options)
+      (pretty-print
+       ((make-action options) (read (open-input-string (cdr it))))))
+     ((assq 'h options)
+      (print (args:usage opts)))
+     (else (repl (make-action options))))
+    (exit 0)))
 
 (main (command-line-arguments))
