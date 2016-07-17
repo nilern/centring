@@ -56,12 +56,14 @@
                    (match-let ((#(fn arg) vals*))
                      (run (fn-body fn) (make-env (FnClosure-formal fn) arg) k)))
                   ((defined?)
-                   (try
-                     (match-let ((#(($ Symbol ns name)) vals*))
-                       (env-lookup env ns name)
-                       (run (Const #t) env* k))
-                     (catch _
-                       (run (Const #f) env* k))))
+                   (let ((defined? 
+                           (try
+                            (match-let ((#(($ Symbol ns name)) vals*))
+                              (env-lookup env* ns name)
+                              #t)
+                            (catch _
+                              #f))))
+                     (run (Const defined?) env* k)))
                   (else
                    (match (hash-table-ref primops op)
                      (($ ExprOp impl)
@@ -87,7 +89,8 @@
             (current-ns ns*)
             (run ctrl env k))
            (($ Halt-cont)
-            v)))
+            v)
+           (_ (error "unrecognized continuation" k))))
 
         ;; For Fns, build a closure:
         (($ Fn formal cases _)

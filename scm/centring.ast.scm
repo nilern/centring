@@ -63,7 +63,13 @@
   (define (node-map f node)
     (match node
       (($ Fn arg cases body)
-       (Fn arg (mapv (cute map-pair f <>) cases) (if body (f body) body)))
+       (Fn arg
+           (mapv
+            (match-lambda
+             ((cond . body)
+              (cons (mapv (cute mapv f <>) cond) (f body))))
+            cases)
+           (if body (f body) body)))
       (($ Primop op args conts)
        (Primop op (mapv f args) (if conts (mapv f conts) conts)))
       (($ Fix bindings body)

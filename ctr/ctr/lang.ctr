@@ -1,0 +1,26 @@
+(ns ctr.lang)
+
+(def (apply f args) #t
+  (ctr.intr/apply f args))
+
+(def (type v) #t
+  (ctr.intr/type v))
+
+(def (= a b) #t
+  (ctr.intr/identical? a b))
+
+(def (: v T) #t
+  (ctr.intr/identical? (ctr.intr/type v) T))
+
+;; TODO: generics, hash-consing
+(def Type (ctr.intr/rec #f 'ctr.lang/Type))
+(ctr.intr/set-type! Type Type)
+(def (new T name) (= T Type)
+  (ctr.intr/rec T name))
+(def (.name T) (: T Type)
+  (ctr.intr/rref T 0))
+
+(def Tuple (ctr.intr/rec Type 'ctr.lang/Tuple))
+;; TODO: implement `new`, accessors
+
+(def Fn (new Type 'ctr.lang/Fn))

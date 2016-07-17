@@ -3,6 +3,7 @@
   
   (import scheme chicken)
   (use matchable
+       sequences
        (srfi 69)
        data-structures
        (only anaphora aif)
@@ -59,6 +60,7 @@
       (('ns ns-name)
        `(ctr.intr/set-ns! (quote ,ns-name)))
       (('require ns-name)
+       ;; FIXME: get back to (current-ns) when done evaluating require:d ns
        `(ctr.intr/require! (quote ,ns-name)))
       (('alias ns-name as)
        `(ctr.intr/alias! (quote ,ns-name) (quote ,as)))
@@ -106,6 +108,27 @@
           ,atom
           (or ,@ratoms)))
 
+      (('deftype (name . fields))
+       ;; TODO: rest-fields
+       (let ((T (gensym 'T))
+             (v (gensym 'v)))
+         `(do
+            ;; TODO: ns-qualify name here:
+            (def ,name (ctr.lang/new ctr.lang/Type (quote ,name)))
+            (ctr.intr/fn-merge! ctr.lang/new
+                                (fn ((ctr.lang/Tuple ,T ,@fields)
+                                     (ctr.lang/= ,T ,name)
+                                     (ctr.intr/rec ,T ,@fields))))
+            ,@(smap*
+               '()
+               (lambda (coll iter)
+                 (let ((i (index iter))
+                       (field (elt coll iter)))
+                   `(def (,(symbol-append '|.| field) ,v) (: ,v ,name)
+                      (ctr.intr/rref ,v ,i))))
+               fields)
+            )))
+               
       (_ sexp)))
 
   (define (process-pattern arg pat)
@@ -129,9 +152,10 @@
                  (process-1
                   (cons (cons recname axpath) binds)
                   `(and ,tests
-                        (,(string->symbol "ctr.lang/:") ,axpath ,type)
-                        (ctr.lang/= (ctr.intr/rlen ,axpath)
-                                    ,(length fields))))))))))
+                        (: ,axpath ,type)
+                        (ctr.intr/ieq? (ctr.intr/rlen ,axpath)
+                                       ,(length fields))))))
+              (_ (error "unrecognize pattern" pat))))))
 
       (queue-add! patq (cons arg pat))
       (process-1 '() '(and))))
@@ -141,6 +165,7 @@
       (('and . args) `(ctr.intr/band ,@args))
       (('or . args) `(ctr.intr/bior ,@args))
       (('not . args) `(ctr.intr/bnot ,@args))
+      ((': v T) `(ctr.intr/identical? (ctr.intr/type ,v) ,T))
       (expr expr)))
 
   (define (expand expr)

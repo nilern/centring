@@ -97,13 +97,14 @@
       ;; OPTIMIZE: make all args have the same name at analysis-time
       (define (replace-formal v)
         (match v
-          (($ Symbol #f (? (cute eq? formal1 <>))) (Symbol #f formal2))
+          (($ Symbol #f (? (cute eq? formal2 <>))) (Symbol #f formal1))
           (_ v)))
       (define (replace-case-formal case)
-        (match-let ((#(cond body env) case))
-          (vector (postwalk replace-formal cond)
+        (match-let ((#(cond body env ns) case))
+          (vector (mapv (cute postwalk replace-formal <>) cond)
                   (postwalk replace-formal body)
-                  env)))
+                  env
+                  ns)))
       ;; cases already in use at cl2:
       (dynvector-for-each
        (lambda (_ case)

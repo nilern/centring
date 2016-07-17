@@ -1,4 +1,6 @@
-(use (only extras pretty-print)
+(use matchable
+     sequences
+     (only extras pretty-print)
      (only irregex irregex-split)
      (only posix current-directory)
      (only pathname-expand pathname-expand)
@@ -7,37 +9,56 @@
      (only clojurian-syntax ->)
      args
 
-     (only centring.util try)
+     (only centring.util literal? try)
      (prefix centring.expand exp:)
      (prefix centring.analyze ana:)
      (prefix centring.ast ast:)
      (prefix centring.cek cek:)
-     (prefix centring.env env:))
+     (prefix centring.env env:)
+     (prefix centring.value val:))
 
 ;;;;
+
+(define (ctr->scm v)
+  ;; TODO: print records, tuples etc. better
+  (match v
+    (#(#(_ type-name) fields ...)
+     (cons (ctr->scm type-name) (smap '() ctr->scm fields)))
+    ('() (list 'ctr.lang/Tuple)) ; HACK
+    (($ FnClosure formal _ _ _)
+     `(Fn))
+    ((? val:Symbol?)
+     (aif (val:Symbol-ns v)
+       (symbol-append it '/ (val:Symbol-name v))
+       (val:Symbol-name v)))
+    ((? literal?) v)
+    (_ (error "ctr->scm: unimplemented conversion" v))))
 
 (define (make-action options)
   (cond
    ((assq 'esxp options)
-    exp:expand-all)
+    (o pretty-print exp:expand-all))
    ((assq 'ana options)
-    (o ast:ast->sexp
+    (o pretty-print ast:ast->sexp
        ana:analyze exp:expand-all))
    (else
-    (o cek:interpret ana:analyze exp:expand-all))))
+    (o print ctr->scm
+       cek:interpret ana:analyze exp:expand-all))))
 
 (define (repl action)
   (let ((prompt (lambda () (sprintf "~S> " (env:Ns-name (env:current-ns)))))
         (get-message (condition-property-accessor 'exn 'message))
-        (get-arguments (condition-property-accessor 'exn 'arguments)))
+        (get-arguments (condition-property-accessor 'exn 'arguments))
+        (get-location (condition-property-accessor 'exn 'location)))
     (awhile (linenoise (prompt))
       (history-add it)
       (try
-       (-> it open-input-string read action print)
+       (-> it open-input-string read action)
        (catch exn
-         (fprintf (current-error-port) "Error: ~A: ~S~%"
+         (fprintf (current-error-port) "Error: ~A: ~S in ~S~%"
                   (get-message exn)
-                  (get-arguments exn)))))))
+                  (get-arguments exn)
+                  (get-location exn)))))))
 
 ;;;; Reader Setup
 
@@ -80,11 +101,9 @@
        (list (current-directory))))
     (acond
      ((pair? operands)
-      (pretty-print
-       ((make-action options) `(do ,@(read-file (car operands))))))
+      ((make-action options) `(do ,@(read-file (car operands)))))
      ((assq 'e options)
-      (pretty-print
-       ((make-action options) (read (open-input-string (cdr it))))))
+      ((make-action options) (read (open-input-string (cdr it)))))
      ((assq 'h options)
       (print (args:usage opts)))
      (else (repl (make-action options))))

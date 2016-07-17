@@ -8,6 +8,7 @@
        centring.primops
        centring.value
        centring.env
+       (prefix centring.dispatch dis:)
        (prefix centring.expand exp:)
        (prefix centring.analyze ana:))
 
@@ -17,6 +18,7 @@
     (current-ns (ns-ref (Symbol-name ns-name))))
 
   (define-controller (require! _ ns-name)
+    ;; FIXME: this should be a statement
     (-> (Symbol-name ns-name)
         read-ns
         exp:expand-all
@@ -44,7 +46,16 @@
   (define-expression (type v)
     (match v
       (#(t _ ...) t)
+      ((? FnClosure?) (ns-lookup (ns-ref 'ctr.lang) #f 'Fn))
       (_ (error "(type) only implemented for records atm."))))
+
+  (define-statement (set-type! r t)
+    (vector-set! r 0 t))
+
+  ;;;; Fn:s
+
+  (define-statement (fn-merge! f1 f2)
+    (dis:fn-merge! f1 f2))
 
   ;;;; Records
 
@@ -81,9 +92,12 @@
   (define-controller (brf conts c)
     (if c
       (vector-ref conts 0)
-      (vector-ref conts 1))))
+      (vector-ref conts 1)))
 
-;;   ;;;
+  ;;;; Equality
 
-;;   (define-primop bit-eq? _ (a b) --> ((cont d))
-;;     (eq? a b))
+  (define-expression (identical? a b)
+    (eq? a b))
+
+  (define-expression (ieq? a b)
+    (fx= a b)))
