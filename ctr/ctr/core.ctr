@@ -1,7 +1,7 @@
-(ns centring.core)
+(ns ctr.core)
 
 (def (- a b) (and (: a Int) (: b Int))
-  (centring.intr/isub a b))
+  (ctr.intr/isub a b))
 
 ;; (def (* a b) (and (: a Int) (: b Int))
 ;;   (centring.intr/imul a b))

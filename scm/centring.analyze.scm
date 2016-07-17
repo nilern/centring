@@ -24,7 +24,7 @@
       (Primop 'apply
               (vector (analyze callee)
                       (Primop 'rec
-                              (mapv analyze (cons 'centring.lang/Tuple args))
+                              (mapv analyze (cons 'ctr.lang/Tuple args))
                               #f))
               #f))
 
@@ -69,9 +69,9 @@
   (define (special-form? sexp)
     (and (pair? sexp)
          (symbol? (car sexp))
-         (eq? (ns (car sexp)) 'centring.sf)))
+         (eq? (ns (car sexp)) 'ctr.sf)))
 
   (define (intrinsic? sexp)
     (and (pair? sexp)
          (symbol? (car sexp))
-         (eq? (ns (car sexp)) 'centring.intr))))
+         (eq? (ns (car sexp)) 'ctr.intr))))

@@ -25,15 +25,15 @@
   (define (expand-1 sexp)
     (match sexp
       (('do)
-       '(centring.intr/rec centring.lang/Tuple))
+       '(ctr.intr/rec ctr.lang/Tuple))
       (('do stmt)
        stmt)
       (('do . stmts)
-       `(centring.sf/do ,@stmts))
+       `(ctr.sf/do ,@stmts))
       (('quote val)
-       `(centring.sf/quote ,val))
+       `(ctr.sf/quote ,val))
       (('letfn binds body)
-       `(centring.sf/letrec
+       `(ctr.sf/letrec
          ,(map (match-lambda
                 (((name . formals) cond . body)
                  `(,name (fn (,formals ,cond ,@body)))))
@@ -47,7 +47,7 @@
        (define (replace binds e)
          (aif (assq e binds) (cdr it) e))
        (let ((arg (gensym 'x)))
-         `(centring.sf/fn ,arg
+         `(ctr.sf/fn ,arg
             ,@(map (match-lambda
                     ((formals cond . body)
                      (receive (binds test) (process-pattern arg formals)
@@ -57,40 +57,40 @@
                    cases))))
       
       (('ns ns-name)
-       `(centring.intr/set-ns! (quote ,ns-name)))
+       `(ctr.intr/set-ns! (quote ,ns-name)))
       (('require ns-name)
-       `(centring.intr/require! (quote ,ns-name)))
+       `(ctr.intr/require! (quote ,ns-name)))
       (('alias ns-name as)
-       `(centring.intr/alias! (quote ,ns-name) (quote ,as)))
+       `(ctr.intr/alias! (quote ,ns-name) (quote ,as)))
       (('rename ns-name . binds)
        `(do
           ,@(map (lambda (bind)
-                   `(centring.intr/rename! (quote ,ns-name)
-                                           (quote ,(car bind))
-                                           (quote ,(cadr bind))))
+                   `(ctr.intr/rename! (quote ,ns-name)
+                                      (quote ,(car bind))
+                                      (quote ,(cadr bind))))
                  binds)))
       (('refer ns-name . names)
        `(rename ,ns-name ,@(map list names names)))
       (('import ns-name)
-       `(centring.intr/import! (quote ,ns-name)))
+       `(ctr.intr/import! (quote ,ns-name)))
       (('def var val)
-       `(centring.intr/set-global! (quote ,var) ,val))
+       `(ctr.intr/set-global! (quote ,var) ,val))
 
       (('def (name . formals) cond . body)
        (let ((new-case (gensym 'f)))
-         `(let* ((,new-case (fn ((centring.lang/Tuple ,@formals) ,cond ,@body))))
-            (if (and (centring.intr/defined? (quote ,name))
-                     (: ,name centring.lang/Fn))
-              (centring.intr/fn-merge! ,name ,new-case)
-              (centring.intr/set-global! (quote ,name) ,new-case)))))
+         `(let* ((,new-case (fn ((ctr.lang/Tuple ,@formals) ,cond ,@body))))
+            (if (and (ctr.intr/defined? (quote ,name))
+                     (: ,name ctr.lang/Fn))
+              (ctr.intr/fn-merge! ,name ,new-case)
+              (ctr.intr/set-global! (quote ,name) ,new-case)))))
       (('let* ((var val) . binds) . body)
-       `(centring.intr/apply
-         (centring.sf/fn ,var (#t (let* ,binds ,@body)))
+       `(ctr.intr/apply
+         (ctr.sf/fn ,var (#t (let* ,binds ,@body)))
          ,val))
       (('let* () . body)
        `(do ,@body))
       (('if cond then else)
-       `(centring.intr/brf ,cond ,then ,else))
+       `(ctr.intr/brf ,cond ,then ,else))
       (('and)
        #t)
       (('and atom)
@@ -119,28 +119,28 @@
                (process-1 (cons (cons pat axpath) binds) tests))
               
               ((? literal?)
-               (process-1 binds `(and ,tests (centring.lang/= ,axpath ,pat))))
+               (process-1 binds `(and ,tests (ctr.lang/= ,axpath ,pat))))
 
               (((and (? symbol?) type) . fields)
                (let ((recname (gensym 'v)))
                  (doseq ((field-pat i) fields)
-                   (queue-add! patq (cons `(centring.intr/rref ,recname ,i)
+                   (queue-add! patq (cons `(ctr.intr/rref ,recname ,i)
                                           field-pat)))
                  (process-1
                   (cons (cons recname axpath) binds)
                   `(and ,tests
-                        (,(string->symbol "centring.lang/:") ,axpath ,type)
-                        (centring.lang/= (centring.intr/rlen ,axpath)
-                                         ,(length fields))))))))))
+                        (,(string->symbol "ctr.lang/:") ,axpath ,type)
+                        (ctr.lang/= (ctr.intr/rlen ,axpath)
+                                    ,(length fields))))))))))
 
       (queue-add! patq (cons arg pat))
       (process-1 '() '(and))))
 
   (define lower-condition
     (match-lambda
-      (('and . args) `(centring.intr/band ,@args))
-      (('or . args) `(centring.intr/bior ,@args))
-      (('not . args) `(centring.intr/bnot ,@args))
+      (('and . args) `(ctr.intr/band ,@args))
+      (('or . args) `(ctr.intr/bior ,@args))
+      (('not . args) `(ctr.intr/bnot ,@args))
       (expr expr)))
 
   (define (expand expr)

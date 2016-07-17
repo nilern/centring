@@ -14,7 +14,8 @@
        centring.ast
        centring.env
        (only centring.dispatch fn-body)
-       (only centring.primops primops))
+       (only centring.primops primops)
+       centring.primops.op-impls)
 
   ;;;; Continuations
 

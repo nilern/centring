@@ -11,10 +11,8 @@
      (prefix centring.expand exp:)
      (prefix centring.analyze ana:)
      (prefix centring.ast ast:)
-     (prefix centring.dispatch dis:)
      (prefix centring.cek cek:)
-     (prefix centring.env env:)
-     centring.primops.op-impls)
+     (prefix centring.env env:))
 
 ;;;;
 
@@ -59,7 +57,7 @@
       (let ((expr (read port)))
         (loop (peek-char port) (cons expr exprs)))))))
 
-(set-sharp-read-syntax! #\( (read-ctor 'centring.lang/Tuple #\)))
+(set-sharp-read-syntax! #\( (read-ctor 'ctr.lang/Tuple #\)))
 
 ;;;; Main & Option Parsing
 
