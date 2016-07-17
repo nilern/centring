@@ -10,7 +10,9 @@
      (prefix centring.analyze ana:)
      (prefix centring.ast ast:)
      (prefix centring.dispatch dis:)
-     (prefix centring.cek cek:))
+     (prefix centring.cek cek:)
+     (prefix centring.env env:)
+     centring.primops.op-impls)
 
 ;;;;
 
@@ -85,7 +87,7 @@
     (let ((ctr-path (aif (assq 'path options)
                       (map pathname-expand (irregex-split #\: (cdr it)))
                       (list (current-directory)))))
-      (cek:ctr-path ctr-path)
+      (env:ctr-path ctr-path)
       (acond
        ((pair? operands)
         (pretty-print

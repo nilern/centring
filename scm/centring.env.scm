@@ -7,6 +7,9 @@
        persistent-hash-map
        (only clojurian-syntax ->)
        (only anaphora aif)
+       (only extras read-file)
+       (only files make-pathname)
+       (only irregex irregex-split)
 
        (only centring.util try))
 
@@ -93,6 +96,20 @@
       (catch _
         (let ((var (make-Var (symbol-append (Ns-name ns) name) v)))
           (hash-table-set! (Ns-mappings ns) name var)))))
+
+  (define ctr-path (make-parameter '()))
+    
+  (define (read-ns ns-name)
+    (let recur ((path (ctr-path)))
+      (if (pair? path)
+        (let* ((ns-components (irregex-split #\. (symbol->string ns-name)))
+               (filename
+                (make-pathname
+                 (car path) (foldl make-pathname "" ns-components) ".ctr")))
+          (if (file-exists? filename)
+            `(do ,@(read-file filename))
+            (recur (cdr path))))
+        (error "unable to locate ns with path" ns-name (ctr-path)))))
 
   ;;;; Env
 

@@ -8,19 +8,12 @@
        (srfi 69)
        data-structures
        persistent-hash-map
-       (only miscmacros until)
-       (only clojurian-syntax ->)
-       (only extras read-file)
-       (only files make-pathname)
-       (only irregex irregex-split)
 
        centring.util
        centring.value
-       (prefix centring.expand exp:)
-       (prefix centring.analyze ana:)
        centring.ast
        centring.env
-       (only centring.dispatch build-lookup-dag df-inject!)
+       (only centring.dispatch fn-body)
        (only centring.primops primops))
 
   ;;;; Continuations
@@ -59,20 +52,15 @@
                 ;; TODO: embed *Instr in AST to remove the hash-ref:
                 (case op ; HACK
                   ((apply)
-                   (receive (ctrl env) (cek-apply (vector-ref vals* 0)
-                                                  (vector-ref vals* 1)
-                                                  env)
-                            (run ctrl env k)))
-                  ((require!)
-                   (-> (vector-ref vals* 0) Symbol-name read-ns
-                       exp:expand-all ana:analyze (run env* k)))
+                   (match-let ((#(fn arg) vals*))
+                     (run (fn-body fn) (make-env (FnClosure-formal fn) arg) k)))
                   ((defined?)
                    (try
                      (match-let ((#(($ Symbol ns name)) vals*))
-                       (env-lookup env* ns name)
-                       #t)
+                       (env-lookup env ns name)
+                       (run (Const #t) env* k))
                      (catch _
-                       #f)))
+                       (run (Const #f) env* k))))
                   (else
                    (match (hash-table-ref primops op)
                      (($ ExprOp impl)
@@ -116,24 +104,4 @@
            (run expr (env-merge env* env) (NsCont ns k))))
 
         (_ (error "unable to interpret" ctrl))))
-    (run ctrl (make-env) (Halt-cont)))
-
-  (define (cek-apply fn arg env)
-    (unless (queue-empty? (FnClosure-caseq fn))
-      (set! (FnClosure-body fn) (build-lookup-dag (df-inject! fn))))
-    (let ((body (FnClosure-body fn)))
-      (values body (env-extend (make-env) (FnClosure-formal fn) arg))))
-
-  (define ctr-path (make-parameter '()))
-    
-  (define (read-ns ns-name)
-    (let recur ((path (ctr-path)))
-      (if (pair? path)
-        (let* ((ns-components (irregex-split #\. (symbol->string ns-name)))
-               (filename
-                (make-pathname
-                 (car path) (foldl make-pathname "" ns-components) ".ctr")))
-          (if (file-exists? filename)
-            `(do ,@(read-file filename))
-            (recur (cdr path))))
-        (error "unable to locate ns with path" ns-name (ctr-path))))))
+    (run ctrl (make-env) (Halt-cont))))

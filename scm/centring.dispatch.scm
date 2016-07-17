@@ -124,6 +124,13 @@
 
   ;;; a `df` is a dynvector<#(#(AST ...) AST env)>
 
+  (define (fn-body fn)
+    (if (queue-empty? (FnClosure-caseq fn))
+      (FnClosure-body fn)
+      (let ((body (build-lookup-dag (df-inject! fn))))
+        (set! (FnClosure-body fn) body)
+        body)))
+
   (define (build-lookup-dag df)
     ;; OPTIMIZE: memoization
     (define (build-sub-dag/assuming expr truthy? cs es)
