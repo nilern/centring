@@ -111,14 +111,19 @@
       (('deftype (name . fields))
        ;; TODO: rest-fields
        (let ((T (gensym 'T))
-             (v (gensym 'v)))
+             (v (gensym 'v))
+             (args (gensym 'args)))
          `(do
             ;; TODO: ns-qualify name here:
             (def ,name (ctr.lang/new ctr.lang/Type (quote ,name)))
-            (ctr.intr/fn-merge! ctr.lang/new
-                                (fn ((ctr.lang/Tuple ,T ,@fields)
-                                     (ctr.lang/= ,T ,name)
-                                     (ctr.intr/rec ,T ,@fields))))
+            ;; TODO: use pattern matching here when it has more features:  
+            (ctr.intr/fn-merge!
+             ctr.lang/new
+             (fn (,args
+               (and (: ,args ctr.lang/Tuple)
+                    (ctr.intr/ieq? (ctr.intr/rlen ,args) ,(length fields))
+                    (ctr.intr/identical? (ctr.intr/rref ,args 0) ,name))
+               (ctr.intr/shrec ,args))))
             ,@(smap*
                '()
                (lambda (coll iter)

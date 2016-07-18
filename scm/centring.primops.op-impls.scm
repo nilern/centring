@@ -3,6 +3,7 @@
 
   (import scheme chicken)
   (use matchable
+       vector-lib
        (only clojurian-syntax ->)
 
        centring.primops
@@ -61,6 +62,9 @@
 
   (define-primop rec
     (ExprOp (lambda (r) r)))
+
+  (define-expression (shrec r)
+    (vector-copy r 1))
 
   (define-expression (rref r i)
     (vector-ref r (add1 i)))

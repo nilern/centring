@@ -49,7 +49,7 @@
           (hash-table-set! ns-registry name ns)
           ns))))
   
-  (define current-ns (make-parameter (ns-ref 'centring.user)))
+  (define current-ns (make-parameter (ns-ref 'ctr.user)))
 
   ;; Fetch the var:
   (define (ns-resolve ns ns-name name)

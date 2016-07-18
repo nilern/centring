@@ -7,6 +7,7 @@
      (only anaphora aif acond awhile)
      (only linenoise linenoise history-add)
      (only clojurian-syntax ->)
+     (only miscmacros unless)
      args
 
      (only centring.util literal? try)
@@ -33,6 +34,18 @@
        (val:Symbol-name v)))
     ((? literal?) v)
     (_ (error "ctr->scm: unimplemented conversion" v))))
+
+(define (init! options)
+  (unless (or (assq 'esxp options) (assq 'ana options))
+    (env:ctr-path
+     (aif (assq 'path options)
+       (map pathname-expand (irregex-split #\: (cdr it)))
+       (list (current-directory))))
+    (-> '(require ctr.lang)
+        exp:expand-all
+        ana:analyze
+        cek:interpret)
+    (env:current-ns (env:ns-ref 'ctr.user))))
 
 (define (make-action options)
   (cond
@@ -95,10 +108,7 @@
 
 (define (main arglist)
   (let-values (((options operands) (args:parse arglist opts)))
-    (env:ctr-path
-     (aif (assq 'path options)
-       (map pathname-expand (irregex-split #\: (cdr it)))
-       (list (current-directory))))
+    (init! options)
     (acond
      ((pair? operands)
       ((make-action options) `(do ,@(read-file (car operands)))))
