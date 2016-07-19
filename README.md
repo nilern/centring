@@ -36,3 +36,32 @@ Examples
      (* n (factorial (dec n))))))
 ```
 
+Interpreter Progress
+--------------------
+
+- Data
+    - [ ] Records
+        - [ ] Rest-fields
+        - [ ] Setters
+        - [ ] Callable
+    - [ ] Bits types & byte arrays
+    - [ ] Char
+    - [ ] String
+- CEK Machine
+    - [ ] %apply-cc
+    - [ ] %apply non-FnClosures
+    - [ ] Statements return #()
+    - [ ] Multitude of primops
+- Dispatch
+    - [ ] Bug fixes
+    - [ ] Optimizations
+- [ ] FFI
+- [ ] I/O
+- Namespaces
+    - [ ] Private vars
+- `ctr.lang`
+    - [ ] dynamic-wind
+    - [ ] Exceptions (throw and catch)
+- `ctr.core`
+    - [ ] Green threads, CSP
+    - [ ] Persistent data structures
