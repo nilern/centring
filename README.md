@@ -50,7 +50,7 @@ Interpreter Progress
 - CEK Machine
     - [ ] %apply-cc
     - [ ] %apply non-FnClosures
-    - [ ] Statements return #()
+    - [x] Statements return #()
     - [ ] Multitude of primops
 - Dispatch
     - [ ] Bug fixes

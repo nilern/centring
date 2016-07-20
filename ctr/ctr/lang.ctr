@@ -1,3 +1,5 @@
+;;; At this point statements will return an empty record with a type of #f.
+
 (ns ctr.lang)
 
 (def (apply f args) #t
@@ -22,5 +24,7 @@
 
 (def Tuple (ctr.intr/rec Type 'ctr.lang/Tuple))
 ;; TODO: implement `new`, accessors
+
+;;; After this point statements return #() like they should.
 
 (def Fn (new Type 'ctr.lang/Fn))

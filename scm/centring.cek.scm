@@ -3,7 +3,7 @@
 
   (import scheme chicken)
   (use matchable
-       (only clojurian-syntax doto)
+       (only clojurian-syntax doto ->)
        vector-lib
        (srfi 69)
        data-structures
@@ -70,8 +70,9 @@
                       (run (Const (impl vals*)) env* k))
                      (($ StmtOp impl)
                       (impl vals*)
-                      ;; TODO: empty tuple as ctrl:
-                      (run (Const '()) env* k))
+                      (let ((tup (vector (ns-lookup (ns-ref 'ctr.lang)
+                                                    #f 'Tuple))))
+                        (run (Const tup) env* k)))
                      (($ CtrlOp impl)
                       (run (impl conts vals*) env* k)))))
                 ;; evaluate next argument:

@@ -41,6 +41,7 @@
      (aif (assq 'path options)
        (map pathname-expand (irregex-split #\: (cdr it)))
        (list (current-directory))))
+    (env:ns-extend! (env:ns-ref 'ctr.lang) 'Tuple #f)
     (-> '(require ctr.lang)
         exp:expand-all
         ana:analyze
