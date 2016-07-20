@@ -35,4 +35,8 @@
         (match-let (((cond . body) case))
           (doseq (clause cond)
             (queue-add! caseq (vector clause body env (current-ns))))))
-      (FnClosure formal #f (make-dynvector 0 #f) caseq))))
+      (FnClosure formal #f (make-dynvector 0 #f) caseq)))
+
+  ;;;; Continuation
+
+  (defrecord (Continuation k)))

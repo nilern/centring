@@ -54,7 +54,16 @@
                 (case op ; HACK
                   ((apply)
                    (match-let ((#(fn arg) vals*))
-                     (run (fn-body fn) (make-env (FnClosure-formal fn) arg) k)))
+                     (match fn
+                       (($ FnClosure formal _ _ _)
+                        (run (fn-body fn) (make-env (FnClosure-formal fn) arg) k))
+                       (($ Continuation k)
+                        (run (Const arg) #f k)))))
+                  ((apply-cc)
+                   (let ((fn (vector-ref vals* 0)))
+                     (run (fn-body fn)
+                          (make-env (FnClosure-formal fn) (Continuation k))
+                          k)))
                   ((defined?)
                    (let ((defined? 
                            (try
@@ -63,16 +72,16 @@
                               #t)
                             (catch _
                               #f))))
-                     (run (Const defined?) env* k)))
+                     (run (Const defined?) #f k)))
                   (else
                    (match (hash-table-ref primops op)
                      (($ ExprOp impl)
-                      (run (Const (impl vals*)) env* k))
+                      (run (Const (impl vals*)) #f k))
                      (($ StmtOp impl)
                       (impl vals*)
                       (let ((tup (vector (ns-lookup (ns-ref 'ctr.lang)
                                                     #f 'Tuple))))
-                        (run (Const tup) env* k)))
+                        (run (Const tup) #f k)))
                      (($ CtrlOp impl)
                       (run (impl conts vals*) env* k)))))
                 ;; evaluate next argument:

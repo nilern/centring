@@ -91,6 +91,8 @@
          ,val))
       (('let* () . body)
        `(do ,@body))
+      (('let-cc k . body)
+       `(ctr.intr/apply-cc (fn (,k #t ,@body))))
       (('if cond then else)
        `(ctr.intr/brf ,cond ,then ,else))
       (('and)

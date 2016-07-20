@@ -5,6 +5,9 @@
 (def (apply f args) #t
   (ctr.intr/apply f args))
 
+(def (apply-cc k) #t
+  (ctr.intr/apply-cc k))
+
 (def (type v) #t
   (ctr.intr/type v))
 

@@ -47,8 +47,9 @@ Interpreter Progress
     - [ ] Bits types & byte arrays
     - [ ] Char
     - [ ] String
+    - [x] Continuation
 - CEK Machine
-    - [ ] %apply-cc
+    - [x] %apply-cc
     - [ ] %apply non-FnClosures
     - [x] Statements return #()
     - [ ] Multitude of primops
