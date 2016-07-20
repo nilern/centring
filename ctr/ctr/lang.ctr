@@ -2,9 +2,6 @@
 
 (ns ctr.lang)
 
-(def (apply f args) #t
-  (ctr.intr/apply f args))
-
 (def (apply-cc k) #t
   (ctr.intr/apply-cc k))
 
@@ -17,17 +14,37 @@
 (def (: v T) #t
   (ctr.intr/identical? (ctr.intr/type v) T))
 
+(def apply
+  (fn
+    (#(f a) (or (: f Fn) (: f Cont))
+     (ctr.intr/apply f a))
+    ;; TODO: use and-pattern here:
+    (args (and (: args Tuple)
+               (ctr.intr/ieq? (ctr.intr/rlen args) 2)
+               (: (ctr.intr/rref args 0) Type))
+     (ctr.intr/apply new
+                     (ctr.intr/rcat (ctr.intr/rec Tuple (ctr.intr/rref args 0))
+                                    (ctr.intr/rref args 1))))))
+
 ;; TODO: generics, hash-consing
 (def Type (ctr.intr/rec #f 'ctr.lang/Type))
 (ctr.intr/set-type! Type Type)
-(def (new T name) (= T Type)
-  (ctr.intr/rec T name))
+(def new
+  (fn
+    ;; TODO: use and-pattern here:
+    (args (and (: args Tuple)
+               (ctr.intr/ieq? (ctr.intr/rlen args) 2)
+               (= (ctr.intr/rref args 0) Type))
+      (ctr.intr/shrec args))))
 (def (.name T) (: T Type)
   (ctr.intr/rref T 0))
 
+;; TODO: use defrecord for this when it gets rest-patterns:
 (def Tuple (ctr.intr/rec Type 'ctr.lang/Tuple))
-;; TODO: implement `new`, accessors
 
 ;;; After this point statements return #() like they should.
 
+;;;; Types for builtins
+
 (def Fn (new Type 'ctr.lang/Fn))
+(def Cont (new Type 'ctr.lang/Cont))

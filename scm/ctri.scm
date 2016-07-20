@@ -28,6 +28,8 @@
     ('() (list 'ctr.lang/Tuple)) ; HACK
     (($ FnClosure formal _ _ _)
      `(Fn))
+    ((? val:Continuation?)
+     `(Cont))
     ((? val:Symbol?)
      (aif (val:Symbol-ns v)
        (symbol-append it '/ (val:Symbol-name v))

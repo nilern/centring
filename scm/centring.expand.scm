@@ -82,7 +82,7 @@
        (let ((new-case (gensym 'f)))
          `(let* ((,new-case (fn ((ctr.lang/Tuple ,@formals) ,cond ,@body))))
             (if (and (ctr.intr/defined? (quote ,name))
-                     (: ,name ctr.lang/Fn))
+                     (,(string->symbol "ctr.lang/:") ,name ctr.lang/Fn))
               (ctr.intr/fn-merge! ,name ,new-case)
               (ctr.intr/set-global! (quote ,name) ,new-case)))))
       (('let* ((var val) . binds) . body)
@@ -110,7 +110,7 @@
           ,atom
           (or ,@ratoms)))
 
-      (('deftype (name . fields))
+      (('defrecord (name . fields))
        ;; TODO: rest-fields
        (let ((T (gensym 'T))
              (v (gensym 'v))
@@ -123,7 +123,7 @@
              ctr.lang/new
              (fn (,args
                (and (: ,args ctr.lang/Tuple)
-                    (ctr.intr/ieq? (ctr.intr/rlen ,args) ,(length fields))
+                    (ctr.intr/ieq? (ctr.intr/rlen ,args) ,(add1 (length fields)))
                     (ctr.intr/identical? (ctr.intr/rref ,args 0) ,name))
                (ctr.intr/shrec ,args))))
             ,@(smap*

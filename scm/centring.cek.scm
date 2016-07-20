@@ -4,10 +4,12 @@
   (import scheme chicken)
   (use matchable
        (only clojurian-syntax doto ->)
+       sequences
        vector-lib
        (srfi 69)
        data-structures
        persistent-hash-map
+       (only extras pretty-print) ; DEBUG
 
        centring.util
        centring.value
@@ -58,7 +60,19 @@
                        (($ FnClosure formal _ _ _)
                         (run (fn-body fn) (make-env (FnClosure-formal fn) arg) k))
                        (($ Continuation k)
-                        (run (Const arg) #f k)))))
+                        (run (Const arg) #f k))
+                       (_ ; TODO: optimize:
+                        (run (Primop 'apply
+                                     (vector
+                                      (Symbol 'ctr.lang 'apply)
+                                      (Primop 'rec
+                                              (vector
+                                               (Symbol 'ctr.lang 'Tuple)
+                                               (Const fn)
+                                               (Const arg))
+                                              #f))
+                                     #f)
+                             env* k)))))
                   ((apply-cc)
                    (let ((fn (vector-ref vals* 0)))
                      (run (fn-body fn)

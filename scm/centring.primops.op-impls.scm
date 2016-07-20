@@ -4,7 +4,7 @@
   (import scheme chicken)
   (use matchable
        vector-lib
-       (only clojurian-syntax ->)
+       (only clojurian-syntax doto ->)
 
        centring.primops
        centring.value
@@ -48,6 +48,7 @@
     (match v
       (#(t _ ...) t)
       ((? FnClosure?) (ns-lookup (ns-ref 'ctr.lang) #f 'Fn))
+      ((? Continuation?) (ns-lookup (ns-ref 'ctr.lang) #f 'Cont))
       (_ (error "(type) only implemented for records atm."))))
 
   (define-statement (set-type! r t)
@@ -65,6 +66,13 @@
 
   (define-expression (shrec r)
     (vector-copy r 1))
+
+  (define-expression (rcat r1 r2)
+    (let ((l1 (vector-length r1))
+          (l2 (vector-length r2)))
+      (doto (make-vector (fx+ l1 (sub1 l2)))
+        (vector-copy! 0 r1)
+        (vector-copy! l1 r2 1))))
 
   (define-expression (rref r i)
     (vector-ref r (add1 i)))
