@@ -18,10 +18,7 @@
   (fn
     (#(f a) (or (: f Fn) (: f Cont))
      (ctr.intr/apply f a))
-    ;; TODO: use and-pattern here:
-    (args (and (: args Tuple)
-               (ctr.intr/ieq? (ctr.intr/rlen args) 2)
-               (: (ctr.intr/rref args 0) Type))
+    ((and #(T name) args) (= T Type)
      (ctr.intr/apply new
                      (ctr.intr/rcat (ctr.intr/rec Tuple (ctr.intr/rref args 0))
                                     (ctr.intr/rref args 1))))))
@@ -31,11 +28,8 @@
 (ctr.intr/set-type! Type Type)
 (def new
   (fn
-    ;; TODO: use and-pattern here:
-    (args (and (: args Tuple)
-               (ctr.intr/ieq? (ctr.intr/rlen args) 2)
-               (= (ctr.intr/rref args 0) Type))
-      (ctr.intr/shrec args))))
+    ((and #(T name) args) (= T Type)
+     (ctr.intr/shrec args))))
 (def (.name T) (: T Type)
   (ctr.intr/rref T 0))
 

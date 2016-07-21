@@ -151,6 +151,11 @@
               ((? literal?)
                (process-1 binds `(and ,tests (ctr.lang/= ,axpath ,pat))))
 
+              (('and . pats)
+               (doseq (pat pats)
+                 (queue-add! patq (cons axpath pat)))
+               (process-1 binds tests))
+
               (((and (? symbol?) type) . fields)
                (let ((recname (gensym 'v)))
                  (doseq ((field-pat i) fields)
