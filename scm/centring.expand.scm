@@ -85,6 +85,13 @@
                      (,(string->symbol "ctr.lang/:") ,name ctr.lang/Fn))
               (ctr.intr/fn-merge! ,name ,new-case)
               (ctr.intr/set-global! (quote ,name) ,new-case)))))
+      (('match matchee . cases)
+       `(ctr.intr/apply (fn ,@cases) ,matchee))
+      (('let ((pat val) . binds) . body)
+       `(ctr.intr/apply (fn (,pat #t (let ,binds ,@body)))
+                        ,val))
+      (('let () . body)
+       `(do ,@body))
       (('let* ((var val) . binds) . body)
        `(ctr.intr/apply
          (ctr.sf/fn ,var (#t (let* ,binds ,@body)))
