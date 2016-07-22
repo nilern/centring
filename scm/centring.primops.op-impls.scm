@@ -5,6 +5,7 @@
   (use matchable
        vector-lib
        (only clojurian-syntax doto ->)
+       (only miscmacros unless)
 
        centring.primops
        centring.value
@@ -69,11 +70,13 @@
     (vector-copy r 1))
 
   (define-expression (rcat r1 r2)
-    (let ((l1 (vector-length r1))
-          (l2 (vector-length r2)))
-      (doto (make-vector (fx+ l1 (sub1 l2)))
-        (vector-copy! 0 r1)
-        (vector-copy! l1 r2 1))))
+    (let* ((l1 (vector-length r1))
+           (l2 (vector-length r2))
+           (res (make-vector (fx+ l1 (sub1 l2)))))
+      (vector-copy! res 0 r1)
+      (unless (< l2 2)
+        (vector-copy! res l1 r2 1))
+      res))
 
   (define-expression (rref r i)
     (vector-ref r (add1 i)))
@@ -120,4 +123,16 @@
     (eq? a b))
 
   (define-expression (ieq? a b)
-    (fx= a b)))
+    (fx= a b))
+
+  (define-expression (ilt? a b)
+    (fx< a b))
+
+  (define-expression (ile? a b)
+    (fx<= a b))
+
+  (define-expression (igt? a b)
+    (fx> a b))
+
+  (define-expression (ige? a b)
+    (fx>= a b)))

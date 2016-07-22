@@ -17,6 +17,8 @@
 
   ;;; Char:s are just char:s
 
+  ;;; Records are vector:s with the 0th element the type
+
   ;;;; Symbol
 
   (defrecord (Symbol ns name))

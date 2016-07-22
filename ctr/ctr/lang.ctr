@@ -18,8 +18,8 @@
   (fn
     (#(f a) (or (: f Fn) (: f Cont))
      (ctr.intr/apply f a))
-    ((and #(T name) args) (= T Type)
-     (ctr.intr/apply new (ctr.intr/rcat (ctr.intr/rec Tuple T) name)))))
+    ((and #(T fields) args) (: T Type)
+     (ctr.intr/apply new (ctr.intr/rcat (ctr.intr/rec Tuple T) fields)))))
 
 ;; TODO: generics, hash-consing
 (def Type (ctr.intr/rec #f 'ctr.lang/Type))
@@ -32,7 +32,7 @@
   (ctr.intr/rref T 0))
 
 ;; TODO: use defrecord for this when it gets rest-patterns:
-(def Tuple (ctr.intr/rec Type 'ctr.lang/Tuple))
+(defrecord (Tuple (... vals)))
 
 ;;; After this point statements return #() like they should.
 

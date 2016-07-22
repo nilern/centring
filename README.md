@@ -41,7 +41,7 @@ Interpreter Progress
 
 - Data
     - [ ] Records
-        - [ ] Rest-fields
+        - [x] Rest-fields
         - [ ] Setters
         - [x] Callable
     - [ ] Bits types & byte arrays

@@ -117,8 +117,41 @@
           ,atom
           (or ,@ratoms)))
 
+      ;; FIXME: DRY:
+      (('defrecord (name fields ... ((? (cute eq? '... <>)) rest-field)))
+       (let ((T (gensym 'T))
+             (v (gensym 'v))
+             (i (gensym 'i))
+             (i* (gensym 'i*))
+             (args (gensym 'args)))
+         `(do
+            ;; TODO: ns-qualify name here:
+            (def ,name (ctr.lang/new ctr.lang/Type (quote ,name)))
+            ;; TODO: use pattern matching here when it has more features: 
+            (ctr.intr/fn-merge!
+             ctr.lang/new
+             (fn
+              (,args
+               (and (: ,args ctr.lang/Tuple)
+                    (ctr.intr/igt? (ctr.intr/rlen ,args) ,(length fields))
+                    (ctr.intr/identical? (ctr.intr/rref ,args 0) ,name))
+               (ctr.intr/shrec ,args))))
+            ,@(smap*
+               '()
+               (lambda (coll iter)
+                 (let ((i (index iter))
+                       (field (elt coll iter)))
+                   `(def (,(symbol-append '|.| field) ,v) (: ,v ,name)
+                      (ctr.intr/rref ,v ,i))))
+               fields)
+            ;; TODO: check type of i, add error message:
+            (def (,(symbol-append '|.| rest-field) ,v ,i) (: ,v ,name)
+              (let* ((,i* (ctr.intr/iadd ,(length fields) ,i)))
+                (if (and (ctr.intr/ige? ,i* ,(length fields))
+                         (ctr.intr/ilt? ,i* (ctr.intr/rlen ,v)))
+                  (ctr.intr/rref ,v (ctr.intr/iadd ,(length fields) ,i))
+                  (ctr.intr/err 'BoundsError #f)))))))
       (('defrecord (name . fields))
-       ;; TODO: rest-fields
        (let ((T (gensym 'T))
              (v (gensym 'v))
              (args (gensym 'args)))
@@ -128,7 +161,8 @@
             ;; TODO: use pattern matching here when it has more features:  
             (ctr.intr/fn-merge!
              ctr.lang/new
-             (fn (,args
+             (fn
+              (,args
                (and (: ,args ctr.lang/Tuple)
                     (ctr.intr/ieq? (ctr.intr/rlen ,args) ,(add1 (length fields)))
                     (ctr.intr/identical? (ctr.intr/rref ,args 0) ,name))
@@ -140,9 +174,8 @@
                        (field (elt coll iter)))
                    `(def (,(symbol-append '|.| field) ,v) (: ,v ,name)
                       (ctr.intr/rref ,v ,i))))
-               fields)
-            )))
-               
+               fields))))
+                 
       (_ sexp)))
 
   (define (process-pattern arg pat)
