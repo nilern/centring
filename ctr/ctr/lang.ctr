@@ -19,9 +19,7 @@
     (#(f a) (or (: f Fn) (: f Cont))
      (ctr.intr/apply f a))
     ((and #(T name) args) (= T Type)
-     (ctr.intr/apply new
-                     (ctr.intr/rcat (ctr.intr/rec Tuple (ctr.intr/rref args 0))
-                                    (ctr.intr/rref args 1))))))
+     (ctr.intr/apply new (ctr.intr/rcat (ctr.intr/rec Tuple T) name)))))
 
 ;; TODO: generics, hash-consing
 (def Type (ctr.intr/rec #f 'ctr.lang/Type))

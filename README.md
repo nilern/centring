@@ -43,12 +43,15 @@ Interpreter Progress
     - [ ] Records
         - [ ] Rest-fields
         - [ ] Setters
-        - [ ] Callable
+        - [x] Callable
     - [ ] Bits types & byte arrays
     - [ ] Char
     - [ ] String
     - [x] Continuation
+- AST
+    - [ ] give `fn`:s names (for self-recursion, execution traces)
 - CEK Machine
+    - [ ] $letrec
     - [x] %apply-cc
     - [x] %apply non-FnClosures
     - [x] Statements return #()
@@ -56,13 +59,25 @@ Interpreter Progress
 - Dispatch
     - [ ] Bug fixes
     - [ ] Optimizations
+- [ ] Errors
+    - [ ] Execution traces
 - [ ] FFI
 - [ ] I/O
+- Expand
+    - [x] and-patterns
+    - [x] `let`
+    - [x] `match`
+    - [ ] `defn`
 - Namespaces
     - [ ] Private vars
 - `ctr.lang`
+    - [ ] Box
     - [ ] dynamic-wind
-    - [ ] Exceptions (throw and catch)
+    - [ ] apply-cc (that maintains 'winders')
 - `ctr.core`
     - [ ] Green threads, CSP
     - [ ] Persistent data structures
+    - [ ] Ref types
+    - [ ] Seq
+    - [ ] Reducible
+    - [ ] Transducers

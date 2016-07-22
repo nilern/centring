@@ -9,7 +9,6 @@
        (srfi 69)
        data-structures
        persistent-hash-map
-       (only extras pretty-print) ; DEBUG
 
        centring.util
        centring.value

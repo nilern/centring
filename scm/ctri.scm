@@ -25,7 +25,6 @@
   (match v
     (#(#(_ type-name) fields ...)
      (cons (ctr->scm type-name) (smap '() ctr->scm fields)))
-    ('() (list 'ctr.lang/Tuple)) ; HACK
     (($ FnClosure formal _ _ _)
      `(Fn))
     ((? val:Continuation?)
