@@ -11,9 +11,11 @@
        centring.util
        centring.env)
 
-  ;;; Int:s are just fixnums
+  ;;; Int:s are just fixnum:s
 
-  ;;; Bool:s are just booleans
+  ;;; Bool:s are just boolean:s
+
+  ;;; Char:s are just char:s
 
   ;;;; Symbol
 

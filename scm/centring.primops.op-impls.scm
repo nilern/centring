@@ -45,11 +45,12 @@
   ;;;; Type
 
   (define-expression (type v)
+    ;; TODO: complete this:
     (match v
       (#(t _ ...) t)
       ((? FnClosure?) (ns-lookup (ns-ref 'ctr.lang) #f 'Fn))
       ((? Continuation?) (ns-lookup (ns-ref 'ctr.lang) #f 'Cont))
-      (_ (error "(type) only implemented for records atm."))))
+      (_ (error "%type not implemented for" v))))
 
   (define-statement (set-type! r t)
     (vector-set! r 0 t))

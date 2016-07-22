@@ -61,17 +61,19 @@
        cek:interpret ana:analyze exp:expand-all))))
 
 (define (repl action)
-  (let ((prompt (lambda () (sprintf "~S> " (env:Ns-name (env:current-ns)))))
-        (get-type (condition-property-accessor 'ctr 'type))
-        (get-message (condition-property-accessor 'ctr 'message)))
-    (awhile (linenoise (prompt))
-      (history-add it)
-      (try
-       (-> it open-input-string read action)
-       (catch exn
-         (fprintf (current-error-port) "~A: ~S~%"
-                  (get-type exn)
-                  (get-message exn)))))))
+  (define (prompt)
+    (sprintf "~S> " (env:Ns-name (env:current-ns))))
+  (awhile (linenoise (prompt))
+    (history-add it)
+    (condition-case (-> it open-input-string read action)
+      (exn (ctr)
+       (fprintf (current-error-port) "~A: ~S~%"
+                (get-condition-property exn 'ctr 'type)
+                (get-condition-property exn 'ctr 'message)))
+      (exn (exn)
+       (fprintf (current-error-port) "Chicken Error: ~A: ~S~%"
+                (get-condition-property exn 'exn 'message)
+                (get-condition-property exn 'exn 'arguments))))))
 
 ;;;; Reader Setup
 
@@ -92,6 +94,18 @@
         (loop (peek-char port) (cons expr exprs)))))))
 
 (set-sharp-read-syntax! #\( (read-ctor 'ctr.lang/Tuple #\)))
+
+(set-read-syntax! #\\
+  (lambda (port)
+    (let ((tok (read port)))
+      (cond
+       ((eq? tok 'newline) #\newline)
+       ((eq? tok 'space) #\space)
+       ((eq? tok 'tab) #\tab)
+       ((eq? tok 'return) #\return)
+       ((and (symbol? tok) (= (string-length (symbol->string tok)) 1))
+        (string-ref (symbol->string tok) 0))
+       (else (error "not a char descriptor" tok))))))
 
 ;;;; Main & Option Parsing
 

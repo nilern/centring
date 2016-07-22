@@ -45,7 +45,7 @@ Interpreter Progress
         - [ ] Setters
         - [x] Callable
     - [ ] Bits types & byte arrays
-    - [ ] Char
+    - [x] Char
     - [ ] String
     - [x] Continuation
 - AST
