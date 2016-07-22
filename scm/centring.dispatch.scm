@@ -151,14 +151,19 @@
 
   (define (compute-target cs)
     ;; TODO: deal with overrides ("min<=_method")
-    ;; TODO: emit actual throwing code
     (case (dynvector-length cs)
-      ((0) (Const (Symbol 'Exception 'NoMethod)))
+      ((0) (Primop 'err
+                   (vector (Const (Symbol #f 'NoMethodError))
+                           (Const #f))
+                   #f))
       ((1) (let ((case (dynvector-ref cs 0)))
              (Closure (vector-ref case 1)
                       (vector-ref case 2)
                       (vector-ref case 3))))
-      (else (Const (Symbol 'Exception 'AmbiguousMethod)))))
+      (else (Primop 'err
+                    (vector (Const (Symbol #f 'AmbiguousMethodError))
+                            (Const #f))
+                    #f))))
 
   (define (target-cases expr truthy? cs)
     (define (atom-passes? atom)

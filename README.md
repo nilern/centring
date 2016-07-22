@@ -59,7 +59,7 @@ Interpreter Progress
 - Dispatch
     - [ ] Bug fixes
     - [ ] Optimizations
-- [ ] Errors
+- [x] Errors
     - [ ] Execution traces
 - [ ] FFI
 - [ ] I/O

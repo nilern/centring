@@ -106,6 +106,13 @@
       (vector-ref conts 0)
       (vector-ref conts 1)))
 
+  ;;;; Errors
+
+  (define-statement (err kind msg)
+    (abort (make-property-condition 'ctr
+                                    'type (Symbol-name kind)
+                                    'message msg)))
+
   ;;;; Equality
 
   (define-expression (identical? a b)

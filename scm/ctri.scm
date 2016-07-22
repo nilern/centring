@@ -62,18 +62,16 @@
 
 (define (repl action)
   (let ((prompt (lambda () (sprintf "~S> " (env:Ns-name (env:current-ns)))))
-        (get-message (condition-property-accessor 'exn 'message))
-        (get-arguments (condition-property-accessor 'exn 'arguments))
-        (get-location (condition-property-accessor 'exn 'location)))
+        (get-type (condition-property-accessor 'ctr 'type))
+        (get-message (condition-property-accessor 'ctr 'message)))
     (awhile (linenoise (prompt))
       (history-add it)
       (try
        (-> it open-input-string read action)
        (catch exn
-         (fprintf (current-error-port) "Error: ~A: ~S in ~S~%"
-                  (get-message exn)
-                  (get-arguments exn)
-                  (get-location exn)))))))
+         (fprintf (current-error-port) "~A: ~S~%"
+                  (get-type exn)
+                  (get-message exn)))))))
 
 ;;;; Reader Setup
 
