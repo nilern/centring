@@ -58,6 +58,14 @@
                      (match fn
                        (($ FnClosure formal _ _ _)
                         (run (fn-body fn) (make-env (FnClosure-formal fn) arg) k))
+                       (($ NativeFn _ fn ret)
+                        ;; TODO: check tupleness, signal errors:
+                        ;; TODO: convert result back to ctr:
+                        (run (Const (apply fn
+                                           (append
+                                            (vector->list (pop arg))
+                                            (list return: ret))))
+                             env* k))
                        (($ Continuation k)
                         (run (Const arg) #f k))
                        (_ ; TODO: optimize:

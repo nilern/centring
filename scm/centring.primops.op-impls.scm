@@ -3,10 +3,15 @@
 
   (import scheme chicken)
   (use matchable
+       (srfi 69)
+       memoize
        vector-lib
        (only clojurian-syntax doto ->)
        (only miscmacros unless)
+       (only extras random)
+       (only data-structures conc)
        r6rs.bytevectors
+       lazy-ffi
 
        centring.util
        centring.primops
@@ -52,7 +57,11 @@
     (match v
       (#(t _ ...) t)
       (($ BytesInstance t _) t)
+      ((? fixnum?) (ns-lookup (ns-ref 'ctr.lang) #f 'Int))
+      ((? flonum?) (ns-lookup (ns-ref 'ctr.lang) #f 'Float))
+      ((? char?) (ns-lookup (ns-ref 'ctr.lang) #f 'Char))
       ((? FnClosure?) (ns-lookup (ns-ref 'ctr.lang) #f 'Fn))
+      ((? NativeFn?) (ns-lookup (ns-ref 'ctr.lang) #f 'NativeFn))
       ((? Continuation?) (ns-lookup (ns-ref 'ctr.lang) #f 'Cont))
       (_ (error "%type not implemented for" v))))
 
@@ -166,4 +175,27 @@
     (integer->char i))
 
   (define-expression (char->int c)
-    (char->integer c)))
+    (char->integer c))
+
+  ;;;; FFI
+
+  (define-statement (ffi-require lib)
+    (lazy-ffi:module (-> lib BytesInstance-bytes utf8->string)))
+
+  (define-expression (ffi-fn ret sym)
+    (let ((name (Symbol-name sym))
+          (ret* (match (vector-ref ret 1)
+                  (($ Symbol 'ctr.lang 'Int) int:)
+                  (($ Symbol 'ctr.lang 'Float) float:)
+                  (($ Symbol 'ctr.lang 'Char) char:)
+                  (($ Symbol 'ctr.lang 'Bool) bool:)
+                  (name (error "unsupported FFI return type" name)))))
+      (NativeFn name (lazy-ffi:function name (get-uid name)) ret*)))
+
+  (define ffi-symbols (make-hash-table))
+
+  (define get-uid
+    (memoize
+     (lambda (name)
+       (string->symbol (conc "ctr-ffi:"
+                             (current-seconds) (random #x1000000)))))))

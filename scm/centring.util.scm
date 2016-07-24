@@ -40,7 +40,7 @@
   (define ns-sep '/)
 
   (define (literal? v)
-    (or (fixnum? v) (boolean? v) (char? v)))
+    (or (fixnum? v) (flonum? v) (boolean? v) (char? v)))
 
   (define (integer->endianness i)
     (case i

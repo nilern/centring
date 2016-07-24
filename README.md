@@ -62,9 +62,12 @@ Interpreter Progress
 - Dispatch
     - [ ] Bug fixes
     - [ ] Optimizations
-- [x] Errors
+- [ ] Errors
+    - [x] %err
     - [ ] Execution traces
 - [ ] FFI
+    - [x] %ffi-require
+    - [x] %ffi-fn
 - [ ] I/O
 - Expand
     - [x] and-patterns

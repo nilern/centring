@@ -49,9 +49,14 @@
        ;; TODO: error message:
        (ctr.intr/err 'BoundsError #f)))))
 
-;;; After this point statements return #() like they should.
+;; ;;; After this point statements return #() like they should.
 
-;;;; Types for builtins
+;; ;;;; Types for builtins
 
+(def Int (new Type 'ctr.lang/Int))
+(def Float (new Type 'ctr.lang/Float))
+(def Char (new Type 'ctr.lang/Char))
+(def Bool (new Type 'ctr.lang/Bool))
 (def Fn (new Type 'ctr.lang/Fn))
+(def NativeFn (new Type 'ctr.lang/NativeFn))
 (def Cont (new Type 'ctr.lang/Cont))

@@ -13,6 +13,8 @@
 
   ;;; Int:s are just fixnum:s
 
+  ;;; Float:s are just flonum:s
+
   ;;; Bool:s are just boolean:s
 
   ;;; Char:s are just char:s
@@ -21,7 +23,7 @@
 
   ;;;; Byte Types
 
-  (defrecord (BytesInstance type bytes))   
+  (defrecord (BytesInstance type bytes))
 
   ;;;; Symbol
 
@@ -44,6 +46,10 @@
           (doseq (clause cond)
             (queue-add! caseq (vector clause body env (current-ns))))))
       (FnClosure formal #f (make-dynvector 0 #f) caseq)))
+
+  ;;;; NativeFn
+
+  (defrecord (NativeFn name function ret-type))
 
   ;;;; Continuation
 
