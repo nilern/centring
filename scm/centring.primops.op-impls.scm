@@ -6,7 +6,9 @@
        vector-lib
        (only clojurian-syntax doto ->)
        (only miscmacros unless)
+       r6rs.bytevectors
 
+       centring.util
        centring.primops
        centring.value
        centring.env
@@ -49,6 +51,7 @@
     ;; TODO: complete this:
     (match v
       (#(t _ ...) t)
+      (($ BytesInstance t _) t)
       ((? FnClosure?) (ns-lookup (ns-ref 'ctr.lang) #f 'Fn))
       ((? Continuation?) (ns-lookup (ns-ref 'ctr.lang) #f 'Cont))
       (_ (error "%type not implemented for" v))))
@@ -86,6 +89,26 @@
 
   (define-expression (rlen r)
     (sub1 (vector-length r)))
+
+  ;;;; Bytes Types
+  
+  (define-expression (nbytes type n)
+    (BytesInstance type (make-bytevector n)))     
+
+  (define-expression (bref instance endian signed? size index)
+    (-> instance
+        BytesInstance-bytes
+        ((if signed? bytevector-uint-ref bytevector-sint-ref)
+         index (integer->endianness endian) size)))
+
+  (define-statement (bset! instance endian signed? size index value)
+    (-> instance
+        BytesInstance-bytes
+        ((if signed? bytevector-uint-set! bytevector-sint-set!)
+         index value (integer->endianness endian) size)))
+
+  (define-expression (blen binst)
+    (bytevector-length (BytesInstance-bytes binst)))
 
   ;;;; Arithmetic Operations
 
@@ -135,4 +158,12 @@
     (fx> a b))
 
   (define-expression (ige? a b)
-    (fx>= a b)))
+    (fx>= a b))
+
+  ;;;; Conversions
+
+  (define-expression (int->char i)
+    (integer->char i))
+
+  (define-expression (char->int c)
+    (char->integer c)))

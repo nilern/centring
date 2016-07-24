@@ -5,6 +5,7 @@
   (use (only (srfi 13) string-index)
        (srfi 69)
        vector-lib
+       r6rs.bytevectors
        sequences
        dyn-vector
        (only data-structures complement)
@@ -40,6 +41,13 @@
 
   (define (literal? v)
     (or (fixnum? v) (boolean? v) (char? v)))
+
+  (define (integer->endianness i)
+    (case i
+      ((0) (native-endianness))
+      ((1) (endianness little))
+      ((2) (endianness big))
+      (else (error "invalid endianness" i))))
 
   (define mapv (cute smap #() <> <>))
 

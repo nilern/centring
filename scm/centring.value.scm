@@ -19,6 +19,10 @@
 
   ;;; Records are vector:s with the 0th element the type
 
+  ;;;; Byte Types
+
+  (defrecord (BytesInstance type bytes))   
+
   ;;;; Symbol
 
   (defrecord (Symbol ns name))

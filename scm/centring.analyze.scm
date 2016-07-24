@@ -3,10 +3,12 @@
   
   (import scheme chicken)
   (use matchable
+       r6rs.bytevectors
 
        centring.util
        centring.value
        centring.ast
+       centring.env
        (only centring.primops op-purpose)
        (only centring.dispatch dnf inject-dnf))
 
@@ -19,6 +21,11 @@
      ((? symbol?) (call-with-values (lambda () (ns-name sexp)) Symbol))
 
      ((? literal?) (Const sexp))
+
+     ((? string?)
+      (Const (BytesInstance
+              (ns-lookup (ns-ref 'ctr.lang) #f 'String)
+              (string->utf8 sexp))))
 
      ((callee . args)
       (Primop 'apply

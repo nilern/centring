@@ -44,9 +44,12 @@ Interpreter Progress
         - [x] Rest-fields
         - [ ] Setters
         - [x] Callable
-    - [ ] Bits types & byte arrays
+    - [ ] Bytes types
+        - [x] Primops
+        - [ ] Creation syntax
     - [x] Char
-    - [ ] String
+    - [x] String
+    - [ ] Array
     - [x] Continuation
 - AST
     - [ ] give `fn`:s names (for self-recursion, execution traces)

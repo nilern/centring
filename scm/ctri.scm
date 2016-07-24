@@ -8,6 +8,7 @@
      (only linenoise linenoise history-add)
      (only clojurian-syntax ->)
      (only miscmacros unless)
+     (only r6rs.bytevectors utf8->string)
      args
 
      (only centring.util literal? try)
@@ -20,6 +21,7 @@
 
 ;;;;
 
+;; TODO: remove this when ctr I/O etc. can replace it:
 (define (ctr->scm v)
   ;; TODO: print records, tuples etc. better
   (match v
@@ -34,7 +36,9 @@
        (symbol-append it '/ (val:Symbol-name v))
        (val:Symbol-name v)))
     ((? literal?) v)
-    (_ (error "ctr->scm: unimplemented conversion" v))))
+    (($ BytesInstance #(_ ($ Symbol 'ctr.lang 'String)) bytes)
+     (utf8->string bytes))
+    (v v)))
 
 (define (init! options)
   (unless (or (assq 'esxp options) (assq 'ana options))
@@ -57,7 +61,7 @@
     (o pretty-print ast:ast->sexp
        ana:analyze exp:expand-all))
    (else
-    (o print ctr->scm
+    (o pretty-print ctr->scm
        cek:interpret ana:analyze exp:expand-all))))
 
 (define (repl action)
@@ -65,6 +69,7 @@
     (sprintf "~S> " (env:Ns-name (env:current-ns))))
   (awhile (linenoise (prompt))
     (history-add it)
+    ;; FIXME: things such as Chars get printed in Chicken guise:      
     (condition-case (-> it open-input-string read action)
       (exn (ctr)
        (fprintf (current-error-port) "~A: ~S~%"
