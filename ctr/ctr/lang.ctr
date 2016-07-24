@@ -2,56 +2,45 @@
 
 (ns ctr.lang)
 
-(def (apply-cc k) #t
-  (ctr.intr/apply-cc k))
+(defn apply-cc
+  (#(k) #t
+   (ctr.intr/apply-cc k)))
 
-(def (type v) #t
-  (ctr.intr/type v))
+(defn type
+  (#(v) #t (ctr.intr/type v)))
 
-(def (= a b) #t
-  (ctr.intr/identical? a b))
+(defn =
+  (#(a b) #t
+   (ctr.intr/identical? a b)))
 
-(def (: v T) #t
-  (ctr.intr/identical? (ctr.intr/type v) T))
+(defn :
+  (#(v T) #t
+   (ctr.intr/identical? (ctr.intr/type v) T)))
 
-(def apply
-  (fn
-    (#(f a) (or (: f Fn) (: f Cont))
-     (ctr.intr/apply f a))
-    ((and #(T fields) args) (: T Type)
-     (ctr.intr/apply new (ctr.intr/rcat (ctr.intr/rec Tuple T) fields)))))
+(defn apply
+  (#(f a) (or (: f Fn) (: f Cont))
+   (ctr.intr/apply f a))
+  ((and #(T fields) args) (: T Type)
+   (ctr.intr/apply new (ctr.intr/rcat (ctr.intr/rec Tuple T) fields))))
 
 ;; TODO: generics, hash-consing
 (def Type (ctr.intr/rec #f 'ctr.lang/Type))
 (ctr.intr/set-type! Type Type)
-(def new
-  (fn
-    ((and #(T name) args) (= T Type)
-     (ctr.intr/shrec args))))
-(def (.name T) (: T Type)
-  (ctr.intr/rref T 0))
+(defn new
+  ((and #(T name) args) (= T Type)
+   (ctr.intr/shrec args)))
+(defn .name
+  (#(T) (: T Type)
+   (ctr.intr/rref T 0)))
 
 (defrecord (Tuple (... vals)))
 
 ;; TODO: use `defbytes` or something like that for this:
 (def String (new Type 'ctr.lang/String))
 
-(def get
-  (fn
-    (#(tup i) (: tup Tuple)
-     (.vals tup i))
-    ;; FIXME: this uses ASCII. use UTF-8 instead:
-    ;; (In fact using UTF-8 invalidates implementing `get` for String!)
-    (#(str i) (: str String)
-     (if (and (ctr.intr/ige? i 0)
-              (ctr.intr/ilt? i (ctr.intr/blen str)))
-       (ctr.intr/int->char (ctr.intr/bref str 0 #t 1 i))
-       ;; TODO: error message:
-       (ctr.intr/err 'BoundsError #f)))))
+;;; After this point statements return #() like they should.
 
-;; ;;; After this point statements return #() like they should.
-
-;; ;;;; Types for builtins
+;;;; Types for builtins
 
 (def Int (new Type 'ctr.lang/Int))
 (def Float (new Type 'ctr.lang/Float))

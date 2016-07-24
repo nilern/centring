@@ -47,11 +47,15 @@
        (map pathname-expand (irregex-split #\: (cdr it)))
        (list (current-directory))))
     (env:ns-extend! (env:ns-ref 'ctr.lang) 'Tuple #f)
-    (-> '(require ctr.lang)
+    (-> '(do
+           (ns ctr.user)
+           (require ctr.lang)
+           (require ctr.core)
+           (import ctr.lang)
+           (import ctr.core))
         exp:expand-all
         ana:analyze
-        cek:interpret)
-    (env:current-ns (env:ns-ref 'ctr.user))))
+        cek:interpret)))
 
 (define (make-action options)
   (cond

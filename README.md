@@ -60,8 +60,10 @@ Interpreter Progress
     - [x] Statements return #()
     - [ ] Multitude of primops
 - Dispatch
+    - [ ] Overrides, disjointness of types
     - [ ] Bug fixes
     - [ ] Optimizations
+    - [ ] Type classes
 - [ ] Errors
     - [x] %err
     - [ ] Execution traces
@@ -73,7 +75,9 @@ Interpreter Progress
     - [x] and-patterns
     - [x] `let`
     - [x] `match`
-    - [ ] `defn`
+    - [x] `defn`
+    - [ ] ffi-require & ffi-fn
+    - [ ] featureful ns and import form(s)
 - Namespaces
     - [ ] Private vars
 - `ctr.lang`
@@ -85,5 +89,6 @@ Interpreter Progress
     - [ ] Persistent data structures
     - [ ] Ref types
     - [ ] Seq
+        - [x] seq, first, next, rest
     - [ ] Reducible
     - [ ] Transducers

@@ -28,10 +28,12 @@
 
   (define-controller (require! _ ns-name)
     ;; FIXME: this should be a statement
-    (-> (Symbol-name ns-name)
-        read-ns
-        exp:expand-all
-        ana:analyze))
+    (let ((curr-ns (current-ns)))
+      (-> (Symbol-name ns-name)
+          read-ns
+          (append `((ns ,(Ns-name curr-ns))))
+          exp:expand-all
+          ana:analyze)))
 
   (define-statement (alias! ns-name as)
     (ns-alias! (current-ns)
