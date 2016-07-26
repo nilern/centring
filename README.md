@@ -76,10 +76,12 @@ Interpreter Progress
     - [x] `let`
     - [x] `match`
     - [x] `defn`
-    - [ ] ffi-require & ffi-fn
+    - [x] ffi-require & ffi-fn
     - [ ] featureful ns and import form(s)
 - Namespaces
     - [ ] Private vars
+    - [ ] Store ffi-modules
+    - [ ] `require` syntax (`as`, `refer`, `import`, `except`..?)
 - `ctr.lang`
     - [ ] Box
     - [ ] dynamic-wind
@@ -92,3 +94,6 @@ Interpreter Progress
         - [x] seq, first, next, rest
     - [ ] Reducible
     - [ ] Transducers
+- Fixes and refactoring
+    - [ ] Avoid thowing 'Chicken Errors'
+    - [ ] Conversions between ctr and scm

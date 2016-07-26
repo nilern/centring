@@ -49,3 +49,5 @@
 (def Fn (new Type 'ctr.lang/Fn))
 (def NativeFn (new Type 'ctr.lang/NativeFn))
 (def Cont (new Type 'ctr.lang/Cont))
+
+(def Ptr (new Type 'ctr.lang/Ptr))

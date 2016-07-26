@@ -10,6 +10,7 @@
        (only miscmacros unless)
        (only extras random)
        (only data-structures conc)
+       (only lolevel pointer?)
        r6rs.bytevectors
        lazy-ffi
 
@@ -65,6 +66,7 @@
       ((? FnClosure?) (ns-lookup (ns-ref 'ctr.lang) #f 'Fn))
       ((? NativeFn?) (ns-lookup (ns-ref 'ctr.lang) #f 'NativeFn))
       ((? Continuation?) (ns-lookup (ns-ref 'ctr.lang) #f 'Cont))
+      ((? pointer?) (ns-lookup (ns-ref 'ctr.lang) #f 'Ptr))
       (_ (error "%type not implemented for" v))))
 
   (define-statement (set-type! r t)
@@ -191,6 +193,7 @@
                   (($ Symbol 'ctr.lang 'Float) float:)
                   (($ Symbol 'ctr.lang 'Char) char:)
                   (($ Symbol 'ctr.lang 'Bool) bool:)
+                  (($ Symbol 'ctr.lang 'Ptr) pointer:)
                   (name (error "unsupported FFI return type" name)))))
       (NativeFn name (lazy-ffi:function name (get-uid name)) ret*)))
 

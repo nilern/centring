@@ -1,0 +1,9 @@
+(ns ctr.io)
+(import ctr.lang) ; FIXME: this should be automatic
+;; TODO: this (and other like it) will need to specify ':as':
+(ffi-require "libc.so.6")
+
+;; FIXME: These should probably be private:
+(def printf (ffi-fn Int printf))
+(def fopen (ffi-fn Ptr fopen))
+(def fread (ffi-fn Int fread))

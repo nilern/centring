@@ -84,6 +84,11 @@
                      (,(string->symbol "ctr.lang/:") ,name ctr.lang/Fn))
               (ctr.intr/fn-merge! ,name ,new-cases)
               (ctr.intr/set-global! (quote ,name) ,new-cases)))))
+
+      (('ffi-require libname)
+       `(ctr.intr/ffi-require ,libname))
+      (('ffi-fn ret-type sym)
+       `(ctr.intr/ffi-fn ,ret-type (quote ,sym)))
       
       (('match matchee . cases)
        `(ctr.intr/apply (fn ,@cases) ,matchee))

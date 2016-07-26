@@ -3,12 +3,13 @@
 
   (import scheme chicken)
   (use matchable
-       (only clojurian-syntax doto ->)
+       (only clojurian-syntax doto -> ->>)
        sequences
        vector-lib
        (srfi 69)
        data-structures
        persistent-hash-map
+       r6rs.bytevectors
 
        centring.util
        centring.value
@@ -27,6 +28,7 @@
 
   ;;;; Machine
 
+  ;; TODO: break this up and let alpha conversion do its work:
   (define (interpret ctrl)
     (define (run ctrl env k)
       (match ctrl
@@ -60,11 +62,29 @@
                         (run (fn-body fn) (make-env (FnClosure-formal fn) arg) k))
                        (($ NativeFn _ fn ret)
                         ;; TODO: check tupleness, signal errors:
-                        ;; TODO: convert result back to ctr:
-                        (run (Const (apply fn
-                                           (append
-                                            (vector->list (pop arg))
-                                            (list return: ret))))
+                        ;; TODO: do conversions properly:
+                        ;; TODO: optimize
+                        (define (ctr->scm v)
+                          (match v
+                            ((? literal?) v)
+                            ;; this is only right for FFI:
+                            (($ BytesInstance _ bytes) bytes)
+                            (_ (error "unable to convert" v))))
+                        (define (scm->ctr v)
+                          (match v
+                            ((? literal?) v)
+                            ((? string?)
+                             (vector
+                              (ns-lookup (ns-ref 'ctr.lang) #f 'String)
+                              (string->utf8 v)))
+                            (_ (error "unable to convert" v))))
+                        (run (Const (->> arg
+                                         vector->list
+                                         pop
+                                         (map ctr->scm)
+                                         ((flip append) `(return: ,ret))
+                                         (apply fn)
+                                         scm->ctr))
                              env* k))
                        (($ Continuation k)
                         (run (Const arg) #f k))

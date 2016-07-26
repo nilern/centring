@@ -9,7 +9,8 @@
        sequences
        dyn-vector
        (only data-structures complement)
-       (only miscmacros define-syntax-rule let/cc))
+       (only miscmacros define-syntax-rule let/cc)
+       (only lolevel pointer?))
 
   (define-syntax defrecord
     (er-macro-transformer
@@ -40,7 +41,7 @@
   (define ns-sep '/)
 
   (define (literal? v)
-    (or (fixnum? v) (flonum? v) (boolean? v) (char? v)))
+    (or (fixnum? v) (flonum? v) (boolean? v) (char? v) (pointer? v)))
 
   (define (integer->endianness i)
     (case i
