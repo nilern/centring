@@ -70,6 +70,7 @@ Interpreter Progress
 - [ ] FFI
     - [x] %ffi-require
     - [x] %ffi-fn
+    - [ ] Sensible conversion principles
 - [ ] I/O
 - Expand
     - [x] and-patterns
@@ -77,7 +78,7 @@ Interpreter Progress
     - [x] `match`
     - [x] `defn`
     - [x] ffi-require & ffi-fn
-    - [ ] featureful ns and import form(s)
+    - [ ] featureful ns and require form(s)
 - Namespaces
     - [ ] Private vars
     - [ ] Store ffi-modules
@@ -97,3 +98,4 @@ Interpreter Progress
 - Fixes and refactoring
     - [ ] Avoid thowing 'Chicken Errors'
     - [ ] Conversions between ctr and scm
+    - [ ] Reduce the number of Scheme files
