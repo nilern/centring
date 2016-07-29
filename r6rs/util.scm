@@ -1,5 +1,5 @@
 (library (util)
-  (export let-cc if-let when-let symbol-append)
+  (export let-cc if-let when-let defrecord symbol-append)
   (import (rnrs (6)))
 
   ;;;;
@@ -26,6 +26,14 @@
        (let ((v expr))
          (when v
            then ...)))))
+
+  ;;;;
+
+  (define-syntax defrecord
+    (syntax-rules ()
+      ((defrecord (T field ...))
+       (define-record-type T
+         (fields (immutable field) ...)))))
 
   ;;;;
 

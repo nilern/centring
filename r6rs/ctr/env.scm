@@ -1,9 +1,11 @@
 (library (ctr env)
   (export ns-ref current-ns
-          ns-lookup ns-extend!)
-  (import (rnrs (6))
+          ns-extend! add-alias!
+          make-env env-assoc
+          lookup)
+  (import (chezscheme) ; TODO: how to use r6rs instead (parameters!)?
 
-          (only (util) let-cc if-let when-let symbol-append)
+          (only (util) if-let defrecord symbol-append)
 
           (only (ctr util) ns-sep ctr-error))
 
@@ -17,14 +19,9 @@
 
   ;;;; Ns
 
-  (define-record-type Ns
-    (fields
-     (immutable name)
-     (immutable mappings)
-     (immutable refers)
-     (immutable aliases)))
+  (defrecord (Ns name mappings refers aliases))
 
-  ;;;;
+  ;;;; Namespace Registry
 
   (define ns-registry (make-eq-hashtable))
 
@@ -37,29 +34,54 @@
           (hashtable-set! ns-registry name ns)
           ns)))
 
-  (define current-ns (ns-ref 'ctr.user))
+  (define current-ns (make-parameter (ns-ref 'ctr.user)))
 
-  ;;;;
+  ;;;; Namespace Operations
+
+  ;;; TODO: these need clarification
 
   (define (ns-lookup ns ns-name name)
-    ;; TODO: raise properly, untangle if-let:s
-    ;; FIXME: honour `Var-public?`
-    (var-ref
-     (let-cc return
-       (if ns-name
-         (begin
-           (when-let (vns (or (hashtable-ref (Ns-aliases ns) ns-name #f)
-                              (hashtable-ref ns-registry ns-name #f)))
-             (let ((res (hashtable-ref (Ns-mappings vns) name #f)))
-               (unless (null? res)
-                 (return res))))
-           (ctr-error "unbound variable" ns-name name))
-         (or (hashtable-ref (Ns-mappings ns) name #f)
-             (hashtable-ref (Ns-refers ns) name #f)
-             (ctr-error "unbound variable" ns-name name))))))
+    (if ns-name
+      (if-let (vns (or (hashtable-ref (Ns-aliases ns) ns-name #f)
+                       (hashtable-ref ns-registry ns-name #f)))
+        (if-let (var (hashtable-ref (Ns-mappings vns) name #f))
+          (if (or (Var-public? var) (eq? vns ns))
+            (var-ref var)
+            (ctr-error "variable is private" ns-name name))
+          (ctr-error "unbound variable" ns-name name))
+        (ctr-error "unbound namespace" ns-name))
+      (var-ref (or (hashtable-ref (Ns-mappings ns) name #f)
+                   (hashtable-ref (Ns-refers ns) name #f)
+                   (ctr-error "unbound variable" ns-name name)))))
 
   (define (ns-extend! ns name public? v)
+    ;; FIXME: honour `Var-public?`
     (if-let (var (hashtable-ref (Ns-mappings ns) name #f))
       (var-set! var v)
       (let ((var (make-Var (symbol-append (Ns-name ns) ns-sep name) v public?)))
-        (hashtable-set! (Ns-mappings ns) name var)))))
+        (hashtable-set! (Ns-mappings ns) name var))))
+
+  (define (add-alias! ns other as)
+    (hashtable-set! (Ns-aliases ns) as other))
+
+  ;;;; Local Environments
+
+  (define (make-env) '())
+
+  (define (env-ref env name default)
+    (if-let (kv (assq name env))
+      (cdr kv)
+      default))
+
+  (define (env-assoc env name val)
+    (cons (cons name val) env))
+
+  ;;;; General Variable Lookup
+
+  (define (lookup env ns-name name)
+    (if ns-name
+      (ns-lookup (current-ns) ns-name name)
+      (let ((env-res (env-ref env name '())))
+        (if (null? env-res)
+          (ns-lookup (current-ns) ns-name name)
+          env-res)))))
