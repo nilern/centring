@@ -1,5 +1,8 @@
 (library (util)
-  (export let-cc if-let when-let defrecord symbol-append inc dec)
+  (export let-cc if-let when-let defrecord
+          symbol-append
+          identity
+          inc dec)
   (import (rnrs (6)))
 
   ;;;;
@@ -39,6 +42,10 @@
 
   (define (symbol-append . syms)
     (string->symbol (apply string-append (map symbol->string syms))))
+
+  ;;;;
+
+  (define (identity x) x)
 
   ;;;;
 

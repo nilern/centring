@@ -1,10 +1,13 @@
 (library (util dynvector)
   (export make-dynvector
-          dynvector-ref dynvector-length
-          dynvector-set! dynvector-push!)
+          dynvector-ref dynvector-length dynvector-empty?
+          dynvector-set! dynvector-push!
+          dynvector-fold* dynvector-fold)
   (import (rnrs (6))
 
           (only (util) inc))
+
+  ;;;;
 
   (define-record-type DynVector
     (fields
@@ -13,6 +16,8 @@
 
   (define (make-dynvector)
     (make-DynVector '#() 0))
+
+  ;;;;
 
   (define (dynvector-reserve! dvec n)
     (let* ((data (dynvector-data dvec))
@@ -27,9 +32,16 @@
           (recur (inc i))))
       (dynvector-data-set! dvec data*)))
 
+  ;;;;
+
   (define (dynvector-ref dvec i)
     (assert (< i (dynvector-length dvec)))
     (vector-ref (dynvector-data dvec) i))
+
+  (define (dynvector-empty? dvec)
+    (zero? (dynvector-length dvec)))
+
+  ;;;;
 
   (define (dynvector-set! dvec i v)
     (assert (< i (dynvector-length dvec)))
@@ -40,5 +52,19 @@
            (len* (inc len)))
       (dynvector-reserve! dvec len*)
       (dynvector-length-set! dvec len*)
-      (dynvector-set! dvec len v))))
+      (dynvector-set! dvec len v)))
+
+  ;;;;
+
+  (define (dynvector-fold* f v dvec)
+    (let recur ((i 0)
+                (acc v))
+      (if (< i (dynvector-length dvec))
+        (recur (inc i)
+               (f acc i (dynvector-ref dvec i)))
+        acc)))
+
+  (define (dynvector-fold f v dvec)
+    (dynvector-fold* (lambda (acc _ v) (f acc v)) v dvec)))
+
 
