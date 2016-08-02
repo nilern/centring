@@ -1,6 +1,10 @@
 (library (ctr expand)
   (export expand-all)
-  (import (rnrs (6)))
+  (import (rnrs (6))
+
+          (only (util collections) reduce into))
+
+  ;;; TODO: throw lots of syntax errors
 
   (define (expand-1 expr)
     (if (pair? expr)
@@ -9,6 +13,11 @@
         ((letfn) (expand-letfn (cdr expr)))
         ((do) (expand-do (cdr expr)))
         ((quote) (expand-quote (cdr expr)))
+
+        ;; Intrinsic veneer:
+        ((ns) (expand-ns (cdr expr)))
+
+        ((require) (expand-require (cdr expr)))
         
         ;; Nothing to expand:
         (else expr))
@@ -29,6 +38,39 @@
 
   ;;;;
 
+  ;; (define (expand-fn cases)
+  ;;   (define (prefix-bindings binds body)
+  ;;     (reduce
+  ;;      (lambda (acc binding)
+  ;;        `(let* ((,(car binding) ,(cdr binding))) ,acc))
+  ;;      body binds))
+  ;;   (define (replace binds expr)
+  ;;     (if-let (binding (assq expr binds))
+  ;;       (cdr binding)
+  ;;       expr))
+  ;;   (let ((arg (gensym "x")))
+  ;;     `(ctr.sf/fn ,arg
+  ;;        ,@(map
+  ;;           (lambda (case)
+  ;;             (let-values (((binds test)
+        
+  ;; (('fn . cases)
+  ;;      (define (prefix-bindings binds body)
+  ;;        (foldl (match-lambda*
+  ;;                ((acc (var . axpath)) `(let* ((,var ,axpath)) ,acc)))
+  ;;               body binds))
+  ;;      (define (replace binds e)
+  ;;        (aif (assq e binds) (cdr it) e))
+  ;;      (let ((arg (gensym 'x)))
+  ;;        `(ctr.sf/fn ,arg
+  ;;           ,@(map (match-lambda
+  ;;                   ((formals cond . body)
+  ;;                    (receive (binds test) (process-pattern arg formals)
+  ;;                      `(,(prewalk (o lower-condition (cute replace binds <>))
+  ;;                                  `(and ,test ,cond))
+  ;;                        ,(prefix-bindings binds `(do ,@body))))))
+  ;;                  cases))))
+
   (define (expand-do stmts)
     ;; MAYBE: Move the optimization to someplace more appropriate?
     (case (length stmts)
@@ -46,7 +88,52 @@
           `(,(car clause) (fn (,(cadr clause) ,(caddr clause)
                                ,@(cdddr clause)))))
         (car args))
-      (do ,@(cdr args)))))
+      (do ,@(cdr args))))
+
+  ;;;;
+
+  (define (expand-ns args)
+    `(ctr.intr/set-ns! (quote ,(car args))))
+
+  ;;;;
+
+  (define (expand-require clauses)
+    (define (handle-clause clause)
+      (if (symbol? clause)
+        (values `((ctr.intr/require! (quote ,clause))) clause)
+        (let-values (((actions req-ns) (handle-clause (cadr clause))))
+          (values
+           (case (car clause)
+             ((as)
+              (cons `(ctr.intr/alias! (quote ,req-ns) (quote ,(caddr clause)))
+                    actions))
+             ((use)
+              (cons `(ctr.intr/start-import! (quote ,req-ns)) actions))
+             ((only)
+              (cons `(ctr.intr/refer! #t ,@(map (lambda (name) `(quote ,name))
+                                                (cddr clause)))
+                    actions))
+             ((except)
+              (cons `(ctr.intr/refer! #f ,@(map (lambda (name) `(quote ,name))
+                                                (cddr clause)))
+                    actions))
+             ((rename)
+              ;; TODO: use transducer:
+              (into actions
+                    (map (lambda (nr)
+                           `(ctr.intr/rename! (quote ,(car nr))
+                                              (quote ,(cadr nr))))
+                         (cddr clause))))
+             ;; TODO: -> (just make `expand-->` and use it from here)
+             )
+           req-ns))))
+    ;; TODO: use transduce:
+    `(do
+       ,@(reduce into '()
+                 (map (lambda (clause)
+                        (let-values (((actions _) (handle-clause clause)))
+                          (cons '(ctr.intr/end-import!) actions)))
+                      clauses)))))
 
 ;;   ;;;;
 
@@ -78,24 +165,6 @@
 ;;                                    `(and ,test ,cond))
 ;;                          ,(prefix-bindings binds `(do ,@body))))))
 ;;                    cases))))
-      
-;;       (('ns ns-name)
-;;        `(ctr.intr/set-ns! (quote ,ns-name)))
-;;       (('require ns-name)
-;;        `(ctr.intr/require! (quote ,ns-name)))
-;;       (('alias ns-name as)
-;;        `(ctr.intr/alias! (quote ,ns-name) (quote ,as)))
-;;       (('rename ns-name . binds)
-;;        `(do
-;;           ,@(map (lambda (bind)
-;;                    `(ctr.intr/rename! (quote ,ns-name)
-;;                                       (quote ,(car bind))
-;;                                       (quote ,(cadr bind))))
-;;                  binds)))
-;;       (('refer ns-name . names)
-;;        `(rename ,ns-name ,@(map list names names)))
-;;       (('import ns-name)
-;;        `(ctr.intr/import! (quote ,ns-name)))
       
 ;;       (('def var val)
 ;;        `(ctr.intr/set-global! (quote ,var) ,val))

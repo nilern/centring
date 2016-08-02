@@ -16,7 +16,7 @@ Perform require-actions demanded by `rspecs`:
 
     <require-spec> ::= <symbol>
                      | (as <require-spec> <symbol>)
-                     | (use <require-spec>)
+                     | (import <require-spec>)
                      | (only <require-spec> <symbol>*)
                      | (except <require-spec> <symbol>*)
                      | (rename <require-spec> (<symbol> <symbol>)*)
@@ -27,17 +27,17 @@ adding explicit require-specs for them.
 
 Examples of `require`:
 
-    (require (-> mod (as foo) use (only x y))
-             (-> ctr.lang use (except fold)))
+    (require (-> mod (as foo) import (only x y))
+             (-> ctr.lang import (except fold)))
 
-Using `only`, `except` or `rename` on a require spec that hasn't undergone `use`
+Using `only`, `except` or `rename` on a require spec that hasn't undergone `import`
 is an error (to avoid silent bugs).
 
 `require` can be compiled to use just:
 
 * `%require!` (`<symbol>`)
 * `%alias!` (`as`)
-* `%import!` (`use`) -- fill current import set
+* `%start-import!` (`import`) -- fill current import set
 * `%refer!` (`only` and `except`)
 * `%rename!` (`rename`)
 * `%end-import!` -- add refers to current ns, empty current import set
