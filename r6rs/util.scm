@@ -1,7 +1,7 @@
 (library (util)
   (export let-cc if-let when-let defrecord
           symbol-append
-          identity
+          identity comp
           inc dec)
   (import (rnrs (6)))
 
@@ -46,6 +46,10 @@
   ;;;;
 
   (define (identity x) x)
+
+  (define (comp . fs)
+    (lambda (arg)
+      (fold-right (lambda (f acc) (f acc)) arg fs)))
 
   ;;;;
 

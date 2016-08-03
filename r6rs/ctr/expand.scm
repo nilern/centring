@@ -1,6 +1,7 @@
 (library (ctr expand)
   (export expand-all)
   (import (rnrs (6))
+          (only (chezscheme) gensym)
 
           (only (util collections) reduce into))
 
@@ -15,8 +16,12 @@
         ((quote) (expand-quote (cdr expr)))
 
         ;; Intrinsic veneer:
-        ((ns) (expand-ns (cdr expr)))
+        ((ns) (apply expand-ns (cdr expr)))
+        ((def) (expand-def (cdr expr)))
+        ((defn) (expand-defn (cdr expr)))
+        ((if) (apply expand-if (cdr expr)))
 
+        ;; Require:
         ((require) (expand-require (cdr expr)))
         
         ;; Nothing to expand:
@@ -36,7 +41,7 @@
         (map expand-all (expand expr))
         expansion)))
 
-  ;;;;
+  ;;;; Special Form Veneer
 
   ;; (define (expand-fn cases)
   ;;   (define (prefix-bindings binds body)
@@ -71,6 +76,15 @@
   ;;                        ,(prefix-bindings binds `(do ,@body))))))
   ;;                  cases))))
 
+  (define (expand-letfn args)
+    `(ctr.sf/letrec
+      ,(map
+        (lambda (clause)
+          `(,(car clause) (fn (,(cadr clause) ,(caddr clause)
+                               ,@(cdddr clause)))))
+        (car args))
+      (do ,@(cdr args))))
+
   (define (expand-do stmts)
     ;; MAYBE: Move the optimization to someplace more appropriate?
     (case (length stmts)
@@ -81,21 +95,28 @@
   (define (expand-quote args)
     `(ctr.sf/quote ,(car args)))
 
-  (define (expand-letfn args)
-    `(ctr.sf/letrec
-      ,(map
-        (lambda (clause)
-          `(,(car clause) (fn (,(cadr clause) ,(caddr clause)
-                               ,@(cdddr clause)))))
-        (car args))
-      (do ,@(cdr args))))
+  ;;;; Intrinsic Veneer
 
-  ;;;;
+  (define (expand-ns ns)
+    `(ctr.intr/set-ns! (quote ,ns)))
 
-  (define (expand-ns args)
-    `(ctr.intr/set-ns! (quote ,(car args))))
+  (define (expand-def args)
+    `(ctr.intr/set-global! (quote ,(car args)) ,(cadr args)))
 
-  ;;;;
+  (define (expand-defn args)
+    (let ((name (car args))
+          (cases (cdr args))
+          (new-cases (gensym "f")))
+      `(let* ((,new-cases (fn ,@cases)))
+         (if (and (ctr.intr/defined? (quote ,name))
+                  (,(string->symbol "ctr.lang/:") ,name ctr.lang/Fn))
+           (ctr.intr/fn-merge! ,name ,new-cases)
+           (ctr.intr/set-global! (quote ,name) ,new-cases)))))
+
+  (define (expand-if cond then else)
+    `(ctr.intr/brf ,cond ,then ,else))
+
+  ;;;; Require
 
   (define (expand-require clauses)
     (define (handle-clause clause)
@@ -165,16 +186,6 @@
 ;;                                    `(and ,test ,cond))
 ;;                          ,(prefix-bindings binds `(do ,@body))))))
 ;;                    cases))))
-      
-;;       (('def var val)
-;;        `(ctr.intr/set-global! (quote ,var) ,val))
-;;       (('defn name . cases)
-;;        (let ((new-cases (gensym 'f)))
-;;          `(let* ((,new-cases (fn ,@cases)))
-;;             (if (and (ctr.intr/defined? (quote ,name))
-;;                      (,(string->symbol "ctr.lang/:") ,name ctr.lang/Fn))
-;;               (ctr.intr/fn-merge! ,name ,new-cases)
-;;               (ctr.intr/set-global! (quote ,name) ,new-cases)))))
 
 ;;       (('ffi-require libname)
 ;;        `(ctr.intr/ffi-require ,libname))
@@ -196,8 +207,6 @@
 ;;        `(do ,@body))
 ;;       (('let-cc k . body)
 ;;        `(ctr.intr/apply-cc (fn (,k #t ,@body))))
-;;       (('if cond then else)
-;;        `(ctr.intr/brf ,cond ,then ,else))
 ;;       (('and)
 ;;        #t)
 ;;       (('and atom)

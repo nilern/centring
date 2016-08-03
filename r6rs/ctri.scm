@@ -1,8 +1,13 @@
 (import (rnrs (6))
-        (only (chezscheme) format)
+        (only (chezscheme) open-input-string pretty-print format)
 
+        (only (util) comp)
         (util collections)
-        (util dynvector))
+        (util dynvector)
+
+        (prefix (ctr expand) exp:))
+
+;;;; CLI Option Handling
 
 (define (parse-opts arglist)
   (define (key? s)
@@ -31,10 +36,21 @@
   (define sq (make-dynvector))
   (parse! (rest arglist)))
 
+(define (make-action options)
+  (cond
+   ((hashtable-ref options "--esxp" #f)
+    (comp pretty-print exp:expand-all))
+   (else
+    pretty-print)))
+
+;;;; Main
+
 (define (main arglist)
   (let*-values (((kvs sq) (parse-opts arglist))
                 ((ks vs) (hashtable-entries kvs)))
-    (format #t "~S ~S~%" ks vs)
-    (format #t "~S~%" sq)))
-
+    (cond
+     ((hashtable-ref kvs "-e" #f)
+      ((make-action kvs)
+       (read (open-input-string (hashtable-ref kvs "-e" #f))))))))
+    
 (main (command-line))
