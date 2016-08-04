@@ -1,5 +1,5 @@
 (library (util)
-  (export let-cc if-let when-let defrecord
+  (export let-cc if-let when-let doto defrecord
           symbol-append
           identity comp
           inc dec)
@@ -29,6 +29,13 @@
        (let ((v expr))
          (when v
            then ...)))))
+
+  (define-syntax doto
+    (syntax-rules ()
+      ((doto expr (op arg ...) ...)
+       (let ((v expr))
+         (begin (op v arg ...) ...)
+         v))))
 
   ;;;;
 
