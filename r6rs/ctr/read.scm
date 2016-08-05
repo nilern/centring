@@ -1,5 +1,5 @@
 (library (ctr read)
-  (export ParseError? ParseError-msg ctr-read)
+  (export ParseError? ParseError-msg ctr-read ctr-read-all)
   (import (rnrs (6))
           (only (chezscheme) format)
 
@@ -8,7 +8,7 @@
                 string-index
                 some-fn complement partial comp))
 
-  ;;; TODO: 
+  ;;; TODO: optimize
 
   ;;;; PortSeq
 
@@ -173,8 +173,23 @@
     (case-lambda
      (()
       (ctr-read (current-input-port)))
-     ((port) 
+     ((port)
       (expr (make-pseq port)))))
+
+  (define ctr-read-all
+    (case-lambda
+     (()
+      (ctr-read-all (current-input-port)))
+     ((port)
+      (let ((pseq (make-pseq port)))
+        (let recur ((res '())
+                    (pseq pseq))
+          (if (pseq-eof? pseq)
+            (values res pseq)
+            (let-values (((p-res pseq*) (expr pseq)))
+              (if (ParseError? p-res)
+                (values p-res pseq*)
+                (recur `(,@res ,p-res) pseq*)))))))))
 
   ;;;; Init
 

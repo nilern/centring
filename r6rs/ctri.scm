@@ -6,7 +6,7 @@
         (util dynvector)
 
         (prefix (ctr expand) exp:)
-        (only (ctr read) ParseError? ParseError-msg ctr-read))
+        (only (ctr read) ParseError? ParseError-msg ctr-read-all))
 
 ;;;; CLI Option Handling
 
@@ -49,13 +49,16 @@
 (define (main arglist)
   (let*-values (((kvs sq) (parse-opts arglist))
                 ((ks vs) (hashtable-entries kvs)))
-    (cond
-     ((hashtable-ref kvs "-e" #f)
-      (let-values (((res _) (ctr-read (open-input-string
-                                       (hashtable-ref kvs "-e" #f)))))
+    (let ((port (if (hashtable-ref kvs "-e" #f)
+                  (open-input-string (hashtable-ref kvs "-e" #f))
+                  (open-file-input-port (dynvector-ref sq 0)
+                                        (file-options)
+                                        (buffer-mode block)
+                                        (native-transcoder)))))
+      (let-values (((res _) (ctr-read-all port)))
         (if (ParseError? res)
           (format (current-error-port) "ParseError: ~S"
                   (ParseError-msg res))
-          ((make-action kvs) res)))))))
-    
+          ((make-action kvs) `(do ,@res)))))))
+
 (main (command-line))
