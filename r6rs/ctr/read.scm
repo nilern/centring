@@ -1,9 +1,14 @@
 (library (ctr read)
-  (export ctr-read)
+  (export ParseError? ParseError-msg ctr-read)
   (import (rnrs (6))
           (only (chezscheme) format)
 
-          (only (util) if-let doto comp))
+          (only (util)
+                if-let doto
+                string-index
+                some-fn complement partial comp))
+
+  ;;; TODO: 
 
   ;;;; PortSeq
 
@@ -61,6 +66,15 @@
         (fail
          (make-ParseError (format "~S did not satisfy ~S." c pred?))))))
 
+  (define (char c)
+    (sat (partial eqv? c)))
+
+  (define (one-of cs)
+    (sat (lambda (c) (string-index c cs))))
+
+  (define (none-of cs)
+    (sat (lambda (c) (not (string-index c cs)))))
+
   (define (tabular tab)
     (mlet ((c any-char))
       (if-let (p (hashtable-ref tab c #f))
@@ -84,16 +98,24 @@
       ((mlet ((v p) vps ...) body ...)
        (mbind p (lambda (v) (mlet (vps ...) body ...))))))
 
-  (define (mplus p q)
+  (define (mplus . parsers)
     (lambda (pseq)
-      (let-values (((p-res pseq*) (p pseq)))
-        (if (ParseError? p-res)
-          (q pseq)
-          (values p-res pseq*)))))
+      (let recur ((ps parsers))
+        (if (null? ps)
+          (values (make-ParseError
+                   (format "None of the parsers ~S matched." parsers))
+                   pseq)
+          (let-values (((p-res pseq*) ((car ps) pseq)))
+            (if (ParseError? p-res)
+              (recur (cdr ps))
+              (values p-res pseq*)))))))
 
   (define (fmap f p)
     (mlet ((a p))
       (mreturn (f a))))
+
+  (define (maybe p)
+    (mplus p (mreturn #f)))
 
   (define (many* p)
     (mplus (many+ p) (mreturn '())))
@@ -110,30 +132,62 @@
     (mlet ((a p)
            (as (many* (mlet ((_ sep)) p))))
       (mreturn (cons a as))))
+
+  (define (between start end p)
+    (mlet ((_ start)
+           (a p)
+           (_ end))
+      (mreturn a)))
+
+  (define (surr-by surr p)
+    (between surr surr p))
   
   ;;;; Read Table
 
-  (define readtable
-    (doto (make-eqv-hashtable)
-      (hashtable-set! #\a (mreturn 1))
-      (hashtable-set! #\b (mreturn 2))))
+  (define readtable (make-eqv-hashtable))
+
+  (define sharptable (make-eqv-hashtable))
 
   ;;;; Read
+
+  (define ws-char (sat char-whitespace?))
+  (define ws (many+ ws-char))
 
   (define digit (sat char-numeric?))
   (define int (fmap (comp string->number list->string)
                     (many+ digit)))
 
-  (define letter (sat char-alphabetic?))
+  (define symchar (sat (complement
+                        (some-fn char-whitespace?
+                                 (lambda (c) (string-index c "()#"))))))
   (define sym (fmap (comp string->symbol list->string)
-                    (many+ letter)))
+                    (many+ symchar)))
 
   (define expr
-    (mplus int sym))
+    (surr-by (maybe ws)
+             (mplus (tabular readtable)
+                    int
+                    sym)))
 
   (define ctr-read
     (case-lambda
      (()
       (ctr-read (current-input-port)))
      ((port) 
-      (expr (make-pseq port))))))
+      (expr (make-pseq port)))))
+
+  ;;;; Init
+
+  (doto readtable
+    (hashtable-set! #\(
+                    (mlet ((es (many* expr))
+                           (_ (char #\))))
+                      (mreturn es)))
+    (hashtable-set! #\# (tabular sharptable)))
+                    
+  (doto sharptable
+    (hashtable-set! #\(
+                    (mlet ((es (many* expr))
+                           (_ (char #\))))
+                      (mreturn (append '(ctr.lang/new ctr.lang/Tuple)
+                                       es))))))

@@ -1,7 +1,7 @@
 (library (util)
   (export let-cc if-let when-let doto defrecord
-          symbol-append
-          identity comp
+          string-index symbol-append
+          identity every-pred some-fn complement partial comp
           inc dec)
   (import (rnrs (6)))
 
@@ -50,9 +50,41 @@
   (define (symbol-append . syms)
     (string->symbol (apply string-append (map symbol->string syms))))
 
+  (define (string-index c s)
+    (let ((len (string-length s)))
+      (let recur ((i 0))
+        (cond
+         ((>= i len) #f)
+         ((char=? (string-ref s i) c) i)
+         (else (recur (inc i)))))))
+
   ;;;;
 
   (define (identity x) x)
+
+  (define (complement pred?)
+    (lambda xs
+      (not (apply pred? xs))))
+
+  (define (every-pred . preds)
+    (lambda xs
+      (let recur ((preds preds))
+        (cond
+         ((null? preds) #t)
+         ((apply (car preds) xs) (recur (cdr preds)))
+         (else #f)))))
+
+  (define (some-fn . preds)
+    (lambda xs
+      (let recur ((preds preds))
+        (cond
+         ((null? preds) #f)
+         ((apply (car preds) xs) #t)
+         (else (recur (cdr preds)))))))
+
+  (define (partial f . xs)
+    (lambda ys
+      (apply f (append xs ys))))
 
   (define (comp . fs)
     (lambda (arg)

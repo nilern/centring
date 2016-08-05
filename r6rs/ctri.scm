@@ -5,7 +5,8 @@
         (util collections)
         (util dynvector)
 
-        (prefix (ctr expand) exp:))
+        (prefix (ctr expand) exp:)
+        (only (ctr read) ParseError? ParseError-msg ctr-read))
 
 ;;;; CLI Option Handling
 
@@ -50,7 +51,11 @@
                 ((ks vs) (hashtable-entries kvs)))
     (cond
      ((hashtable-ref kvs "-e" #f)
-      ((make-action kvs)
-       (read (open-input-string (hashtable-ref kvs "-e" #f))))))))
+      (let-values (((res _) (ctr-read (open-input-string
+                                       (hashtable-ref kvs "-e" #f)))))
+        (if (ParseError? res)
+          (format (current-error-port) "ParseError: ~S"
+                  (ParseError-msg res))
+          ((make-action kvs) res)))))))
     
 (main (command-line))
