@@ -4,7 +4,7 @@
           (only (chezscheme) gensym)
 
           (only (util) if-let dolist partial comp identity)
-          (only (util collections) reduce into last drop-last)
+          (only (util collections) reduce into)
           (only (util queue) make-queue queue-empty? enqueue! queue-pop!)
 
           (only (ctr util) ctr-error literal?))
@@ -181,17 +181,16 @@
   ;;;; Conveniences
 
   (define (expand--> args)
-    (cond
-     ((null? args) '(do))
-     ((null? (cdr args)) (car args))
-     (else
-      (let ((outermost (last args)))
-        (cond
-         ((symbol? outermost) `(,outermost ,(expand--> (drop-last 1 args))))
-         ((pair? outermost) `(,(car outermost)
-                              ,(expand--> (drop-last 1 args))
-                              ,@(cdr outermost)))
-         (else (ctr-error "cannot `->` through" outermost)))))))
+    (let recur ((res (car args)) (pipeline (cdr args)))
+      (cond
+       ((null? pipeline)
+        res)
+       ((symbol? (car pipeline))
+        (recur `(,(car pipeline) ,res) (cdr pipeline)))
+       ((pair? (car pipeline))
+        (recur `(,(caar pipeline) ,res ,@(cdar pipeline)) (cdr pipeline)))
+       (else
+        (ctr-error "cannot `->` through" (car pipeline))))))
 
   ;;;;
 
