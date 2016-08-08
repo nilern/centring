@@ -1,5 +1,5 @@
 (library (util)
-  (export let-cc if-let when-let doto defrecord
+  (export let-cc if-let when-let doto dolist defrecord
           string-index symbol-append
           identity every-pred some-fn complement partial comp
           inc dec)
@@ -36,6 +36,17 @@
        (let ((v expr))
          (begin (op v arg ...) ...)
          v))))
+
+  (define-syntax dolist
+    (syntax-rules ()
+      ((dolist ((v i) coll) body ...)
+       (let recur ((i 0) (ls coll))
+         (unless (null? ls)
+           (let ((v (car ls)))
+             body ...)
+           (recur (+ i 1) (cdr ls)))))
+      ((dolist (v coll) body ...)
+       (for-each (lambda (v) body ...) coll))))
 
   ;;;;
 

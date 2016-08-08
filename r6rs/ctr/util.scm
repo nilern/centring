@@ -1,8 +1,11 @@
 (library (ctr util)
-  (export ns-sep ctr-error)
+  (export ns-sep literal? ctr-error)
   (import (rnrs (6)))
 
   (define ns-sep '/)
+
+  (define (literal? v)
+    (or (fixnum? v) (flonum? v) (boolean? v) (char? v)))
 
   (define-condition-type &ctr &condition make-ctr-error ctr-error?)
 

@@ -205,4 +205,6 @@
                     (mlet ((es (many* expr))
                            (_ (char #\))))
                       (mreturn (append '(ctr.lang/new ctr.lang/Tuple)
-                                       es))))))
+                                       es))))
+    (hashtable-set! #\t (mreturn #t))
+    (hashtable-set! #\f (mreturn #f))))

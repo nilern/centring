@@ -3,7 +3,11 @@
   (import (rnrs (6))
           (only (chezscheme) gensym)
 
-          (only (util collections) reduce into))
+          (only (util) if-let dolist partial comp identity)
+          (only (util collections) reduce into)
+          (only (util queue) make-queue queue-empty? enqueue! queue-pop!)
+
+          (only (ctr util) ctr-error literal?))
 
   ;;; TODO: throw lots of syntax errors
 
@@ -11,15 +15,21 @@
     (if (pair? expr)
       (case (car expr)
         ;; Special form veneer:
+        ((fn)    (expand-fn (cdr expr)))
         ((letfn) (expand-letfn (cdr expr)))
-        ((do) (expand-do (cdr expr)))
+        ((do)    (expand-do (cdr expr)))
         ((quote) (expand-quote (cdr expr)))
 
         ;; Intrinsic veneer:
-        ((ns) (apply expand-ns (cdr expr)))
-        ((def) (expand-def (cdr expr)))
+        ((ns)   (apply expand-ns (cdr expr)))
+        ((def)  (expand-def (cdr expr)))
         ((defn) (expand-defn (cdr expr)))
-        ((if) (apply expand-if (cdr expr)))
+        ((if)   (apply expand-if (cdr expr)))
+
+        ;; Binding forms:
+        ((let*)  (apply expand-let* (cdr expr)))
+        ((let)   (apply expand-let (cdr expr)))
+        ((match) (apply expand-match (cdr expr)))
 
         ;; Require:
         ((require) (expand-require (cdr expr)))
@@ -43,38 +53,28 @@
 
   ;;;; Special Form Veneer
 
-  ;; (define (expand-fn cases)
-  ;;   (define (prefix-bindings binds body)
-  ;;     (reduce
-  ;;      (lambda (acc binding)
-  ;;        `(let* ((,(car binding) ,(cdr binding))) ,acc))
-  ;;      body binds))
-  ;;   (define (replace binds expr)
-  ;;     (if-let (binding (assq expr binds))
-  ;;       (cdr binding)
-  ;;       expr))
-  ;;   (let ((arg (gensym "x")))
-  ;;     `(ctr.sf/fn ,arg
-  ;;        ,@(map
-  ;;           (lambda (case)
-  ;;             (let-values (((binds test)
-        
-  ;; (('fn . cases)
-  ;;      (define (prefix-bindings binds body)
-  ;;        (foldl (match-lambda*
-  ;;                ((acc (var . axpath)) `(let* ((,var ,axpath)) ,acc)))
-  ;;               body binds))
-  ;;      (define (replace binds e)
-  ;;        (aif (assq e binds) (cdr it) e))
-  ;;      (let ((arg (gensym 'x)))
-  ;;        `(ctr.sf/fn ,arg
-  ;;           ,@(map (match-lambda
-  ;;                   ((formals cond . body)
-  ;;                    (receive (binds test) (process-pattern arg formals)
-  ;;                      `(,(prewalk (o lower-condition (cute replace binds <>))
-  ;;                                  `(and ,test ,cond))
-  ;;                        ,(prefix-bindings binds `(do ,@body))))))
-  ;;                  cases))))
+  (define (expand-fn cases)
+    (define (prefix-bindings binds body)
+      (reduce
+       (lambda (acc binding)
+         `(let* ((,(car binding) ,(cdr binding))) ,acc))
+       body binds))
+    (define (replace binds expr)
+      (if-let (binding (assq expr binds))
+        (cdr binding)
+        expr))
+    (let ((arg (gensym "x")))
+      `(ctr.sf/fn ,arg
+         ,@(map
+            (lambda (case)
+              (let ((formals (car case))
+                    (cond (cadr case))
+                    (body (cddr case)))
+                (let-values (((binds test) (process-pattern arg formals)))
+                  `(,(prewalk (comp lower-condition (partial replace binds))
+                              `(and ,test ,cond))
+                    ,(prefix-bindings binds `(do ,@body))))))
+            cases))))
 
   (define (expand-letfn args)
     `(ctr.sf/letrec
@@ -116,6 +116,24 @@
   (define (expand-if cond then else)
     `(ctr.intr/brf ,cond ,then ,else))
 
+  ;;;; Binding Forms
+
+  (define (expand-let* binds . body)
+    (if (null? binds)
+      `(do ,@body)
+      `(ctr-intr/apply
+        (ctr.sf/fn ,(caar binds) (#t (let* ,(cdr binds) ,@body)))
+        ,(cadar binds))))
+
+  (define (expand-let binds . body)
+    (if (null? binds)
+      `(do ,@body)
+      `(ctr.intr/apply (fn (,(caar binds) #t (let ,(cdr binds) ,@body)))
+                       ,(cadar binds))))
+
+  (define (expand-match matchee . cases)
+    `(ctr.intr/apply (fn ,@cases) ,matchee))
+
   ;;;; Require
 
   (define (expand-require clauses)
@@ -154,57 +172,82 @@
                  (map (lambda (clause)
                         (let-values (((actions _) (handle-clause clause)))
                           (cons '(ctr.intr/end-import!) actions)))
-                      clauses)))))
+                      clauses))))
 
-;;   ;;;;
+  ;;;;
 
-;;   (define (walk inner outer ast)
-;;     (outer (if (list? ast) (map inner ast) ast)))
+  (define (walk inner outer ast)
+    (outer (if (list? ast) (map inner ast) ast)))
 
-;;   (define (postwalk f ast)
-;;     (walk (cute postwalk f <>) f ast))
+  (define (postwalk f ast)
+    (walk (partial postwalk f) f ast))
 
-;;   (define (prewalk f ast)
-;;     (walk (cute prewalk f <>) identity (f ast)))
+  (define (prewalk f ast)
+    (walk (partial prewalk f) identity (f ast)))
+
+  (define (process-pattern arg pat)
+    (let ((patq (make-queue)))
+      (letrec ((process-1
+                (lambda (binds tests)
+                  (if (queue-empty? patq)
+                    (values binds tests)
+                    (let* ((ax-pat (queue-pop! patq #f))
+                           (axpath (car ax-pat))
+                           (pat (cdr ax-pat)))
+                      (cond
+                       ((symbol? pat)
+                        (process-1 (cons (cons pat axpath) binds) tests))
+
+                       ((literal? pat)
+                        (process-1 binds `(and ,tests (ctr.lang/= ,axpath ,pat))))
+
+                       ((eq? (car pat) 'and)
+                        (dolist (pat (cdr pat))
+                          (enqueue! patq (cons axpath pat)))
+                        (process-1 binds tests))
+
+                       ((or (eq? (car pat) 'ctr.lang/new)
+                            (eq? (car pat) 'new))
+                        (let ((recname (gensym "v"))
+                              (type (cadr pat))
+                              (fields (cddr pat)))
+                          (dolist ((field-pat i) fields)
+                            (enqueue! patq (cons `(ctr.intr/rref ,recname ,i)
+                                                 field-pat)))
+                          (process-1
+                           (cons (cons recname axpath) binds)
+                           `(and ,tests
+                                 (: ,axpath ,type)
+                                 (ctr.intr/ieq? (ctr.intr/rlen ,axpath)
+                                                ,(length fields))))))
+
+                       (else (ctr-error "unrecognized pattern" pat))))))))
+        (enqueue! patq (cons arg pat))
+        (process-1 '() '(and)))))
+
+  (define (lower-condition expr)
+    (if (list? expr)
+      (let ((op (car expr))
+            (args (cdr expr)))
+        (case op
+          ((and) `(ctr.intr/band ,@args))
+          ((or)  `(ctr.intr/bior ,@args))
+          ((not) `(ctr.intr/bnot ,@args))
+          ((:) (let ((v (car args))
+                     (T (cadr args)))
+                 `(ctr.intr/identical? (ctr.intr/type ,v) ,T)))
+          (else expr)))
+      expr)))
 
 ;;   ;;;;
 
 ;;   (define (expand-1 sexp)
-;;       (('fn . cases)
-;;        (define (prefix-bindings binds body)
-;;          (foldl (match-lambda*
-;;                  ((acc (var . axpath)) `(let* ((,var ,axpath)) ,acc)))
-;;                 body binds))
-;;        (define (replace binds e)
-;;          (aif (assq e binds) (cdr it) e))
-;;        (let ((arg (gensym 'x)))
-;;          `(ctr.sf/fn ,arg
-;;             ,@(map (match-lambda
-;;                     ((formals cond . body)
-;;                      (receive (binds test) (process-pattern arg formals)
-;;                        `(,(prewalk (o lower-condition (cute replace binds <>))
-;;                                    `(and ,test ,cond))
-;;                          ,(prefix-bindings binds `(do ,@body))))))
-;;                    cases))))
 
 ;;       (('ffi-require libname)
 ;;        `(ctr.intr/ffi-require ,libname))
 ;;       (('ffi-fn ret-type sym)
 ;;        `(ctr.intr/ffi-fn ,ret-type (quote ,sym)))
-      
-;;       (('match matchee . cases)
-;;        `(ctr.intr/apply (fn ,@cases) ,matchee))
-;;       (('let ((pat val) . binds) . body)
-;;        `(ctr.intr/apply (fn (,pat #t (let ,binds ,@body)))
-;;                         ,val))
-;;       (('let () . body)
-;;        `(do ,@body))
-;;       (('let* ((var val) . binds) . body)
-;;        `(ctr.intr/apply
-;;          (ctr.sf/fn ,var (#t (let* ,binds ,@body)))
-;;          ,val))
-;;       (('let* () . body)
-;;        `(do ,@body))
+
 ;;       (('let-cc k . body)
 ;;        `(ctr.intr/apply-cc (fn (,k #t ,@body))))
 ;;       (('and)
@@ -285,46 +328,4 @@
 ;;                fields))))
                  
 ;;       (_ sexp)))
-
-;;   (define (process-pattern arg pat)
-;;     (let ((patq (make-queue)))
-;;       (define (process-1 binds tests)
-;;         (if (queue-empty? patq)
-;;           (values binds tests)
-;;           (match-let (((axpath . pat) (queue-remove! patq)))
-;;             (match pat
-;;               ((? symbol?)
-;;                (process-1 (cons (cons pat axpath) binds) tests))
-              
-;;               ((? literal?)
-;;                (process-1 binds `(and ,tests (ctr.lang/= ,axpath ,pat))))
-
-;;               (('and . pats)
-;;                (doseq (pat pats)
-;;                  (queue-add! patq (cons axpath pat)))
-;;                (process-1 binds tests))
-
-;;               (((and (? symbol?) type) . fields)
-;;                (let ((recname (gensym 'v)))
-;;                  (doseq ((field-pat i) fields)
-;;                    (queue-add! patq (cons `(ctr.intr/rref ,recname ,i)
-;;                                           field-pat)))
-;;                  (process-1
-;;                   (cons (cons recname axpath) binds)
-;;                   `(and ,tests
-;;                         (: ,axpath ,type)
-;;                         (ctr.intr/ieq? (ctr.intr/rlen ,axpath)
-;;                                        ,(length fields))))))
-;;               (_ (error "unrecognized pattern" pat))))))
-
-;;       (queue-add! patq (cons arg pat))
-;;       (process-1 '() '(and))))
-
-;;   (define lower-condition
-;;     (match-lambda
-;;       (('and . args) `(ctr.intr/band ,@args))
-;;       (('or . args) `(ctr.intr/bior ,@args))
-;;       (('not . args) `(ctr.intr/bnot ,@args))
-;;       ((': v T) `(ctr.intr/identical? (ctr.intr/type ,v) ,T))
-;;       (expr expr)))
 
