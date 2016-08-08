@@ -4,7 +4,7 @@
           (only (chezscheme) gensym)
 
           (only (util) if-let dolist partial comp identity)
-          (only (util collections) reduce into)
+          (only (util collections) reduce into last drop-last)
           (only (util queue) make-queue queue-empty? enqueue! queue-pop!)
 
           (only (ctr util) ctr-error literal?))
@@ -33,6 +33,9 @@
 
         ;; Require:
         ((require) (expand-require (cdr expr)))
+
+        ;; Conveniences:
+        ((->) (expand--> (cdr expr)))
         
         ;; Nothing to expand:
         (else expr))
@@ -141,38 +144,54 @@
       (if (symbol? clause)
         (values `((ctr.intr/require! (quote ,clause))) clause)
         (let-values (((actions req-ns) (handle-clause (cadr clause))))
-          (values
-           (case (car clause)
-             ((as)
-              (cons `(ctr.intr/alias! (quote ,req-ns) (quote ,(caddr clause)))
-                    actions))
-             ((use)
-              (cons `(ctr.intr/start-import! (quote ,req-ns)) actions))
-             ((only)
-              (cons `(ctr.intr/refer! #t ,@(map (lambda (name) `(quote ,name))
-                                                (cddr clause)))
-                    actions))
-             ((except)
-              (cons `(ctr.intr/refer! #f ,@(map (lambda (name) `(quote ,name))
-                                                (cddr clause)))
-                    actions))
-             ((rename)
-              ;; TODO: use transducer:
-              (into actions
-                    (map (lambda (nr)
-                           `(ctr.intr/rename! (quote ,(car nr))
-                                              (quote ,(cadr nr))))
-                         (cddr clause))))
-             ;; TODO: -> (just make `expand-->` and use it from here)
-             )
-           req-ns))))
-    ;; TODO: use transduce:
+          (if (eq? (car clause) '->)
+            (handle-clause (expand--> (cdr clause)))
+            (values
+             (case (car clause)
+               ((as)
+                (cons `(ctr.intr/alias! (quote ,req-ns) (quote ,(caddr clause)))
+                      actions))
+               ((use)
+                (cons `(ctr.intr/start-import! (quote ,req-ns)) actions))
+               ((only)
+                (cons `(ctr.intr/refer! #t ,@(map (lambda (name) `(quote ,name))
+                                                  (cddr clause)))
+                      actions))
+               ((except)
+                (cons `(ctr.intr/refer! #f ,@(map (lambda (name) `(quote ,name))
+                                                  (cddr clause)))
+                      actions))
+               ((rename)
+                ;; TODO: use transducer:
+                (into actions
+                      (map (lambda (nr)
+                             `(ctr.intr/rename! (quote ,(car nr))
+                                                (quote ,(cadr nr))))
+                           (cddr clause))))
+               (else (ctr-error "unsupported require operator" (car clause))))
+             req-ns)))))
+      ;; TODO: use transduce:
     `(do
        ,@(reduce into '()
                  (map (lambda (clause)
                         (let-values (((actions _) (handle-clause clause)))
                           (cons '(ctr.intr/end-import!) actions)))
                       clauses))))
+
+  ;;;; Conveniences
+
+  (define (expand--> args)
+    (cond
+     ((null? args) '(do))
+     ((null? (cdr args)) (car args))
+     (else
+      (let ((outermost (last args)))
+        (cond
+         ((symbol? outermost) `(,outermost ,(expand--> (drop-last 1 args))))
+         ((pair? outermost) `(,(car outermost)
+                              ,(expand--> (drop-last 1 args))
+                              ,@(cdr outermost)))
+         (else (ctr-error "cannot `->` through" outermost)))))))
 
   ;;;;
 

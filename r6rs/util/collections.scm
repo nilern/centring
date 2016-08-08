@@ -2,7 +2,8 @@
   (export first rest empty?
           conj
           reduce transduce
-          into)
+          into
+          drop last drop-last)
   (import (rnrs (6)))
 
   ;;;;
@@ -32,4 +33,21 @@
   ;;;;
 
   (define (into coll other)
-    (reduce conj coll other)))
+    (reduce conj coll other))
+
+  ;;;;
+
+  (define (drop n coll)
+    (cond
+     ((null? coll) coll)
+     ((zero? n) coll)
+     (else (drop (- n 1) (rest coll)))))
+
+  (define (last coll)
+    (if (empty? (rest coll))
+      (first coll)
+      (last (rest coll))))
+
+  (define (drop-last n coll)
+    ;; TODO: optimize
+    (reverse (drop n (reverse coll)))))
