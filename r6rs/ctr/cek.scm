@@ -1,10 +1,13 @@
 (library (ctr cek)
   (export interpret)
   (import (rnrs (6))
+          (only (chezscheme) vector-copy)
 
-          (only (util) defrecord inc dec)
+          (only (util) defrecord doto inc dec)
 
           (only (ctr util) ctr-error)
+          (ctr primops)
+          (prefix (ctr primop-impls) pimpls:)
           (only (ctr env) make-env)
           (ctr ast))
 
@@ -18,6 +21,15 @@
   ;;;; Machine
   (define (run ctrl env k)
     (cond
+     ((Primop? ctrl)
+      (let ((op (Primop-op ctrl))
+            (args (Primop-args ctrl))
+            (conts (Primop-conts ctrl)))
+        (run (vector-ref args 0)
+             env
+             (make-PrimopCont op (make-vector (vector-length args))
+                              args 0
+                              conts env k))))
      ((Do? ctrl)
       (let ((stmts (Do-stmts ctrl)))
         ;; MAYBE: might need to deal with situation where stmts = #()
@@ -29,6 +41,30 @@
 
   (define (continue ctrl k)
     (cond
+     ((PrimopCont? k)
+      (let* ((op (PrimopCont-op k))
+             (args (PrimopCont-asts k))
+             (i (PrimopCont-index k))
+             (conts (PrimopCont-conts k))
+             (env (PrimopCont-env k))
+             (k* (PrimopCont-cont k))
+             (i* (inc i))
+             ;; MAYBE: can all this copying be avoided?:
+             (vals* (doto (vector-copy (PrimopCont-vals k))
+                          (vector-set! i (Const-val ctrl)))))
+        (if (= i* (vector-length args))
+          (let ((impl (get-op op)))
+            (cond
+             ((ExprOp? impl)
+              (run (make-Const ((ExprOp-impl impl) vals*)) #f k*))
+             ((StmtOp? impl)
+              (ctr-error "stat application unimplemented"))
+             ((CtrlOp? impl)
+              (ctr-error "ctrl application unimplemented"))
+             (else
+              (ctr-error "not a primop object" impl))))
+          (run (vector-ref args i*) env
+               (make-PrimopCont op vals* args i* conts env k*)))))
      ((DoCont? k)
       (let ((stmts (DoCont-stmts k))
             (i (DoCont-index k))
@@ -45,7 +81,9 @@
       (ctr-error "unrecognized continuation" k))))
 
   (define (interpret ast)
-    (run ast (make-env) (make-HaltCont))))
+    (run ast (make-env) (make-HaltCont)))
+
+  (pimpls:init!))
 
   ;; ;;;; Machine
 

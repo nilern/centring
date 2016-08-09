@@ -1,6 +1,6 @@
 (library (ctr ast)
   (export make-Fn
-          make-Primop
+          make-Primop Primop? Primop-op Primop-args Primop-conts
           make-Fix
           make-Do Do? Do-stmts
           make-Closure
