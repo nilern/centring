@@ -8,6 +8,7 @@
         (only (ctr ast) ast->sexp)
         (only (ctr expand) expand-all)
         (only (ctr analyze) analyze)
+        (only (ctr cek) interpret)
         (only (ctr read) ParseError? ParseError-msg ctr-read-all))
 
 ;;;; CLI Option Handling
@@ -49,7 +50,10 @@
     (comp pretty-print
           expand-all))
    (else
-    pretty-print)))
+    (comp pretty-print
+          interpret
+          analyze
+          expand-all))))
 
 ;;;; Main
 

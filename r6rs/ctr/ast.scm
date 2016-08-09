@@ -1,5 +1,11 @@
 (library (ctr ast)
-  (export make-Fn make-Primop make-Fix make-Do make-Closure make-Global make-Const
+  (export make-Fn
+          make-Primop
+          make-Fix
+          make-Do Do? Do-stmts
+          make-Closure
+          make-Global
+          make-Const Const? Const-val
           ast->sexp)
   (import (rnrs (6))
 
