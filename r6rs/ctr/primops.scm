@@ -1,5 +1,5 @@
 (library (ctr primops)
-  (export)
+  (export op-purpose)
   (import (rnrs (6))
 
           (only (util) defrecord))
@@ -32,4 +32,14 @@
       ((define-primop name val)
        (begin
          (define name val)
-         (hash-table-set! primops (quote name) name))))))
+         (hash-table-set! primops (quote name) name)))))
+
+  ;;;;
+
+  (define (op-purpose op-name)
+    (let ((op (hashtable-ref primops op-name #f)))
+      (cond
+       ((ExprOp? op) 'expr)
+       ((StmtOp? op) 'stmt)
+       ((CtrlOp? op) 'ctrl)
+       (else #f)))))

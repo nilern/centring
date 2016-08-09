@@ -5,7 +5,9 @@
         (util collections)
         (util dynvector)
 
-        (prefix (ctr expand) exp:)
+        (only (ctr ast) ast->sexp)
+        (only (ctr expand) expand-all)
+        (only (ctr analyze) analyze)
         (only (ctr read) ParseError? ParseError-msg ctr-read-all))
 
 ;;;; CLI Option Handling
@@ -39,8 +41,13 @@
 
 (define (make-action options)
   (cond
+   ((hashtable-ref options "--iana" #f)
+    (comp pretty-print ast->sexp
+          analyze
+          expand-all))
    ((hashtable-ref options "--esxp" #f)
-    (comp pretty-print exp:expand-all))
+    (comp pretty-print
+          expand-all))
    (else
     pretty-print)))
 

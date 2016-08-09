@@ -2,8 +2,11 @@
   (export first rest empty?
           conj
           reduce transduce
-          into)
-  (import (rnrs (6)))
+          into
+          mapv mapl)
+  (import (rnrs (6))
+
+          (only (util) doto))
 
   ;;;;
 
@@ -32,4 +35,21 @@
   ;;;;
 
   (define (into coll other)
-    (reduce conj coll other)))
+    (reduce conj coll other))
+
+  ;;;;
+
+  (define (mapv f coll)
+    (define (do-map coll i)
+      (if (empty? coll)
+        (make-vector i)
+        (doto (do-map (rest coll) (+ i 1))
+          (vector-set! i (f (first coll))))))
+    (do-map coll 0))
+
+  (define (mapl f coll)
+    (let recur ((i (- (vector-length coll) 1)) (res '()))
+      (if (< i 0)
+        res
+        (recur (- i 1) (cons (f (vector-ref coll i)) res))))))
+        
