@@ -22,7 +22,14 @@
       (make-Const sexp))
      ((symbol? sexp)
       (call-with-values (lambda () (ns-name sexp)) (partial make-Global #f)))
-     ;; TODO: calls
+     ((pair? sexp)
+      (make-Primop 'apply
+                   (vector (analyze (car sexp))
+                           (make-Primop 'rec
+                                        (mapv analyze
+                                              (cons 'ctr.lang/Tuple (cdr sexp)))
+                                        #f))
+                   #f))
      (else
       (ctr-error "unable to analyze" sexp))))
 
