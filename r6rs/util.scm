@@ -1,6 +1,6 @@
 (library (util)
-  (export let-cc if-let when-let doto dolist defrecord
-          string-index symbol-append
+  (export let-cc if-let when-let doto dolist dovec defrecord
+          string-index vector-append symbol-append
           identity every-pred some-fn complement partial comp
           inc dec)
   (import (rnrs (6)))
@@ -48,6 +48,16 @@
       ((dolist (v coll) body ...)
        (for-each (lambda (v) body ...) coll))))
 
+  (define-syntax dovec
+    (syntax-rules ()
+      ((_ (v coll) body ...)
+       (let* ((vec coll)
+              (len (vector-length vec)))
+         (do ((i 0 (inc i)))
+             ((>= i len))
+           (let ((v (vector-ref vec i)))
+             body ...))))))
+
   ;;;;
 
   (define-syntax defrecord
@@ -60,6 +70,16 @@
 
   (define (symbol-append . syms)
     (string->symbol (apply string-append (map symbol->string syms))))
+
+  (define (vector-append . vecs)
+    (let ((res (make-vector (fold-left (lambda (n vec) (+ n (vector-length vec)))
+                                       0 vecs)))
+          (i 0))
+      (dolist (vec vecs)
+        (dovec (v vec)
+          (vector-set! res i v)
+          (set! i (inc i))))
+      res))
 
   (define (string-index c s)
     (let ((len (string-length s)))

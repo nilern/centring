@@ -124,7 +124,7 @@
   (define (expand-let* binds . body)
     (if (null? binds)
       `(do ,@body)
-      `(ctr-intr/apply
+      `(ctr.intr/apply
         (ctr.sf/fn ,(caar binds) (#t (let* ,(cdr binds) ,@body)))
         ,(cadar binds))))
 

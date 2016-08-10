@@ -7,6 +7,7 @@
           
           (only (ctr util) ctr-error literal? ns-name ns name)
           (ctr ast)
+          (prefix (ctr dispatch) dnf:)
           (only (ctr primops) op-purpose))
 
   ;;;; Analyze
@@ -21,6 +22,7 @@
       (make-Const sexp))
      ((symbol? sexp)
       (call-with-values (lambda () (ns-name sexp)) (partial make-Global #f)))
+     ;; TODO: calls
      (else
       (ctr-error "unable to analyze" sexp))))
 
@@ -33,12 +35,12 @@
   
   (define (analyze-sf sexp)
     (case (name (car sexp))
-      ;; (('fn arg . cases)
-      ;;  (Fn arg (mapv (match-lambda
-      ;;                 ((cond body)
-      ;;                  (cons (inject-dnf (dnf (analyze cond)))
-      ;;                        (analyze body))))
-      ;;                cases) #f))
+      ((fn)
+       (make-Fn (cadr sexp)
+                (mapv (lambda (case)
+                        (cons (dnf:inject (dnf:dnf (analyze (car case))))
+                              (analyze (cadr case))))
+                      (cddr sexp))))
       ((letrec)
        (make-Fix (mapv (lambda (binding)
                          (cons (car binding) (analyze (cadr binding))))
