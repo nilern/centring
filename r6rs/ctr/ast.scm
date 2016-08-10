@@ -59,8 +59,9 @@
         (Global-name node)))
      ((Const? node)
       (let ((val (Const-val node)))
-        (if (literal? val)
-          val
-          (ctr-error "unable to display Const containing" val))))
+        (cond
+         ((symbol? val) `($quote ,val))
+         ((literal? val) val)
+         (else (ctr-error "unable to display Const containing" val)))))
      (else
       (ctr-error "unable to display as sexp" node)))))

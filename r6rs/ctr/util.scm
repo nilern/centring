@@ -7,7 +7,7 @@
   (define ns-sep '/)
 
   (define (literal? v)
-    (or (fixnum? v) (flonum? v) (boolean? v) (char? v)))
+    (or (symbol? v) (fixnum? v) (flonum? v) (boolean? v) (char? v)))
 
   (define (ns-name sym)
     (let* ((symstr (symbol->string sym))

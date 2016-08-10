@@ -176,7 +176,7 @@
                  (map (lambda (clause)
                         (let-values (((actions _) (handle-clause clause)))
                           (cons '(ctr.intr/end-import!) actions)))
-                      clauses))))
+                      (reverse clauses)))))
 
   ;;;; Conveniences
 

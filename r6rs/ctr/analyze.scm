@@ -10,6 +10,9 @@
           (prefix (ctr dispatch) dnf:)
           (only (ctr primops) op-purpose))
 
+  ;; TODO: embed primops in AST
+  ;; TODO: identifier specialization & ns-resolution pass
+
   ;;;; Analyze
 
   (define (analyze sexp)
@@ -18,8 +21,6 @@
       (analyze-sf sexp))
      ((intrinsic? sexp)
       (analyze-intr sexp))
-     ((literal? sexp)
-      (make-Const sexp))
      ((symbol? sexp)
       (call-with-values (lambda () (ns-name sexp)) (partial make-Global #f)))
      ((pair? sexp)
@@ -30,6 +31,8 @@
                                               (cons 'ctr.lang/Tuple (cdr sexp)))
                                         #f))
                    #f))
+     ((literal? sexp)
+      (make-Const sexp))
      (else
       (ctr-error "unable to analyze" sexp))))
 

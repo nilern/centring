@@ -1,6 +1,6 @@
 (ns fact)
-(require ctr.core)
-(import ctr.core)
+(require (use ctr.lang)
+         (use ctr.core))
 
 (def fact
   (fn
