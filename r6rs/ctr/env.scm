@@ -2,7 +2,7 @@
   (export ns-ref current-ns
           ns-extend! add-alias!
           make-env env-assoc
-          lookup)
+          ns-lookup lookup)
   (import (chezscheme) ; TODO: how to use r6rs instead (parameters!)?
 
           (only (util) if-let defrecord symbol-append)

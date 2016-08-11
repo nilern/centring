@@ -8,7 +8,7 @@
           (only (ctr util) ctr-error)
           (ctr primops)
           (prefix (ctr primop-impls) pimpls:)
-          (only (ctr env) make-env)
+          (only (ctr env) make-env ns-ref ns-lookup)
           (ctr ast))
 
   ;;;; Continuations
@@ -58,9 +58,12 @@
              ((ExprOp? impl)
               (run (make-Const ((ExprOp-impl impl) vals*)) #f k*))
              ((StmtOp? impl)
-              (ctr-error "stat application unimplemented"))
+              ((StmtOp-impl impl) vals*)
+              (run (make-Const (vector (ns-lookup (ns-ref 'ctr-lang)
+                                                  #f 'Tuple)))
+                   #f k*))
              ((CtrlOp? impl)
-              (ctr-error "ctrl application unimplemented"))
+              (run ((CtrlOp-impl impl) conts vals*) env k*))
              (else
               (ctr-error "not a primop object" impl))))
           (run (vector-ref args i*) env

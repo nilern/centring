@@ -1,11 +1,14 @@
 (library (ctr primops)
   (export ExprOp? ExprOp-impl
-          StmtOp?
-          CtrlOp?
-          define-expression get-op op-purpose)
+          StmtOp? StmtOp-impl
+          CtrlOp? CtrlOp-impl
+          define-expression define-statement define-controller
+          get-op op-purpose)
   (import (rnrs (6))
 
           (only (util) defrecord))
+
+  ;;; OPTIMIZE: destructuring could produce better code
 
   (define primops (make-eq-hashtable))
 
@@ -24,15 +27,19 @@
        (define-primop name
          (make-ExprOp (vector-lambda (args ...) body ...))))))
 
-  ;; (define-syntax-rule (define-statement (name args ...) body ...)
-  ;;   (define-primop name
-  ;;     (StmtOp (lambda (argv)
-  ;;               (match-let ((#(args ...) argv)) body ...)))))
+  (define-syntax define-statement
+    (syntax-rules ()
+      ((_ (name args ...) body ...)
+       (define-primop name
+         (make-StmtOp (vector-lambda (args ...) body ...))))))
 
-  ;; (define-syntax-rule (define-controller (name conts args ...) body ...)
-  ;;   (define-primop name
-  ;;     (CtrlOp (lambda (conts argv)
-  ;;               (match-let ((#(args ...) argv)) body ...)))))
+  (define-syntax define-controller
+    (syntax-rules ()
+      ((_ (name conts args ...) body ...)
+       (define-primop name
+         (make-CtrlOp (lambda (conts argv)
+                        ((vector-lambda (args ...) body ...)
+                         argv)))))))
 
   (define-syntax vector-lambda
     (syntax-rules ()
