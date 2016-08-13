@@ -1,88 +1,88 @@
 (ns ctr.core)
-(import ctr.lang)
+(require (use ctr.lang))
 
-(defn +
-  (#(a b) (and (: a Int) (: b Int))
-   (ctr.intr/iadd a b)))
+;; (defn +
+;;   (#(a b) (and (: a Int) (: b Int))
+;;    (ctr.intr/iadd a b)))
 
-(defn -
-  (#(a b) (and (: a Int) (: b Int))
-   (ctr.intr/isub a b)))
+;; (defn -
+;;   (#(a b) (and (: a Int) (: b Int))
+;;    (ctr.intr/isub a b)))
 
-(defn *
-  (#(a b) (and (: a Int) (: b Int))
-   (ctr.intr/imul a b)))
+;; (defn *
+;;   (#(a b) (and (: a Int) (: b Int))
+;;    (ctr.intr/imul a b)))
 
-(defn >
-  (#(a b) (and (: a Int) (: b Int))
-   (ctr.intr/igt? a b #t #f)))
+;; (defn >
+;;   (#(a b) (and (: a Int) (: b Int))
+;;    (ctr.intr/igt? a b #t #f)))
 
-(defn <
-  (#(a b) (and (: a Int) (: b Int))
-   (ctr.intr/ilt? a b)))
+;; (defn <
+;;   (#(a b) (and (: a Int) (: b Int))
+;;    (ctr.intr/ilt? a b)))
 
-;;;;
+;; ;;;;
 
-(defn zero?
-  (#(n) (: n Int)
-   (= n 0))
-  (#(n) (: n Float)
-   (= n 0.0))
-  (#(_) #t
-   #f))
+;; (defn zero?
+;;   (#(n) (: n Int)
+;;    (= n 0))
+;;   (#(n) (: n Float)
+;;    (= n 0.0))
+;;   (#(_) #t
+;;    #f))
 
-(defn zero
-  (#(n) (: n Int)
-   0)
-  (#(n) (: n Float)
-   0.0))
+;; (defn zero
+;;   (#(n) (: n Int)
+;;    0)
+;;   (#(n) (: n Float)
+;;    0.0))
 
-(defn inc (#(n) #t (+ n 1)))
-(defn dec (#(n) #t (- n 1)))
+;; (defn inc (#(n) #t (+ n 1)))
+;; (defn dec (#(n) #t (- n 1)))
 
-;;;;
+;; ;;;;
 
-(defn length
-  (#(tup) (: tup Tuple)
-   (ctr.intr/rlen tup)))
+;; (defn length
+;;   (#(tup) (: tup Tuple)
+;;    (ctr.intr/rlen tup)))
 
-;;;;
+;; ;;;;
 
-;; TODO: check index type & bounds:
-(defn get
-  (#(tup i) (: tup Tuple)
-   (.vals tup i)))
+;; ;; TODO: check index type & bounds:
+;; (defn get
+;;   (#(tup i) (: tup Tuple)
+;;    (.vals tup i)))
 
-(defrecord (IndexedSeq coll index))
+;; (defrecord (IndexedSeq coll index))
 
-;;;;
+;; ;;;;
 
-(defrecord (Some val))
-(defrecord (None))
+;; (defrecord (Some val))
+;; (defrecord (None))
 
-(defrecord (Ok val))
-(defrecord (Err err))
+;; (defrecord (Ok val))
+;; (defrecord (Err err))
 
-;;;;
+;; ;;;;
 
-(defn seq
-  (#(tup) (: tup Tuple)
-   (IndexedSeq tup 0)))
+;; (defn seq
+;;   (#(tup) (: tup Tuple)
+;;    (IndexedSeq tup 0)))
 
-;; TODO: move if into dispatch when overrides get implemented:
-(defn first
-  (#((IndexedSeq coll i)) #t
-   (if (< i (length coll))
-     (Some (get coll i))
-     (None))))
+;; ;; TODO: move if into dispatch when overrides get implemented:
+;; (defn first
+;;   (#((IndexedSeq coll i)) #t
+;;    (if (< i (length coll))
+;;      (Some (get coll i))
+;;      (None))))
 
-;; TODO: move if into dispatch when overrides get implemented:
-(defn next
-  (#((IndexedSeq coll i)) #t
-   (if (< i (length coll))
-     (Some (IndexedSeq coll (inc i)))
-     (None))))
+;; ;; TODO: move if into dispatch when overrides get implemented:
+;; (defn next
+;;   (#((IndexedSeq coll i)) #t
+;;    (if (< i (length coll))
+;;      (Some (IndexedSeq coll (inc i)))
+;;      (None))))
 
-(defn rest
-  (#((IndexedSeq coll i)) #t
-   (IndexedSeq coll (inc i))))
+;; (defn rest
+;;   (#((IndexedSeq coll i)) #t
+;;    (IndexedSeq coll (inc i))))

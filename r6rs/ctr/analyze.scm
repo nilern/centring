@@ -1,8 +1,9 @@
 (library (ctr analyze)
   (export analyze resolve!)
   (import (rnrs (6))
+          (only (chezscheme) vector-copy)
 
-          (only (util) partial -> ->>)
+          (only (util) partial identity if-let doto -> ->>)
           (only (util collections) mapv mapl)
           (util dynvector)
           
@@ -91,10 +92,33 @@
   (define (resolve! ast)
     (->> ast
          flattened-stmts
+         ;; OPTIMIZE: use transducer
          (dynvector-filter exec!)
+         (dynvector-map (resolve '()))
          dynvector->vector
          make-Do))
-  
+
+  (define (resolve env)
+    (define (resf ast)
+      (cond
+       ((Fn? ast)
+        (node-map (resolve (cons (Fn-arg ast) env)) ast))
+       ((and (Primop? ast) (eq? (Primop-op ast) 'set-global!))
+        (make-Primop (Primop-op ast)
+                     (doto (vector-copy (Primop-args ast))
+                       (vector-set! 0 (make-Const (current-ns))))
+                     #f))
+       ((Global? ast)
+        (let ((ns-name (Global-ns ast))
+              (name (Global-name ast)))
+          (or (and (not ns-name)
+                   (memq name env)
+                   (make-Local name))
+              (make-Global (current-ns) ns-name name))))
+       (else
+        (node-map resf ast))))
+    resf)
+        
   (define exec!
     ;; TODO: error handling
     (let ((import-set #f))
@@ -136,6 +160,7 @@
                                (lambda (id-var) (member (car id-var) oids))
                                import-set))
              #f))
+           ;; FIXME: DRY (almost the same above and below)
           ((except!)
            (let ((oids (->> stmt Primop-args (mapl Const-val))))
              (set! import-set (dynvector-filter

@@ -1,8 +1,9 @@
 (library (ctr env)
-  (export ns-ref current-ns
+  (export Var? var-ref
+          ns-ref current-ns
           ns-extend! Ns-aliases add-alias! ns-publics read-ns
           make-env env-assoc
-          ns-lookup lookup)
+          ns-resolve ns-lookup lookup)
   (import (chezscheme) ; TODO: how to use r6rs instead (parameters!)?
 
           (only (util) if-let defrecord symbol-append string-split)
@@ -42,19 +43,22 @@
 
   ;;; TODO: these need clarification
 
-  (define (ns-lookup ns ns-name name)
+  (define (ns-resolve ns ns-name name)
     (if ns-name
       (if-let (vns (or (hashtable-ref (Ns-aliases ns) ns-name #f)
                        (hashtable-ref ns-registry ns-name #f)))
         (if-let (var (hashtable-ref (Ns-mappings vns) name #f))
           (if (or (Var-public? var) (eq? vns ns))
-            (var-ref var)
+            var
             (ctr-error "variable is private" ns-name name))
           (ctr-error "unbound variable" ns-name name))
         (ctr-error "unbound namespace" ns-name))
-      (var-ref (or (hashtable-ref (Ns-mappings ns) name #f)
-                   (hashtable-ref (Ns-refers ns) name #f)
-                   (ctr-error "unbound variable" ns-name name)))))
+      (or (hashtable-ref (Ns-mappings ns) name #f)
+          (hashtable-ref (Ns-refers ns) name #f)
+          (ctr-error "unbound variable" ns-name name))))
+
+  (define (ns-lookup ns ns-name name)
+    (var-ref (ns-resolve ns ns-name name)))
 
   (define (ns-extend! ns name public? v)
     ;; FIXME: honour `Var-public?`

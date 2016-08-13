@@ -2,9 +2,15 @@
   (export init!)
   (import (rnrs (6))
 
-          (only (ctr primops) define-expression define-controller))
+          (only (ctr primops) define-expression define-statement define-controller)
+          (only (ctr env) ns-extend!))
 
   (define (init!) ; HACK
+
+    ;;;; Globals
+
+    (define-statement (set-global! ns name public? val)
+      (ns-extend! ns name public? val))
 
     ;;;; Arithmetic Operations
 
@@ -58,37 +64,6 @@
       (if c
         (vector-ref conts 0)
         (vector-ref conts 1)))))
-
-;;   ;;;; Namespace Operations
-
-;;   (define-statement (set-ns! ns-name)
-;;     (current-ns (ns-ref (Symbol-name ns-name))))
-
-;;   (define-controller (require! _ ns-name)
-;;     ;; FIXME: this should be a statement
-;;     (let ((curr-ns (current-ns)))
-;;       (-> (Symbol-name ns-name)
-;;           read-ns
-;;           (append `((ns ,(Ns-name curr-ns))))
-;;           exp:expand-all
-;;           ana:analyze)))
-
-;;   (define-statement (alias! ns-name as)
-;;     (ns-alias! (current-ns)
-;;                (ns-ref (Symbol-name ns-name))
-;;                (Symbol-name as)))
-
-;;   (define-statement (rename! var-name as)
-;;     (ns-rename! (current-ns)
-;;                 (ns-ref (Symbol-ns var-name))
-;;                 (Symbol-name var-name)
-;;                 (Symbol-name as)))
-
-;;   (define-statement (import! ns-name)
-;;     (ns-import! (current-ns) (ns-ref (Symbol-name ns-name))))
-
-  ;; (define-statement (set-global! name val)
-  ;;   (ns-extend! (current-ns) (Symbol-name name) val))
 
   ;; ;;;; Type
 

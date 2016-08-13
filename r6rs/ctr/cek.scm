@@ -5,10 +5,10 @@
 
           (only (util) defrecord doto inc dec)
 
-          (only (ctr util) ctr-error)
+          (only (ctr util) ctr-error ctr-error?)
           (ctr primops)
           (prefix (ctr primop-impls) pimpls:)
-          (only (ctr env) make-env ns-ref ns-lookup)
+          (ctr env)
           (ctr ast))
 
   ;;;; Continuations
@@ -34,6 +34,19 @@
       (let ((stmts (Do-stmts ctrl)))
         ;; MAYBE: might need to deal with situation where stmts = #()
         (run (vector-ref stmts 0) env (make-DoCont stmts 0 env k))))
+     ((Global? ctrl)
+      (run (make-Const
+            (let ((res-ns/var (Global-res-ns/var ctrl)))
+              (if (Var? res-ns/var)
+                ;; Var was in inline cache, deref it:
+                (var-ref res-ns/var)
+                ;; Var was not in inline cache; resolve, cache and deref:
+                (let ((var (ns-resolve res-ns/var
+                                       (Global-ns ctrl)
+                                       (Global-name ctrl))))
+                  (Global-res-ns/var-set! ctrl var)
+                  (var-ref var)))))
+           #f k))
      ((Const? ctrl)
       (continue ctrl k))
      (else
@@ -59,9 +72,13 @@
               (run (make-Const ((ExprOp-impl impl) vals*)) #f k*))
              ((StmtOp? impl)
               ((StmtOp-impl impl) vals*)
-              (run (make-Const (vector (ns-lookup (ns-ref 'ctr-lang)
-                                                  #f 'Tuple)))
-                   #f k*))
+              (guard ;; HACK to make things work before ctr.lang/Tuple
+               (err
+                ((ctr-error? err)
+                 (run (make-Const #f) #f k*)))
+               (run (make-Const (vector (ns-lookup (ns-ref 'ctr.lang)
+                                                   #f 'Tuple)))
+                    #f k*)))
              ((CtrlOp? impl)
               (run ((CtrlOp-impl impl) conts vals*) env k*))
              (else

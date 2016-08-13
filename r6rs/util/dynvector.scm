@@ -2,7 +2,7 @@
   (export make-dynvector
           dynvector-ref dynvector-length dynvector-empty?
           dynvector-set! dynvector-push! dynvector-clear!
-          dynvector-fold* dynvector-fold dynvector-filter
+          dynvector-fold* dynvector-fold dynvector-map dynvector-filter
           dynvector->vector)
   (import (rnrs (6))
 
@@ -71,6 +71,15 @@
 
   (define (dynvector-fold f v dvec)
     (dynvector-fold* (lambda (acc _ v) (f acc v)) v dvec))
+
+  (define (dynvector-map f dvec)
+    ;; TODO: optimize
+    (let ((res (make-dynvector)))
+      (dynvector-fold
+       (lambda (_ v) (dynvector-push! res (f v)))
+       #f
+       dvec)
+      res))
 
   (define (dynvector-filter pred? dvec)
     (let ((res (make-dynvector)))

@@ -104,7 +104,7 @@
     `(ctr.intr/set-ns! (quote ,ns)))
 
   (define (expand-def args)
-    `(ctr.intr/set-global! (quote ,(car args)) ,(cadr args)))
+    `(ctr.intr/set-global! #f (quote ,(car args)) #t ,(cadr args)))
 
   (define (expand-defn args)
     (let ((name (car args))
@@ -114,7 +114,7 @@
          (if (and (ctr.intr/defined? (quote ,name))
                   (,(string->symbol "ctr.lang/:") ,name ctr.lang/Fn))
            (ctr.intr/fn-merge! ,name ,new-cases)
-           (ctr.intr/set-global! (quote ,name) ,new-cases)))))
+           (ctr.intr/set-global! #f (quote ,name) #t ,new-cases)))))
 
   (define (expand-if cond then else)
     `(ctr.intr/brf ,cond ,then ,else))

@@ -1,5 +1,8 @@
 (library (ctr util)
-  (export ctr-path ns-sep file-ending literal? ns-name ns name ctr-error)
+  (export ctr-path ns-sep file-ending
+          literal?
+          ns-name ns name
+          ctr-error ctr-error?)
   (import (rnrs (6))
           (only (chezscheme) make-parameter)
 
