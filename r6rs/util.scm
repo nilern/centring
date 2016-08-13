@@ -1,8 +1,9 @@
 (library (util)
-  (export let-cc if-let when-let doto dolist dovec defrecord
-          string-index vector-append symbol-append
+  (export let-cc if-let when-let doto -> ->> dolist dovec defrecord
+          string-index string-split vector-append symbol-append
           identity every-pred some-fn complement partial comp
-          inc dec)
+          inc dec
+          write-line)
   (import (rnrs (6)))
 
   ;;;;
@@ -36,6 +37,30 @@
        (let ((v expr))
          (begin (op v arg ...) ...)
          v))))
+
+  (define-syntax ->
+    (lambda (stx)
+      (syntax-case stx ()
+        ((-> expr f wraps ...) (identifier? #'f)
+         #'(-> (f expr) wraps ...))
+        ((-> expr (f args ...) wraps ...)
+         #'(-> (f expr args ...) wraps ...))
+        ((-> expr)
+         #'expr)
+        ((->)
+         #'(begin)))))
+
+  (define-syntax ->>
+    (lambda (stx)
+      (syntax-case stx ()
+        ((->> expr f wraps ...) (identifier? #'f)
+         #'(->> (f expr) wraps ...))
+        ((->> expr (f args ...) wraps ...)
+         #'(->> (f args ... expr) wraps ...))
+        ((->> expr)
+         #'expr)
+        ((->>)
+         #'(begin)))))
 
   (define-syntax dolist
     (syntax-rules ()
@@ -81,13 +106,28 @@
           (set! i (inc i))))
       res))
 
-  (define (string-index c s)
-    (let ((len (string-length s)))
-      (let recur ((i 0))
-        (cond
-         ((>= i len) #f)
-         ((char=? (string-ref s i) c) i)
-         (else (recur (inc i)))))))
+  (define string-index
+    (case-lambda
+     ((c s)
+      (string-index c 0 s))
+     ((c o s)
+      (let ((len (string-length s)))
+        (let recur ((i o))
+          (cond
+           ((>= i len) #f)
+           ((char=? (string-ref s i) c) i)
+           (else (recur (inc i)))))))))
+
+  (define (string-split c str)
+    (let ((len (string-length str)))
+      (let recur ((i -1) (res '()))
+        (if (>= i len)
+          (reverse res)
+          (let* ((min-i (inc i))
+                 (max-i (or (string-index c min-i str) len)))
+            (if (> max-i min-i)
+              (recur max-i (cons (substring str min-i max-i) res))
+              (recur max-i res)))))))
 
   ;;;;
 
@@ -124,4 +164,14 @@
   ;;;;
 
   (define (inc n) (+ n 1))
-  (define (dec n) (- n 1)))
+  (define (dec n) (- n 1))
+
+  ;;;;
+
+  (define write-line
+    (case-lambda
+     ((obj)
+      (write-line obj (current-output-port)))
+     ((obj port)
+      (write obj port)
+      (write-char #\newline port)))))

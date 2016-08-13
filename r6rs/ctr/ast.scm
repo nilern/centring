@@ -6,7 +6,8 @@
           make-Closure
           make-Global
           make-Const Const? Const-val
-          ast->sexp)
+          ast->sexp
+          primop-case)
   (import (rnrs (6))
 
           (only (util) defrecord symbol-append if-let)
@@ -64,4 +65,14 @@
          ((literal? val) val)
          (else (ctr-error "unable to display Const containing" val)))))
      (else
-      (ctr-error "unable to display as sexp" node)))))
+      (ctr-error "unable to display as sexp" node))))
+
+  ;;;;
+
+  (define-syntax primop-case
+    (syntax-rules (else)
+      ((_ expr clauses ... (else default ...))
+       (let ((val expr))
+         (if (Primop? val)
+           (case (Primop-op val) clauses ... (else default ...))
+           (begin default ...)))))))

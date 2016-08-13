@@ -154,11 +154,11 @@
                ((use)
                 (cons `(ctr.intr/start-import! (quote ,req-ns)) actions))
                ((only)
-                (cons `(ctr.intr/refer! #t ,@(map (lambda (name) `(quote ,name))
+                (cons `(ctr.intr/only! ,@(map (lambda (name) `(quote ,name))
                                                   (cddr clause)))
                       actions))
                ((except)
-                (cons `(ctr.intr/refer! #f ,@(map (lambda (name) `(quote ,name))
+                (cons `(ctr.intr/except! ,@(map (lambda (name) `(quote ,name))
                                                   (cddr clause)))
                       actions))
                ((rename)
@@ -192,7 +192,7 @@
        (else
         (ctr-error "cannot `->` through" (car pipeline))))))
 
-  ;;;;
+  ;;;; Auxiliary Functions
 
   (define (walk inner outer ast)
     (outer (if (list? ast) (map inner ast) ast)))

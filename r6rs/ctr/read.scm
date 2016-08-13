@@ -151,7 +151,13 @@
   ;;;; Read
 
   (define ws-char (sat char-whitespace?))
-  (define ws (many+ ws-char))
+  (define comment (mlet ((_ (char #\;))
+                         (_ (many* (sat (lambda (c)
+                                          (not (or (eqv? c #\newline)
+                                                   (eqv? c #\return))))))))
+                    (mreturn #f)))
+  (define ws (many+ (mplus ws-char
+                           comment)))
 
   (define digit (sat char-numeric?))
   (define int (fmap (comp string->number list->string)
@@ -159,7 +165,7 @@
 
   (define symchar (sat (complement
                         (some-fn char-whitespace?
-                                 (lambda (c) (string-index c "()#"))))))
+                                 (lambda (c) (string-index c "()#;"))))))
   (define sym (fmap (comp string->symbol list->string)
                     (many+ symchar)))
 
@@ -197,7 +203,8 @@
     (hashtable-set! #\(
                     (mlet ((es (many* expr))
                            (_ (char #\))))
-                      (mreturn es)))
+                          (mreturn es)))
+    (hashtable-set! #\' (fmap (lambda (e) `(quote ,e)) expr))
     (hashtable-set! #\# (tabular sharptable)))
                     
   (doto sharptable

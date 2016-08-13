@@ -1,12 +1,16 @@
 (library (ctr analyze)
-  (export analyze)
+  (export analyze resolve!)
   (import (rnrs (6))
 
-          (only (util) partial)
-          (only (util collections) mapv)
+          (only (util) partial -> ->>)
+          (only (util collections) mapv mapl)
+          (util dynvector)
           
           (only (ctr util) ctr-error literal? ns-name ns name)
           (ctr ast)
+          (ctr env)
+          (prefix (ctr cek) cek:)
+          (prefix (ctr expand) exp:)
           (prefix (ctr dispatch) dnf:)
           (only (ctr primops) op-purpose))
 
@@ -80,4 +84,71 @@
         (else
          (make-Primop opname
                       (mapv analyze (cdr sexp))
-                      #f))))))
+                      #f)))))
+
+  ;;;; Name Resolution
+
+  (define (resolve! ast)
+    (->> ast
+         flattened-stmts
+         (dynvector-filter exec!)
+         dynvector->vector
+         make-Do))
+  
+  (define exec!
+    ;; TODO: error handling
+    (let ((import-set #f))
+      (lambda (stmt)
+        (primop-case stmt
+          ((set-ns!)
+           (current-ns (-> stmt Primop-args (vector-ref 0) Const-val
+                           ns-ref))
+           #f)
+          ((require!)
+           (let ((ns-name (-> stmt Primop-args (vector-ref 0) Const-val))
+                 (curr-ns (current-ns)))
+             ;; FIXME: DRY (also appears in ctri.scm):
+             (-> ns-name
+                 read-ns
+                 exp:expand-all
+                 analyze
+                 resolve!
+                 cek:interpret)
+             (current-ns curr-ns)
+             #f))
+          ((alias!)
+           (let* ((args (Primop-args stmt))
+                  (other (-> args (vector-ref 0) Const-val))
+                  (as (-> args (vector-ref 1) Const-val)))
+             (add-alias! (current-ns) (ns-ref other) as)
+             #f))
+          ((start-import!)
+           (set! import-set (-> stmt Primop-args (vector-ref 0) Const-val
+                                ns-ref
+                                ns-publics))
+           #f)
+          ((end-import!)
+           (set! import-set #f)
+           #f)
+          ((only!)
+           (let ((oids (->> stmt Primop-args (mapl Const-val))))
+             (set! import-set (dynvector-filter
+                               (lambda (id-var) (member (car id-var) oids))
+                               import-set))
+             #f))
+          ((except!)
+           (let ((oids (->> stmt Primop-args (mapl Const-val))))
+             (set! import-set (dynvector-filter
+                               (lambda (id-var) (not (member (car id-var) oids)))
+                               import-set))
+             #f))
+          (else stmt)))))
+
+  (define (flattened-stmts ast)
+    (define stmt-trs (make-dynvector))
+    (define (flatten! node)
+      (if (Do? node)
+        (vector-for-each flatten! (Do-stmts node))
+        (dynvector-push! stmt-trs node)))
+    (flatten! ast)
+    stmt-trs))

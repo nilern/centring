@@ -1,13 +1,14 @@
 (import (rnrs (6))
         (only (chezscheme) open-input-string pretty-print format)
 
-        (only (util) comp)
+        (only (util) comp string-split)
         (util collections)
         (util dynvector)
 
+        (only (ctr util) ctr-path)
         (only (ctr ast) ast->sexp)
         (only (ctr expand) expand-all)
-        (only (ctr analyze) analyze)
+        (only (ctr analyze) analyze resolve!)
         (only (ctr cek) interpret)
         (only (ctr read) ParseError? ParseError-msg ctr-read-all))
 
@@ -42,6 +43,10 @@
 
 (define (make-action options)
   (cond
+   ((hashtable-ref options "--fana" #f)
+    (comp pretty-print ast->sexp
+          resolve! analyze
+          expand-all))
    ((hashtable-ref options "--iana" #f)
     (comp pretty-print ast->sexp
           analyze
@@ -52,7 +57,7 @@
    (else
     (comp pretty-print
           interpret
-          analyze
+          resolve! analyze
           expand-all))))
 
 ;;;; Main
@@ -60,6 +65,7 @@
 (define (main arglist)
   (let*-values (((kvs sq) (parse-opts arglist))
                 ((ks vs) (hashtable-entries kvs)))
+    (ctr-path (string-split #\: (hashtable-ref kvs "--path" "")))
     (let ((port (if (hashtable-ref kvs "-e" #f)
                   (open-input-string (hashtable-ref kvs "-e" #f))
                   (open-file-input-port (dynvector-ref sq 0)

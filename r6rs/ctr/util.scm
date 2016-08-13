@@ -1,10 +1,15 @@
 (library (ctr util)
-  (export ns-sep literal? ns-name ns name ctr-error)
+  (export ctr-path ns-sep file-ending literal? ns-name ns name ctr-error)
   (import (rnrs (6))
+          (only (chezscheme) make-parameter)
 
           (only (util) string-index inc dec))
 
+  (define ctr-path (make-parameter '()))
+
   (define ns-sep '/)
+
+  (define file-ending ".ctr")
 
   (define (literal? v)
     (or (symbol? v) (fixnum? v) (flonum? v) (boolean? v) (char? v)))

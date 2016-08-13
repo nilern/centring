@@ -1,13 +1,15 @@
 (library (ctr env)
   (export ns-ref current-ns
-          ns-extend! add-alias!
+          ns-extend! Ns-aliases add-alias! ns-publics read-ns
           make-env env-assoc
           ns-lookup lookup)
   (import (chezscheme) ; TODO: how to use r6rs instead (parameters!)?
 
-          (only (util) if-let defrecord symbol-append)
+          (only (util) if-let defrecord symbol-append string-split)
+          (util dynvector)
 
-          (only (ctr util) ns-sep ctr-error))
+          (only (ctr util) ctr-path ns-sep file-ending ctr-error)
+          (only (ctr read) ctr-read-all ParseError?))
 
   ;;;; Var
 
@@ -63,6 +65,40 @@
 
   (define (add-alias! ns other as)
     (hashtable-set! (Ns-aliases ns) as other))
+
+  (define (ns-publics ns)
+    (let-values (((ids vars) (hashtable-entries (Ns-mappings ns))))
+      (let ((res (make-dynvector)))
+        (vector-for-each
+         (lambda (id var)
+           (when (Var-public? var)
+             (dynvector-push! res (cons id var))))
+         ids vars)
+        res)))
+
+  (define (read-ns ns-name)
+    (let recur ((path (ctr-path)))
+      (if (pair? path)
+        (let* ((ns-components (string-split #\. (symbol->string ns-name)))
+               (filename (string-append
+                          (fold-left
+                           (lambda (acc part)
+                             (string-append acc
+                                            (string (directory-separator))
+                                            part))
+                           (car path) ns-components)
+                          file-ending)))
+          (if (file-exists? filename)
+            (let-values (((pres _) (ctr-read-all
+                                    (open-file-input-port filename
+                                                          (file-options)
+                                                          (buffer-mode block)
+                                                          (native-transcoder)))))
+              (if (ParseError? pres)
+                (ctr-error "ParseError" pres)
+                `(do ,@pres)))
+            (recur (cdr path))))
+        (ctr-error "unable to locate ns with path" ns-name (ctr-path)))))
 
   ;;;; Local Environments
 
