@@ -4,8 +4,7 @@
           make-Fix Fix? Fix-bindings Fix-body
           make-Do Do? Do-stmts
           make-Closure
-          make-Global Global?
-          Global-res-ns/var Global-res-ns/var-set! Global-ns Global-name
+          make-Global Global? Global-res-ns Global-ns Global-name
           make-Local Local? Local-name
           make-Const Const? Const-val
           node-map ast->sexp
@@ -24,12 +23,8 @@
   (defrecord (Fix bindings body))
   (defrecord (Do stmts))
   (defrecord (Closure expr env))
-
-  (define-record-type Global ;; FIXME: evolve defrecord macro to handle this
-    (fields
-     (mutable res-ns/var)
-     (immutable ns)
-     (immutable name)))
+  
+  (defrecord (Global res-ns ns name))
   (defrecord (Local name))
   (defrecord (Const val))
 

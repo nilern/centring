@@ -15,7 +15,6 @@
 
   (defrecord (PrimopCont op vals asts index conts env cont))
   (defrecord (DoCont stmts index env cont))
-  (defrecord (NsCont ns cont))
   (defrecord (HaltCont))
 
   ;;;; Machine
@@ -34,25 +33,19 @@
       (let ((stmts (Do-stmts ctrl)))
         ;; MAYBE: might need to deal with situation where stmts = #()
         (run (vector-ref stmts 0) env (make-DoCont stmts 0 env k))))
+     
      ((Global? ctrl)
-      (run (make-Const
-            (let ((res-ns/var (Global-res-ns/var ctrl)))
-              (if (Var? res-ns/var)
-                ;; Var was in inline cache, deref it:
-                (var-ref res-ns/var)
-                ;; Var was not in inline cache; resolve, cache and deref:
-                (let ((var (ns-resolve res-ns/var
-                                       (Global-ns ctrl)
-                                       (Global-name ctrl))))
-                  (Global-res-ns/var-set! ctrl var)
-                  (var-ref var)))))
-           #f k))
+      (continue (ns-lookup (Global-res-ns ctrl)
+                           (Global-ns ctrl)
+                           (Global-name ctrl))
+                k))
      ((Const? ctrl)
-      (continue ctrl k))
+      (continue (Const-val ctrl) k))
+     
      (else
       (ctr-error "unable to interpret" ctrl))))
 
-  (define (continue ctrl k)
+  (define (continue val k)
     (cond
      ((PrimopCont? k)
       (let* ((op (PrimopCont-op k))
@@ -64,21 +57,19 @@
              (i* (inc i))
              ;; MAYBE: can all this copying be avoided?:
              (vals* (doto (vector-copy (PrimopCont-vals k))
-                          (vector-set! i (Const-val ctrl)))))
+                      (vector-set! i val))))
         (if (= i* (vector-length args))
           (let ((impl (get-op op)))
             (cond
              ((ExprOp? impl)
-              (run (make-Const ((ExprOp-impl impl) vals*)) #f k*))
+              (continue ((ExprOp-impl impl) vals*) k*))
              ((StmtOp? impl)
               ((StmtOp-impl impl) vals*)
-              (guard ;; HACK to make things work before ctr.lang/Tuple
-               (err
-                ((ctr-error? err)
-                 (run (make-Const #f) #f k*)))
-               (run (make-Const (vector (ns-lookup (ns-ref 'ctr.lang)
-                                                   #f 'Tuple)))
-                    #f k*)))
+              (continue
+               (guard ;; HACK to make things work before ctr.lang/Tuple
+                (err ((ctr-error? err) #f))
+                (vector (ns-lookup (ns-ref 'ctr.lang) #f 'Tuple)))
+               k*))
              ((CtrlOp? impl)
               (run ((CtrlOp-impl impl) conts vals*) env k*))
              (else
@@ -92,11 +83,11 @@
             (k* (DoCont-cont k)))
         ;; MAYBE: might need to deal with situation where stmts = #()
         (if (= i (dec (vector-length stmts)))
-          (run ctrl env k*)
+          (continue val k*)
           (let ((i* (inc i)))
             (run (vector-ref stmts i*) env (make-DoCont stmts i* env k*))))))
      ((HaltCont? k)
-      (Const-val ctrl))
+      val)
      (else
       (ctr-error "unrecognized continuation" k))))
 
