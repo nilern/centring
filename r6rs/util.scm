@@ -1,10 +1,11 @@
 (library (util)
   (export let-cc if-let when-let doto -> ->> dolist dovec defrecord
-          string-index string-split vector-append symbol-append
+          string-index string-split vector-append symbol-append vector-assoc
           identity every-pred some-fn complement partial comp
           inc dec
           write-line)
-  (import (rnrs (6)))
+  (import (rnrs (6))
+          (only (chezscheme) vector-copy))
 
   ;;;;
 
@@ -105,6 +106,11 @@
           (vector-set! res i v)
           (set! i (inc i))))
       res))
+
+  (define (vector-assoc vec i v)
+    ;; TODO: optimize (slightly)
+    (doto (vector-copy vec)
+      (vector-set! i v)))
 
   (define string-index
     (case-lambda

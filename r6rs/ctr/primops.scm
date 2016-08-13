@@ -3,18 +3,20 @@
           StmtOp? StmtOp-impl
           CtrlOp? CtrlOp-impl
           define-expression define-statement define-controller
-          get-op op-purpose)
+          get-op op-name op-purpose)
   (import (rnrs (6))
 
-          (only (util) defrecord))
+          (only (util) defrecord)
+
+          (only (ctr util) ctr-error))
 
   ;;; OPTIMIZE: destructuring could produce better code
 
   (define primops (make-eq-hashtable))
 
-  (defrecord (ExprOp impl))
-  (defrecord (StmtOp impl))
-  (defrecord (CtrlOp impl))
+  (defrecord (ExprOp name impl))
+  (defrecord (StmtOp name impl))
+  (defrecord (CtrlOp name impl))
 
   (define-syntax define-primop
     (syntax-rules ()
@@ -25,19 +27,22 @@
     (syntax-rules ()
       ((_ (name args ...) body ...)
        (define-primop name
-         (make-ExprOp (vector-lambda (args ...) body ...))))))
+         (make-ExprOp (quote name)
+                      (vector-lambda (args ...) body ...))))))
 
   (define-syntax define-statement
     (syntax-rules ()
       ((_ (name args ...) body ...)
        (define-primop name
-         (make-StmtOp (vector-lambda (args ...) body ...))))))
+         (make-StmtOp (quote name)
+                      (vector-lambda (args ...) body ...))))))
 
   (define-syntax define-controller
     (syntax-rules ()
       ((_ (name conts args ...) body ...)
        (define-primop name
-         (make-CtrlOp (lambda (conts argv)
+         (make-CtrlOp (quote name)
+                      (lambda (conts argv)
                         ((vector-lambda (args ...) body ...)
                          argv)))))))
 
@@ -66,4 +71,12 @@
        ((ExprOp? op) 'expr)
        ((StmtOp? op) 'stmt)
        ((CtrlOp? op) 'ctrl)
-       (else #f)))))
+       (else #f))))
+
+  (define (op-name op)
+    (cond
+     ((ExprOp? op) (ExprOp-name op))
+     ((StmtOp? op) (StmtOp-name op))
+     ((CtrlOp? op) (CtrlOp-name op))
+     (else (ctr-error "not a primop object" op)))))
+

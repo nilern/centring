@@ -3,7 +3,7 @@
   (import (rnrs (6))
           (only (chezscheme) vector-copy)
 
-          (only (util) partial identity if-let doto -> ->>)
+          (only (util) partial identity if-let -> ->>)
           (only (util collections) mapv mapl)
           (util dynvector)
           
@@ -13,10 +13,7 @@
           (prefix (ctr cek) cek:)
           (prefix (ctr expand) exp:)
           (prefix (ctr dispatch) dnf:)
-          (only (ctr primops) op-purpose))
-
-  ;; TODO: embed primops in AST
-  ;; TODO: identifier specialization & ns-resolution pass
+          (only (ctr primops) get-op op-purpose))
 
   ;;;; Analyze
 
@@ -63,7 +60,7 @@
                  (analyze (caddr sexp))))
       ((do)
        (make-Do (mapv analyze (cdr sexp))))
-      ((quote) ; TODO: symbols
+      ((quote)
        (make-Const (cadr sexp)))
       (else
        (ctr-error "invalid special form" sexp))))
@@ -102,13 +99,23 @@
     (define (resf ast)
       (cond
        ((Fn? ast)
+        ;; add arg into env and recur:
         (node-map (resolve (cons (Fn-arg ast) env)) ast))
-       ((and (Primop? ast) (eq? (Primop-op ast) 'set-global!))
-        (make-Primop (Primop-op ast)
-                     (doto (vector-copy (Primop-args ast))
-                       (vector-set! 0 (make-Const (current-ns))))
-                     #f))
+       ((Primop? ast)
+        ;; recur and embed primop object into node:
+        (let* ((op-name (Primop-op ast))
+               (impl (get-op op-name))
+               (args* (vector-map resf (Primop-args ast)))
+               (conts* (if-let (conts (Primop-conts ast))
+                         (vector-map resf conts)
+                         #f))
+               (ast* (make-Primop impl args* conts*)))
+          (when (eqv? op-name 'set-global!)
+            ;; embed ns into node as well:
+            (vector-set! args* 0 (make-Const (current-ns))))
+          ast*))
        ((Global? ast)
+        ;; specialize locals, embed ns into remaining globals:
         (let ((ns-name (Global-ns ast))
               (name (Global-name ast)))
           (or (and (not ns-name)

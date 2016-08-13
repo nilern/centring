@@ -14,7 +14,8 @@
           (only (util) defrecord symbol-append if-let partial)
           (only (util collections) mapl)
 
-          (only (ctr util) ctr-error literal? ns-sep))
+          (only (ctr util) ctr-error literal? ns-sep)
+          (only (ctr primops) op-name))
 
   ;;;; AST
 
@@ -69,11 +70,15 @@
                         ,(ast->sexp (cdr case))))
                     (Fn-cases node))))
      ((Primop? node)
-      `(,(symbol-append '% (Primop-op node))
-        ,@(mapl ast->sexp (Primop-args node))
-        ,@(if (Primop-conts node)
-            (mapl ast->sexp (Primop-conts node))
-            '())))
+      (let ((op (Primop-op node)))
+        `(,(symbol-append '%
+                          (if (symbol? op)
+                            op
+                            (op-name op)))
+          ,@(mapl ast->sexp (Primop-args node))
+          ,@(if (Primop-conts node)
+              (mapl ast->sexp (Primop-conts node))
+              '()))))
      ((Fix? node)
       `($letrec ,(mapl (lambda (binding)
                          (list (car binding) (ast->sexp (cdr binding))))

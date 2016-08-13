@@ -1,9 +1,8 @@
 (library (ctr cek)
   (export interpret)
   (import (rnrs (6))
-          (only (chezscheme) vector-copy)
 
-          (only (util) defrecord doto inc dec)
+          (only (util) defrecord doto vector-assoc inc dec)
 
           (only (ctr util) ctr-error ctr-error?)
           (ctr primops)
@@ -18,7 +17,12 @@
   (defrecord (HaltCont))
 
   ;;;; Machine
+
+  (define (interpret ast)
+    (run ast (make-env) (make-HaltCont)))
+  
   (define (run ctrl env k)
+    ;; TODO: Fn, Fix, Closure, Local
     (cond
      ((Primop? ctrl)
       (let ((op (Primop-op ctrl))
@@ -55,25 +59,9 @@
              (env (PrimopCont-env k))
              (k* (PrimopCont-cont k))
              (i* (inc i))
-             ;; MAYBE: can all this copying be avoided?:
-             (vals* (doto (vector-copy (PrimopCont-vals k))
-                      (vector-set! i val))))
+             (vals* (vector-assoc (PrimopCont-vals k) i val)))
         (if (= i* (vector-length args))
-          (let ((impl (get-op op)))
-            (cond
-             ((ExprOp? impl)
-              (continue ((ExprOp-impl impl) vals*) k*))
-             ((StmtOp? impl)
-              ((StmtOp-impl impl) vals*)
-              (continue
-               (guard ;; HACK to make things work before ctr.lang/Tuple
-                (err ((ctr-error? err) #f))
-                (vector (ns-lookup (ns-ref 'ctr.lang) #f 'Tuple)))
-               k*))
-             ((CtrlOp? impl)
-              (run ((CtrlOp-impl impl) conts vals*) env k*))
-             (else
-              (ctr-error "not a primop object" impl))))
+          (apply-primop op vals* conts env k*)
           (run (vector-ref args i*) env
                (make-PrimopCont op vals* args i* conts env k*)))))
      ((DoCont? k)
@@ -91,8 +79,21 @@
      (else
       (ctr-error "unrecognized continuation" k))))
 
-  (define (interpret ast)
-    (run ast (make-env) (make-HaltCont)))
+  (define (apply-primop op vals conts env k)
+    (cond
+     ((ExprOp? op)
+      (continue ((ExprOp-impl op) vals) k))
+     ((StmtOp? op)
+      ((StmtOp-impl op) vals)
+      (continue
+       (guard ;; HACK to make things work before ctr.lang/Tuple
+        (err ((ctr-error? err) #f))
+        (vector (ns-lookup (ns-ref 'ctr.lang) #f 'Tuple)))
+       k))
+     ((CtrlOp? op)
+      (run ((CtrlOp-impl op) conts vals) env k))
+     (else
+      (ctr-error "not a primop object" op))))
 
   (pimpls:init!))
 
