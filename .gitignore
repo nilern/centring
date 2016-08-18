@@ -11,3 +11,5 @@ hs/ctrc
 *.o
 *.out
 *.pdf
+_build
+*.native
