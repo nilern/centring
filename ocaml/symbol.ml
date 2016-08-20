@@ -3,8 +3,6 @@ open Core.Std
 type t = Symbol of string
 	   | Gensym of string * int
 
-let of_string s = Symbol s
-
 let gensym_counter = ref 0
 
 let gensym = function
@@ -12,6 +10,14 @@ let gensym = function
     let g = !gensym_counter in
     incr gensym_counter;
     Gensym (s, g)
+
+(* Conversions *)
+
+let of_string s = Symbol s
+
+let to_string = function
+  | Symbol s -> s
+  | Gensym (s, i) -> s ^ Int.to_string i
 
 let sexp_of_t = function
   | Symbol s -> Sexp.Atom s
