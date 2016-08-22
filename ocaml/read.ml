@@ -111,12 +111,17 @@ let int =
   Parser.map (Parser.many_one digit) int_of_char_list
 
 let symchar = Parser.none_of " \t\r\n;#()[]{}"
-let symbol =
-  let sym_of_char_list cs = cs
-    |> String.of_char_list 
-    |> Symbol.of_string
-    |> (fun sym -> Data.Atom (Symbol sym)) in
-  Parser.map (Parser.many_one symchar) sym_of_char_list
+let isymchar = Parser.none_of " \t\r\n;()[]{}"
+let symstr = (Parser.many_one symchar)
+let isymstr = (Parser.many_one isymchar)
+let sym_of_char_list cs = cs
+  |> String.of_char_list
+  |> Symbol.of_string
+  |> (fun sym -> Data.Atom (Symbol sym))
+let isym_of_char_list cs =
+  Data.Atom (Symbol (Symbol.of_string ("##" ^ String.of_char_list cs)))
+let symbol = Parser.map symstr sym_of_char_list
+let isymbol = Parser.map isymstr isym_of_char_list
 
 let readtable = Hashtbl.create ~hashable: Char.hashable ()
 let sharptable = Hashtbl.create ~hashable: Char.hashable ()
@@ -151,4 +156,5 @@ let () =
                          ~data:(map (until (char ')') expr) 
                                     (fun es -> List (newtup @ es)));
   Hashtbl.set sharptable ~key:'t' ~data:(return (Atom (Bool true)));
-  Hashtbl.set sharptable ~key:'f' ~data:(return (Atom (Bool false)))
+  Hashtbl.set sharptable ~key:'f' ~data:(return (Atom (Bool false)));
+  Hashtbl.set sharptable ~key:'#' ~data:isymbol

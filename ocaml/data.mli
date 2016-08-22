@@ -21,7 +21,7 @@ and value = Int of int
 
 and primop = Expr of (value array -> value)
            | Stmt of (value array -> unit)
-           | Ctrl of (ast array -> value array -> ast)
+           | Ctrl of (value array -> ast array -> ast)
 
 type cexp = List of cexp list
           | Atom of value

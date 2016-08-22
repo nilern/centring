@@ -4,6 +4,8 @@ type t
 
 val gensym : t -> t
 
+val intr_name : t -> string option
+
 (* Conversions *)
 
 val of_string : string -> t

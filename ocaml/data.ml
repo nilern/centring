@@ -1,6 +1,8 @@
 open Core.Std
 module Env = Environment
 
+(* FIXME: (ast array) option can just be (ast array) *)
+
 let sexp_of_bytes _ = Sexp.Atom "<bytes>"
 
 type env = (Symbol.t, value) Env.t
@@ -21,7 +23,7 @@ and value = Int of int
 
 and primop = Expr of (value array -> value)
            | Stmt of (value array -> unit)
-           | Ctrl of (ast array -> value array -> ast)
+           | Ctrl of (value array -> ast array -> ast)
 
 type cexp = List of cexp list
           | Atom of value
