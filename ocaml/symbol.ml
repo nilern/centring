@@ -11,6 +11,13 @@ let gensym = function
     incr gensym_counter;
     Gensym (s, g)
 
+let sf_name = function
+  | Symbol str -> 
+    if String.slice str 0 5 = "##sf#"
+    then Some (String.slice str 5 (String.length str))
+    else None
+  | Gensym _ -> None
+
 let intr_name = function
   | Symbol str -> 
     if String.slice str 0 7 = "##intr#"

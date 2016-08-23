@@ -1,15 +1,14 @@
 open Core.Std
 module Env = Environment
 
-(* FIXME: (ast array) option can just be (ast array) *)
-
 let sexp_of_bytes _ = Sexp.Atom "<bytes>"
 
 type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (ast * ast) array
-        | Primop of primop * ast array * (ast array) option
+        | Primop of primop * ast array * ast array
         | Closure of env * ast
+        | Do of ast array
         | Id of Symbol.t
         | Const of value [@@deriving sexp_of]
 
