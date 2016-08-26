@@ -4,6 +4,7 @@ module Env = Environment
 let sexp_of_bytes _ = Sexp.Atom "<bytes>"
 
 type src_info = {filename: string; index: int; row: int; col: int}
+                [@@deriving sexp_of]
 
 type env = (Symbol.t, value) Env.t
 
@@ -29,7 +30,7 @@ and primop = Expr of (value array -> value)
 type cexp = List of stx list
           | Atom of value
 
-and stx = {expr: cexp; scopes: String.Set.t; src: src_info}
+and stx = {expr: cexp; scopes: String.Set.t; src: src_info} [@@deriving sexp_of]
 
 let cexp_to_stx stx cexp = {stx with expr = cexp}
 
