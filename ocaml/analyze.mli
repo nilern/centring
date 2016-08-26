@@ -1,4 +1,4 @@
 open Core.Std
 open Data
 
-val analyze : cexp -> ast
+val analyze : stx -> ast

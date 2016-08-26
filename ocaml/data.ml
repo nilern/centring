@@ -3,6 +3,8 @@ module Env = Environment
 
 let sexp_of_bytes _ = Sexp.Atom "<bytes>"
 
+type src_info = {filename: string; index: int; row: int; col: int}
+
 type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (ast * ast) array
@@ -24,8 +26,12 @@ and primop = Expr of (value array -> value)
            | Stmt of (value array -> unit)
            | Ctrl of (value array -> ast array -> ast)
 
-type cexp = List of cexp list
+type cexp = List of stx list
           | Atom of value
+
+and stx = {expr: cexp; scopes: String.Set.t; src: src_info}
+
+let cexp_to_stx stx cexp = {stx with expr = cexp}
 
 (* Conversions *)
 
@@ -43,5 +49,5 @@ let rec value_to_string = function
 let sexp_of_value v = Sexp.Atom (value_to_string v)
 
 let rec sexp_of_cexp = function
-  | List es -> Sexp.List (List.map es sexp_of_cexp)
+  | List es -> Sexp.List (List.map es (fun {expr; _} -> sexp_of_cexp expr))
   | Atom e -> Sexp.Atom (value_to_string e)

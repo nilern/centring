@@ -3,6 +3,8 @@ module Env = Environment
 
 val sexp_of_bytes : bytes -> Sexp.t
 
+type src_info = {filename: string; index: int; row: int; col: int}
+
 type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (ast * ast) array
@@ -10,7 +12,7 @@ and ast = Fn of Symbol.t * Symbol.t * (ast * ast) array
         | Closure of env * ast
         | Do of ast array
         | Id of Symbol.t
-        | Const of value
+        | Const of value [@@deriving sexp_of]
 
 and value = Int of int
           | Bool of bool
@@ -24,8 +26,12 @@ and primop = Expr of (value array -> value)
            | Stmt of (value array -> unit)
            | Ctrl of (value array -> ast array -> ast)
 
-type cexp = List of cexp list
+type cexp = List of stx list
           | Atom of value
+
+and stx = {expr: cexp; scopes: String.Set.t; src: src_info}
+
+val cexp_to_stx : stx -> cexp -> stx
 
 (* Print *)
 

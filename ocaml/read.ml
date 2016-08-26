@@ -1,20 +1,32 @@
 open Core.Std
+open Data
+
+(* FIXME: src_info.filename *)
+(* MAYBE: support just \r as endline *)
 
 module Parser = struct
   module String_seq = struct
-    type t = {string: string; index: int}
+    type t = {string: string; pos: src_info}
 
-    let of_string s = {string = s; index = 0}
+    let of_string s = {
+      string = s;
+      pos = {filename = ""; index = 0; row = 1; col = 1}
+    }
 
-    let hd {string = s; index = i} =
+    let hd {string = s; pos = {index = i; _}} =
       if i >= String.length s
       then None
       else Some (s.[i])
 
-    let tl ({string = s; index = i} as ssq) =
-      if i >= String.length s
+    let tl ({string = s; pos = {index; row; col; _} as pos} as ssq) =
+      if index >= String.length s
       then ssq
-      else {ssq with index = i + 1}
+      else if s.[index] = '\n'
+           then {ssq with pos = {pos with index = index + 1;
+                                          row = row + 1;
+                                          col = col + 1}}
+           else {ssq with pos = {pos with index = index + 1;
+                                          col = col + 1}}
   end
 
   type 'a t = Parser of (String_seq.t -> (('a, string) Result.t * String_seq.t))
@@ -37,6 +49,8 @@ module Parser = struct
     let map = `Define_using_bind
   end
   include Monad.Make(M)
+
+  let get_pos = Parser (fun ({pos; _} as ssq) -> (Ok pos, ssq))
 
   (* MonadPlus *)
   (* TODO: formalize MonadPlus notion *)
@@ -93,68 +107,88 @@ module Parser = struct
     | None -> fail (sprintf "no readtable entry for %c" c))
 end
 
-let ws_char = Parser.sat Char.is_whitespace
-let comment = 
-  let open Parser in
+open Parser
+
+let ws_char = sat Char.is_whitespace
+let comment =
   char ';' >>= (fun c ->
   many (none_of "\n\r") >>= (fun cs ->
   return (String.of_char_list (c::cs))))
 
-let ws = Parser.many_one ws_char
+let ws = many_one ws_char
 
-let digit = Parser.sat Char.is_digit
+let digit = sat Char.is_digit
 let int =
-  let int_of_char_list cs = cs
+  let int_of_char_list pos cs = cs
     |> String.of_char_list 
     |> Int.of_string
-    |> (fun i -> Data.Atom (Int i)) in
-  Parser.map (Parser.many_one digit) int_of_char_list
+    |> (fun i -> {
+         expr = Data.Atom (Int i); 
+         scopes = String.Set.empty;
+         src = pos
+  }) in
+  get_pos >>= (fun pos ->
+    map (many_one digit) (int_of_char_list pos))
 
-let symchar = Parser.none_of " \t\r\n;#()[]{}"
-let isymchar = Parser.none_of " \t\r\n;()[]{}"
-let symstr = (Parser.many_one symchar)
-let isymstr = (Parser.many_one isymchar)
-let sym_of_char_list cs = cs
+let symchar = none_of " \t\r\n;#()[]{}"
+let isymchar = none_of " \t\r\n;()[]{}"
+let symstr = (many_one symchar)
+let isymstr = (many_one isymchar)
+let sym_of_char_list pos cs = cs
   |> String.of_char_list
   |> Symbol.of_string
-  |> (fun sym -> Data.Atom (Symbol sym))
-let isym_of_char_list cs =
-  Data.Atom (Symbol (Symbol.of_string ("##" ^ String.of_char_list cs)))
-let symbol = Parser.map symstr sym_of_char_list
-let isymbol = Parser.map isymstr isym_of_char_list
+  |> (fun sym -> {
+         expr = Data.Atom (Symbol sym);
+         scopes = String.Set.empty;
+         src = pos
+  })
+let isym_of_char_list pos cs = {
+  expr = Data.Atom (Symbol (Symbol.of_string ("##" ^ String.of_char_list cs)));
+  scopes = String.Set.empty;
+  src = pos
+}
+let symbol = get_pos >>= (fun pos -> map symstr (sym_of_char_list pos))
+let isymbol = get_pos >>= (fun pos -> map isymstr (isym_of_char_list pos))
 
 let readtable = Hashtbl.create ~hashable: Char.hashable ()
 let sharptable = Hashtbl.create ~hashable: Char.hashable ()
 
 let expr =
-  let open Parser in
   surr (maybe ws)
        (tabular readtable 
         <|> int 
         <|> symbol)
 
 let read_string s =
-  let open Parser in
   let (res, _) = parse expr (String_seq.of_string s) in
   res
 
 (* Init *)
 
 let () =
-  let open Parser in
-  let open Data in
-  let quote = Atom (Symbol (Symbol.of_string "quote")) in
-  let newtup = [Atom (Symbol (Symbol.of_string "new"));
-                Atom (Symbol (Symbol.of_string "ctr.lang/Tuple"))] in
+  let stx_list (e::_ as es) = cexp_to_stx e (List es) in
+  let make_quote e =
+    let quote = cexp_to_stx e (Atom (Symbol (Symbol.of_string "quote"))) in
+    cexp_to_stx e (List [quote; e]) in
+  let make_tuple (e::_ as es) =
+    let nw = cexp_to_stx e (Atom (Symbol (Symbol.of_string "new"))) in
+    let tuple =
+      cexp_to_stx e (Atom (Symbol (Symbol.of_string "ctr.lang/Tuple"))) in
+    cexp_to_stx e (List (nw::tuple::es)) in
   Hashtbl.set readtable ~key:'(' 
-                        ~data:(map (until (char ')') expr)
-                                   (fun es -> List es));
-  Hashtbl.set readtable ~key:'\'' ~data:(map expr 
-                                             (fun e -> List [quote; e]));
+                        ~data:(map (until (char ')') expr) stx_list);
+  Hashtbl.set readtable ~key:'\'' ~data:(map expr make_quote);
   Hashtbl.set readtable ~key:'#' ~data:(tabular sharptable);
   Hashtbl.set sharptable ~key:'('
-                         ~data:(map (until (char ')') expr) 
-                                    (fun es -> List (newtup @ es)));
-  Hashtbl.set sharptable ~key:'t' ~data:(return (Atom (Bool true)));
-  Hashtbl.set sharptable ~key:'f' ~data:(return (Atom (Bool false)));
+                         ~data:(map (until (char ')') expr) make_tuple);
+  Hashtbl.set sharptable ~key:'t' 
+                         ~data:(get_pos >>= (fun src ->
+                                 return {expr = Atom (Bool true);
+                                         scopes = String.Set.empty;
+                                         src}));
+  Hashtbl.set sharptable ~key:'f'  
+                         ~data:(get_pos >>= (fun src ->
+                                 return {expr = Atom (Bool false);
+                                         scopes = String.Set.empty;
+                                         src}));
   Hashtbl.set sharptable ~key:'#' ~data:isymbol

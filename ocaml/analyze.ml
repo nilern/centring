@@ -7,12 +7,15 @@ exception Primop_not_found of string
 exception Not_a_sf of string
 exception Unrecognized_sf of string
 
-let rec analyze = function
+let rec analyze {expr; _} =
+  match expr with
   | Atom Symbol sym -> Id sym
   | Atom v -> Const v
-  | List (Atom (Symbol op)::args) when Option.is_some (Symbol.sf_name op) -> 
+  | List ({expr = Atom (Symbol op); _}::args) 
+    when Option.is_some (Symbol.sf_name op) -> 
     analyze_sf op args
-  | List (Atom (Symbol op)::args) when Option.is_some (Symbol.intr_name op) -> 
+  | List ({expr = Atom (Symbol op); _}::args) 
+    when Option.is_some (Symbol.intr_name op) -> 
     analyze_intr op args
 
 and analyze_intr op_name args =
