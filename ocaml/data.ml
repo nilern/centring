@@ -27,12 +27,8 @@ and primop = Expr of (value array -> value)
            | Stmt of (value array -> unit)
            | Ctrl of (value array -> ast array -> ast)
 
-type cexp = List of stx list
-          | Atom of value
-
-and stx = {expr: cexp; scopes: String.Set.t; src: src_info} [@@deriving sexp_of]
-
-let cexp_to_stx stx cexp = {stx with expr = cexp}
+type stx = List of stx list * String.Set.t * src_info
+         | Atom of value * String.Set.t * src_info
 
 (* Conversions *)
 
@@ -49,6 +45,6 @@ let rec value_to_string = function
 
 let sexp_of_value v = Sexp.Atom (value_to_string v)
 
-let rec sexp_of_cexp = function
-  | List es -> Sexp.List (List.map es (fun {expr; _} -> sexp_of_cexp expr))
-  | Atom e -> Sexp.Atom (value_to_string e)
+let rec sexp_of_stx = function
+  | List (es, _, _) -> Sexp.List (List.map es (fun expr -> sexp_of_stx expr))
+  | Atom (e, _, _) -> Sexp.Atom (value_to_string e)

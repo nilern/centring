@@ -27,12 +27,8 @@ and primop = Expr of (value array -> value)
            | Stmt of (value array -> unit)
            | Ctrl of (value array -> ast array -> ast)
 
-type cexp = List of stx list
-          | Atom of value
-
-and stx = {expr: cexp; scopes: String.Set.t; src: src_info} [@@deriving sexp_of]
-
-val cexp_to_stx : stx -> cexp -> stx
+type stx = List of stx list * String.Set.t * src_info
+         | Atom of value * String.Set.t * src_info
 
 (* Print *)
 
@@ -44,4 +40,4 @@ val value_to_string : value -> string
 
 val sexp_of_value : value -> Sexp.t
 
-val sexp_of_cexp : cexp -> Sexp.t
+val sexp_of_stx : stx -> Sexp.t

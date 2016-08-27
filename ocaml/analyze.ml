@@ -7,14 +7,13 @@ exception Primop_not_found of string
 exception Not_a_sf of string
 exception Unrecognized_sf of string
 
-let rec analyze {expr; _} =
-  match expr with
-  | Atom Symbol sym -> Id sym
-  | Atom v -> Const v
-  | List ({expr = Atom (Symbol op); _}::args) 
+let rec analyze = function
+  | Atom (Symbol sym, _, _) -> Id sym
+  | Atom (v, _, _) -> Const v
+  | List (Atom (Symbol op, _, _)::args, _, _) 
     when Option.is_some (Symbol.sf_name op) -> 
     analyze_sf op args
-  | List ({expr = Atom (Symbol op); _}::args) 
+  | List (Atom (Symbol op, _, _)::args, _, _) 
     when Option.is_some (Symbol.intr_name op) -> 
     analyze_intr op args
 
