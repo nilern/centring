@@ -9,6 +9,7 @@ type src_info = {filename: string; index: int; row: int; col: int}
 type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (ast * ast) array
+        | App of ast * ast
         | Primop of primop * ast array * ast array
         | Closure of env * ast
         | Do of ast array
@@ -19,7 +20,8 @@ and value = Int of int
           | Bool of bool
           | Char of char
           | Symbol of Symbol.t
-          | FnClosure of Symbol.t * Symbol.t * ast * (ast array * ast * env) Sequence.t
+          | MonoFn of Symbol.t * Symbol.t * ast * env
+          (* | PolyFn of Symbol.t * Symbol.t * ast * (ast array * ast * env) Sequence.t *)
           | Record of value * value array
           | Bytes of value * bytes
 

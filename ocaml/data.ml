@@ -9,6 +9,7 @@ type src_info = {filename: string; index: int; row: int; col: int}
 type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (ast * ast) array
+        | App of ast * ast
         | Primop of primop * ast array * ast array
         | Closure of env * ast
         | Do of ast array
@@ -19,7 +20,8 @@ and value = Int of int
           | Bool of bool
           | Char of char
           | Symbol of Symbol.t
-          | FnClosure of Symbol.t * Symbol.t * ast * (ast array * ast * env) Sequence.t
+          | MonoFn of Symbol.t * Symbol.t * ast * env
+          (* | PolyFn of Symbol.t * Symbol.t * ast * (ast array * ast * env) Sequence.t *)
           | Record of value * value array
           | Bytes of value * bytes
 
@@ -39,7 +41,8 @@ let rec value_to_string = function
   | Bool b -> if b then "#t" else "#f"
   | Char c -> String.of_char_list ['#'; '\\'; c]
   | Symbol s -> Symbol.to_string s
-  | FnClosure (name, _, _, _) -> sprintf "#<Fn %s>" (Symbol.to_string name)
+  | MonoFn (name, _ , _ , _) -> sprintf "#<Fn %s>" (Symbol.to_string name)
+  (* | FnClosure (name, _, _, _) -> sprintf "#<Fn %s>" (Symbol.to_string name) *)
   | Record (t, _) -> value_to_string t
   | Bytes (t, _) -> value_to_string t
 
