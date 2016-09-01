@@ -5,9 +5,9 @@ open Data
 
 let primops = Hashtbl.create ~hashable:String.hashable ()
 
-let let_expr name f = Hashtbl.set primops ~key:name ~data:(Expr f)
-let let_stmt name f = Hashtbl.set primops ~key:name ~data:(Stmt f)
-let let_ctrl name f = Hashtbl.set primops ~key:name ~data:(Ctrl f)
+let let_expr name f = Hashtbl.set primops ~key:name ~data:(Expr (name, f))
+let let_stmt name f = Hashtbl.set primops ~key:name ~data:(Stmt (name, f))
+let let_ctrl name f = Hashtbl.set primops ~key:name ~data:(Ctrl (name, f))
 
 let get name = Hashtbl.find primops name
 
@@ -20,4 +20,7 @@ let () =
   let_expr "iadd" (fun [|Int a; Int b|] -> Int (a + b));
   let_expr "isub" (fun [|Int a; Int b|] -> Int (a - b));
   let_expr "imul" (fun [|Int a; Int b|] -> Int (a * b));
-  let_expr "idiv" (fun [|Int a; Int b|] -> Int (a / b))
+  let_expr "idiv" (fun [|Int a; Int b|] -> Int (a / b));
+  let_expr "bior" (fun [|Bool a; Bool b|] -> Bool (a || b));
+  let_expr "band" (fun [|Bool a; Bool b|] -> Bool (a && b));
+  let_expr "bnot" (fun [|Bool a|] -> Bool (not a))  

@@ -8,7 +8,7 @@ type src_info = {filename: string; index: int; row: int; col: int}
 
 type env = (Symbol.t, value) Env.t
 
-and ast = Fn of Symbol.t * Symbol.t * (ast * ast) array
+and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
         | App of ast * ast
         | Primop of primop * ast array * ast array
         | Closure of env * ast
@@ -25,9 +25,16 @@ and value = Int of int
           | Record of value * value array
           | Bytes of value * bytes
 
-and primop = Expr of (value array -> value)
-           | Stmt of (value array -> unit)
-           | Ctrl of (value array -> ast array -> ast)
+and primop = Expr of string * (value array -> value)
+           | Stmt of string * (value array -> unit)
+           | Ctrl of string * (value array -> ast array -> ast)
+
+and atom = Not of ast
+         | Base of ast
+
+and clause = atom array
+
+and condition = clause array
 
 type stx = List of stx list * String.Set.t * src_info
          | Atom of value * String.Set.t * src_info

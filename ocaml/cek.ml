@@ -14,7 +14,7 @@ type cont = Fn of ast * env * cont
 let interpret ast = 
   let rec eval ctrl env k =
     match ctrl with
-    | Data.Fn (name, formal, [|(Const (Bool true), body)|]) ->
+    | Data.Fn (name, formal, [|([|[|Base (Const (Bool true))|]|], body)|]) ->
       (* TODO: move this optimization to analysis phase *)
       continue (MonoFn (name, formal, body, env)) k
     | Data.App (f, args) ->
@@ -59,8 +59,8 @@ let interpret ast =
 
   and apply_primop op vals conts env k =
     match op with
-    | Expr f -> continue (f vals) k
+    | Expr (_, f) -> continue (f vals) k
     (* FIXME: should continue with empty tuple: *)
-    | Stmt f -> f vals; continue (Bool false) k
-    | Ctrl f -> eval (f vals conts) env k in
+    | Stmt (_, f) -> f vals; continue (Bool false) k
+    | Ctrl (_, f) -> eval (f vals conts) env k in
   eval ast Env.empty Halt

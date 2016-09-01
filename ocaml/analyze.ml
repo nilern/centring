@@ -1,5 +1,6 @@
 open Core.Std
 open Data
+open Dispatch
 
 (* TODO: save src_info in AST *)
 (* FIXME: exhaustive pattern matches *)
@@ -38,7 +39,7 @@ and analyze_sf sf_name args =
   match (Symbol.sf_name sf_name) with
   | Some "fn" ->
     let analyze_case = function
-      | List ([cond; body], _, _) -> (analyze cond, analyze body)
+      | List ([cond; body], _, _) -> (dnf (analyze cond), analyze body)
       | case -> raise (Invalid_case case) in
     (match args with
      | (Atom (Symbol name, _, _))::(Atom (Symbol formal, _, _))::cases ->
