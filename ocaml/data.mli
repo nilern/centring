@@ -41,6 +41,16 @@ and condition = clause array
 type stx = List of stx list * String.Set.t * src_info
          | Atom of value * String.Set.t * src_info
 
+(* Traversals *)
+
+val atom_map : (ast -> ast) -> atom -> atom
+
+val ast_map : (ast -> ast) -> ast -> ast
+
+val walk : (ast -> ast) -> (ast -> ast) -> ast -> ast
+
+val postwalk : (ast -> ast) -> ast -> ast
+
 (* Print *)
 
 val sexp_of_ast : ast -> Sexp.t

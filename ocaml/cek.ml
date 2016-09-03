@@ -20,6 +20,22 @@ let interpret ast =
       let payload = Done (Closure (env, body), 
                           Sequence.singleton (clause, body, env)) in
       continue (FnClosure (name, formal, ref payload)) k
+    | Data.Fn (name, formal, methods) ->
+      let split_close (clauses, body) =
+        let len = Array.length clauses in
+        let cond_step i =
+          if i >= len
+          then None
+          else Some ((clauses.(i), body, env), i + 1) in
+        Sequence.unfold 0 cond_step in
+      let len = Array.length methods in
+      let meth_step i =
+        if i >= len
+        then None
+        else Some (methods.(i), i + 1) in
+      let payload = 
+        Pending (Sequence.bind (Sequence.unfold 0 meth_step) split_close) in
+      continue (FnClosure (name, formal, ref payload)) k
     | Data.App (f, args) ->
       eval f env (Fn (args, env, k))
     | Data.Primop (op, [||], conts) ->

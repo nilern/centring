@@ -42,6 +42,33 @@ and condition = clause array
 type stx = List of stx list * String.Set.t * src_info
          | Atom of value * String.Set.t * src_info
 
+(* Traversals *)
+
+let atom_map f = function
+  | Base ast -> Base (f ast)
+  | Not ast -> Not (f ast)
+
+let rec ast_map f = function
+  | Fn (name, formal, methods) ->
+    let meth_map (clauses, body) =
+      (Array.map ~f:(Array.map ~f:(atom_map (ast_map f))) clauses,
+       ast_map f body) in
+    Fn (name, formal, Array.map meth_map methods)
+  | App (callee, arg) ->
+    App (f callee, f arg)
+  | Primop (op, args, conts) ->
+    Primop (op, Array.map f args, Array.map f conts)
+  | Closure (env, ast') ->
+    Closure (env, f ast')
+  | Do stmts ->
+    Do (Array.map f stmts)
+  | (Id _ as node) | (Const _ as node) ->
+    node
+
+let walk inner outer ast = outer (ast_map inner ast)
+
+let rec postwalk f ast = walk (postwalk f) f ast
+
 (* Conversions *)
 
 let sexp_of_primop _ = Sexp.Atom "#<primop>"
