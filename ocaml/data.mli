@@ -20,14 +20,16 @@ and value = Int of int
           | Bool of bool
           | Char of char
           | Symbol of Symbol.t
-          | MonoFn of Symbol.t * Symbol.t * ast * env
-          (* | PolyFn of Symbol.t * Symbol.t * ast * (ast array * ast * env) Sequence.t *)
+          | FnClosure of Symbol.t * Symbol.t * fnbody ref
           | Record of value * value array
           | Bytes of value * bytes
 
 and primop = Expr of string * (value array -> value)
            | Stmt of string * (value array -> unit)
            | Ctrl of string * (value array -> ast array -> ast)
+
+and fnbody = Done of ast * (clause * ast * env) Sequence.t
+           | Pending of (clause * ast * env) Sequence.t
 
 and atom = Not of ast
          | Base of ast

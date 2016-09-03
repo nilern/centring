@@ -14,15 +14,20 @@ type cont = Fn of ast * env * cont
 let interpret ast = 
   let rec eval ctrl env k =
     match ctrl with
-    | Data.Fn (name, formal, [|([|[|Base (Const (Bool true))|]|], body)|]) ->
+    | Data.Fn (name, formal, 
+               [|([|[|Base (Const (Bool true))|] as clause|], body)|]) ->
       (* TODO: move this optimization to analysis phase *)
-      continue (MonoFn (name, formal, body, env)) k
+      let payload = Done (Closure (env, body), 
+                          Sequence.singleton (clause, body, env)) in
+      continue (FnClosure (name, formal, ref payload)) k
     | Data.App (f, args) ->
       eval f env (Fn (args, env, k))
     | Data.Primop (op, [||], conts) ->
       apply_primop op [||] conts env k
     | Data.Primop (op, args, conts) ->
       eval args.(0) env (Primop (op, [], args, 0, conts, env, k))
+    | Data.Closure (env', ast') ->
+      eval ast' (Env.merge env env') k
     | Data.Do [||] ->
       (* FIXME: should continue with empty tuple: *)
       continue (Bool false) k
@@ -54,8 +59,8 @@ let interpret ast =
 
   and apply f arg k =
     match f with
-    | MonoFn (_, formal, body, env) ->
-      eval body (Env.extend env formal arg) k
+    | FnClosure (_, formal, {contents = Done (body, _)}) ->
+      eval body (Env.extend Env.empty formal arg) k
 
   and apply_primop op vals conts env k =
     match op with

@@ -13,6 +13,10 @@ let rec lookup env key =
 
 let extend env k v = KV (k, ref v, env)
 
+let rec merge e1 = function
+  | KV (k, {contents = v}, e2') -> merge (extend e1 k v) e2'
+  | Empty -> e1
+
 let rec set env key value =
   match env with
   | KV (k, v, _) when k = key -> v := value
