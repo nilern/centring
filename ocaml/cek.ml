@@ -66,10 +66,8 @@ let interpret ast =
 
   and apply f arg k =
     match f with
-    | FnClosure (_, formal, ({contents = body} as payload)) ->
-      let (body', payload') = Dispatch.fnbody_force body in
-      payload := payload';
-      eval body' (Env.extend Env.empty formal arg) k
+    | FnClosure (_, formal, payload) ->
+      eval (Dispatch.fnbody_force payload) (Env.extend Env.empty formal arg) k
 
   and apply_primop op vals conts env k =
     match op with

@@ -3,4 +3,4 @@ open Data
 
 val dnf : ast -> condition
 
-val fnbody_force : fnbody -> (ast * fnbody)
+val fnbody_force : fnbody ref -> ast

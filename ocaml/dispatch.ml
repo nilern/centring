@@ -110,7 +110,8 @@ let build_dag methods =
   build_sub_dag methods (atom_closures methods)
 
 let fnbody_force = function
-  | Done (body, _) as f -> (body, f)
-  | Pending methods -> 
+  | {contents = Done (body, _)} -> body
+  | {contents = Pending methods} as r ->
     let body = build_dag methods in
-    (body, Done (body, methods))
+    r := Done (body, methods);
+    body
