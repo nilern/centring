@@ -57,11 +57,8 @@ let rec dnf = function
 
 let atom_closures methods =
   let open Sequence in
-  let atom_expr = function
-    | Base e -> e
-    | Not e -> e in
   methods >>= (fun (clause, body, env) ->
-                Util.seq_of_array_map (fun e -> (atom_expr e, env)) clause)
+                Util.seq_of_array_map (fun e -> (atom_ast e, env)) clause)
 
 let target_closures expr methods' exprs =
   Util.seq_intersection (Sequence.filter ~f:(fun (e, _) -> e <> expr) exprs)

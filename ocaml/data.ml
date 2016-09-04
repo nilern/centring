@@ -42,6 +42,12 @@ and condition = clause array
 type stx = List of stx list * String.Set.t * src_info
          | Atom of value * String.Set.t * src_info
 
+(* Accessors *)
+
+let atom_ast = function
+  | Base e -> e
+  | Not e -> e
+
 (* Traversals *)
 
 let atom_map f = function
