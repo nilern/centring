@@ -4,6 +4,8 @@ open Data
 let bior = Primops.get "bior" |> Option.value_exn
 let band = Primops.get "band" |> Option.value_exn
 let bnot = Primops.get "bnot" |> Option.value_exn
+let brf = Primops.get "brf" |> Option.value_exn
+let err = Primops.get "err" |> Option.value_exn
 
 let wrap_connectives node = [|[|Base node|]|]
 
@@ -52,3 +54,63 @@ let rec dnf = function
        dnf inner_arg
      | _ -> [|[|Not arg|]|])
   | ast -> wrap_connectives ast
+
+let atom_closures methods =
+  let open Sequence in
+  let atom_expr = function
+    | Base e -> e
+    | Not e -> e in
+  methods >>= (fun (clause, body, env) ->
+                Util.seq_of_array_map (fun e -> (atom_expr e, env)) clause)
+
+let target_closures expr methods' exprs =
+  Util.seq_intersection (Sequence.filter ~f:(fun (e, _) -> e <> expr) exprs)
+                        (atom_closures methods')
+
+let target_methods expr truthy methods =
+  let atom_passes atom =
+    match (truthy, atom) with
+    | (true, Base _) -> true
+    | (true, Not e) -> e <> expr
+    | (false, Base e) -> e <> expr
+    | (false, Not _) -> true in
+  let method_passes (clause, _, _) = Array.for_all clause atom_passes in
+  Sequence.filter methods method_passes
+
+(* OPTIMIZE: implement heuristics *)
+let pick_closure exprs methods = Sequence.hd exprs
+
+(* TODO: deal with overrides ("min<=_method") *)
+(* TODO: error messages *)
+let compute_target methods =
+  match Sequence.bounded_length methods 1 with
+  | `Is 0 ->
+    Primop (err, [|Const (Symbol (Symbol.of_string "NoMethodError"));
+                   Const (Bool false)|], [||])
+  | `Is 1 ->
+    let (_, body, env) = Sequence.hd_exn methods in
+    Closure (env, body)
+  | `Greater ->
+    Primop (err, [|Const (Symbol (Symbol.of_string "AmbiguousMethodError"));
+                   Const (Bool false)|], [||])
+
+(* OPTIMIZE: memoization *)
+let build_dag methods =
+  let rec build_sub_dag methods exprs =
+    match pick_closure exprs methods with
+    | Some (expr, env) ->
+      Primop (brf, [|Closure (env, expr)|],
+                   [|build_sub_dag_ass expr true methods exprs;
+                     build_sub_dag_ass expr false methods exprs|])
+    | None -> compute_target methods
+  and build_sub_dag_ass expr truthy methods exprs = 
+    let methods' = target_methods expr truthy methods in
+    let exprs' = target_closures expr methods' exprs in
+    build_sub_dag methods' exprs' in
+  build_sub_dag methods (atom_closures methods)
+
+let fnbody_force = function
+  | Done (body, _) as f -> (body, f)
+  | Pending methods -> 
+    let body = build_dag methods in
+    (body, Done (body, methods))

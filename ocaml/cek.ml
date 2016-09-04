@@ -21,20 +21,11 @@ let interpret ast =
                           Sequence.singleton (clause, body, env)) in
       continue (FnClosure (name, formal, ref payload)) k
     | Data.Fn (name, formal, methods) ->
+      let open Sequence in
       let split_close (clauses, body) =
-        let len = Array.length clauses in
-        let cond_step i =
-          if i >= len
-          then None
-          else Some ((clauses.(i), body, env), i + 1) in
-        Sequence.unfold 0 cond_step in
-      let len = Array.length methods in
-      let meth_step i =
-        if i >= len
-        then None
-        else Some (methods.(i), i + 1) in
+        Util.seq_of_array_map (fun clause -> (clause, body, env)) clauses in
       let payload = 
-        Pending (Sequence.bind (Sequence.unfold 0 meth_step) split_close) in
+        Pending ((Util.seq_of_array methods) >>= split_close) in
       continue (FnClosure (name, formal, ref payload)) k
     | Data.App (f, args) ->
       eval f env (Fn (args, env, k))
@@ -75,8 +66,10 @@ let interpret ast =
 
   and apply f arg k =
     match f with
-    | FnClosure (_, formal, {contents = Done (body, _)}) ->
-      eval body (Env.extend Env.empty formal arg) k
+    | FnClosure (_, formal, ({contents = body} as payload)) ->
+      let (body', payload') = Dispatch.fnbody_force body in
+      payload := payload';
+      eval body' (Env.extend Env.empty formal arg) k
 
   and apply_primop op vals conts env k =
     match op with
