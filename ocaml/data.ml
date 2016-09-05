@@ -10,6 +10,7 @@ type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
         | App of ast * ast
+        | Def of int * Symbol.t * ast
         | Primop of primop * ast array * ast array
         | Closure of env * ast
         | Do of ast array
@@ -20,7 +21,6 @@ and value = Int of int
           | Bool of bool
           | Char of char
           | Symbol of Symbol.t
-          (* | MonoFn of Symbol.t * Symbol.t * ast * env *)
           | FnClosure of Symbol.t * Symbol.t * fnbody ref
           | Record of value * value array
           | Bytes of value * bytes
@@ -41,6 +41,8 @@ and condition = clause array
 
 type stx = List of stx list * String.Set.t * src_info
          | Atom of value * String.Set.t * src_info
+
+exception CtrError of value * value [@@deriving sexp_of]
 
 (* Accessors *)
 

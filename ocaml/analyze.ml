@@ -11,6 +11,7 @@ exception Unrecognized_sf of string
 exception Invalid_case of stx [@@deriving sexp_of]
 exception Invalid_fn of stx list [@@deriving sexp_of]
 exception Invalid_app of stx list [@@deriving sexp_of]
+exception Invalid_def of stx list [@@deriving sexp_of]
 
 let rec analyze = function
   | Atom (Symbol sym, _, _) -> Id sym
@@ -50,6 +51,11 @@ and analyze_sf sf_name args =
      | [callee; arg] ->
        App (analyze callee, analyze arg)
      | _ -> raise (Invalid_app args))
+  | Some "def" ->
+    (match args with
+     | [(Atom (Int i, _, _)); (Atom (Symbol name, _, _)); val_expr] ->
+       Def (i, name, analyze val_expr)
+     | _ -> raise (Invalid_def args))
   | Some "do" ->
     Do (Array.of_list_map args analyze)
   | Some name ->

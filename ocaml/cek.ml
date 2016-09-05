@@ -41,7 +41,11 @@ let interpret ast =
     | Data.Do stmts ->
       eval stmts.(0) env (Do (stmts, 0, env, k))
     | Id name ->
-      continue (Env.lookup env name) k
+      (match Env.lookup env name with
+       | Some v -> continue v k
+       | None -> 
+         raise (CtrError (Symbol (Symbol.of_string "UnboundVariable"),
+                          Symbol name)))
     | Const v ->
       continue v k
 
@@ -67,7 +71,9 @@ let interpret ast =
   and apply f arg k =
     match f with
     | FnClosure (_, formal, payload) ->
-      eval (Dispatch.fnbody_force payload) (Env.extend Env.empty formal arg) k
+      let env = Env.empty () in
+      Env.def env formal arg;
+      eval (Dispatch.fnbody_force payload) env k
 
   and apply_primop op vals conts env k =
     match op with
@@ -75,4 +81,4 @@ let interpret ast =
     (* FIXME: should continue with empty tuple: *)
     | Stmt (_, f) -> f vals; continue (Bool false) k
     | Ctrl (_, f) -> eval (f vals conts) env k in
-  eval ast Env.empty Halt
+  eval ast (Env.empty ()) Halt

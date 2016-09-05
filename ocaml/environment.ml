@@ -1,26 +1,13 @@
 open Core.Std
 
-type ('k, 'v) t = KV of 'k * 'v ref * ('k, 'v) t
-                | Empty
+type ('k, 'v) t = ('k, 'v) Hashtbl.t list
 
-let empty = Empty
+let empty () = [Hashtbl.Poly.create ()]
 
-let rec lookup env key =
-  match env with
-  | KV (k, v, _) when k = key -> !v
-  | KV (_, _, env') -> lookup env' key
-  | Empty -> assert false
+let lookup env key = List.find_map env (fun frame -> Hashtbl.find frame key)
 
-let extend env k v = KV (k, ref v, env)
+let def env key value = Hashtbl.set (List.hd_exn env) key value
 
-let rec merge e1 = function
-  | KV (k, {contents = v}, e2') -> merge (extend e1 k v) e2'
-  | Empty -> e1
-
-let rec set env key value =
-  match env with
-  | KV (k, v, _) when k = key -> v := value
-  | KV (_, _, env') -> set env' key value
-  | Empty -> assert false
+let merge e1 e2 = e2 @ e1
 
 let sexp_of_t _ _ _ = Sexp.Atom "<env>"

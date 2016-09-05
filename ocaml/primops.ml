@@ -3,8 +3,6 @@ open Data
 
 (* FIXME: exhaustive pattern matches *)
 
-exception CtrError of value * value [@@deriving sexp_of]
-
 let primops = Hashtbl.create ~hashable:String.hashable ()
 
 let let_expr name f = Hashtbl.set primops ~key:name ~data:(Expr (name, f))
