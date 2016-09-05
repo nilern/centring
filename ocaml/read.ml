@@ -110,12 +110,12 @@ end
 open Parser
 
 let ws_char = sat Char.is_whitespace
-(* let comment =
+let comment =
   char ';' >>= (fun c ->
   many (none_of "\n\r") >>= (fun cs ->
-  return (String.of_char_list (c::cs)))) *)
+  return (c::cs)))
 
-let ws = many_one ws_char
+let ws = many_one (many_one ws_char <|> comment)
 
 let digit = sat Char.is_digit
 let int =
