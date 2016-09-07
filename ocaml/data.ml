@@ -21,6 +21,8 @@ and value = Int of int
           | Bool of bool
           | Char of char
           | Symbol of Symbol.t
+          | List of value list
+          | Stx of value * String.Set.t * src_info
           | FnClosure of Symbol.t * Symbol.t * fnbody ref
           | Record of value * value array
           | Bytes of value * bytes
@@ -38,9 +40,6 @@ and atom = Not of ast
 and clause = atom array
 
 and condition = clause array
-
-type stx = List of stx list * String.Set.t * src_info
-         | Atom of value * String.Set.t * src_info
 
 exception CtrError of value * value [@@deriving sexp_of]
 
@@ -90,8 +89,7 @@ let rec value_to_string = function
   | Record (t, _) -> value_to_string t
   | Bytes (t, _) -> value_to_string t
 
-let sexp_of_value v = Sexp.Atom (value_to_string v)
-
-let rec sexp_of_stx = function
-  | List (es, _, _) -> Sexp.List (List.map es (fun expr -> sexp_of_stx expr))
-  | Atom (e, _, _) -> Sexp.Atom (value_to_string e)
+let sexp_of_value = function
+  | List es -> Sexp.List (List.map es sexp_of_value)
+  | Stx (e, _, _) -> Sexp.List [Sexp.Atom "Stx"; sexp_of_value e]
+  | e -> Sexp.Atom (value_to_string e)

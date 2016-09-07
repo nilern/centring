@@ -8,22 +8,20 @@ open Dispatch
 exception Primop_not_found of string
 exception Not_a_sf of string
 exception Unrecognized_sf of string
-exception Invalid_case of stx [@@deriving sexp_of]
-exception Invalid_fn of stx list [@@deriving sexp_of]
-exception Invalid_app of stx list [@@deriving sexp_of]
-exception Invalid_def of stx list [@@deriving sexp_of]
+exception Invalid_case of value [@@deriving sexp_of]
+exception Invalid_fn of value list [@@deriving sexp_of]
+exception Invalid_app of value list [@@deriving sexp_of]
+exception Invalid_def of value list [@@deriving sexp_of]
 
 let rec analyze = function
-  | Atom (Symbol sym, _, _) -> Id sym
-  | Atom (v, _, _) -> Const v
-  | List (Atom (Symbol op, _, _)::args, _, _) 
+  | Stx (List (Stx (Symbol op, _, _)::args), _, _)
     when Option.is_some (Symbol.sf_name op) -> 
     analyze_sf op args
-  | List (Atom (Symbol op, _, _)::args, _, _) 
+  | Stx (List (Stx (Symbol op, _, _)::args), _, _)
     when Option.is_some (Symbol.intr_name op) -> 
     analyze_intr op args
-  (* | List (f::args, _, _) ->
-    App (analyze f, Array.of_list_map args analyze) *)
+  | Stx (Symbol sym, _, _) -> Id sym
+  | Stx (v, _, _) -> Const v
 
 and analyze_intr op_name args =
   let open Option in
@@ -40,10 +38,10 @@ and analyze_sf sf_name args =
   match (Symbol.sf_name sf_name) with
   | Some "fn" ->
     let analyze_case = function
-      | List ([cond; body], _, _) -> (dnf (analyze cond), analyze body)
+      | Stx (List [cond; body], _, _) -> (dnf (analyze cond), analyze body)
       | case -> raise (Invalid_case case) in
     (match args with
-     | (Atom (Symbol name, _, _))::(Atom (Symbol formal, _, _))::cases ->
+     | (Stx (Symbol name, _, _))::(Stx (Symbol formal, _, _))::cases ->
        Fn (name, formal, Array.of_list_map cases analyze_case)
      | _ -> raise (Invalid_fn args))
   | Some "apply" ->
@@ -53,7 +51,7 @@ and analyze_sf sf_name args =
      | _ -> raise (Invalid_app args))
   | Some "def" ->
     (match args with
-     | [(Atom (Int i, _, _)); (Atom (Symbol name, _, _)); val_expr] ->
+     | [(Stx (Int i, _, _)); (Stx (Symbol name, _, _)); val_expr] ->
        Def (i, name, analyze val_expr)
      | _ -> raise (Invalid_def args))
   | Some "do" ->

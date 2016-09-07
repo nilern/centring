@@ -21,6 +21,8 @@ and value = Int of int
           | Bool of bool
           | Char of char
           | Symbol of Symbol.t
+          | List of value list
+          | Stx of value * String.Set.t * src_info
           | FnClosure of Symbol.t * Symbol.t * fnbody ref
           | Record of value * value array
           | Bytes of value * bytes
@@ -38,9 +40,6 @@ and atom = Not of ast
 and clause = atom array
 
 and condition = clause array
-
-type stx = List of stx list * String.Set.t * src_info
-         | Atom of value * String.Set.t * src_info
 
 exception CtrError of value * value [@@deriving sexp_of]
 
@@ -67,5 +66,3 @@ val sexp_of_primop : primop -> Sexp.t
 val value_to_string : value -> string
 
 val sexp_of_value : value -> Sexp.t
-
-val sexp_of_stx : stx -> Sexp.t

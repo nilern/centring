@@ -7,7 +7,7 @@ let action stx ana estr =
     (if ana
      then cexp |> Analyze.analyze |> Data.sexp_of_ast
      else if stx
-     then cexp |> Data.sexp_of_stx
+     then cexp |> Data.sexp_of_value
      else cexp |> Analyze.analyze |> Cek.interpret |> Data.sexp_of_value))
 
 let command =

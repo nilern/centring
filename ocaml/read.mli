@@ -1,4 +1,4 @@
 open Core.Std
 open Data
 
-val read_string : string -> (stx, string) Result.t
+val read_string : string -> (value, string) Result.t
