@@ -3,7 +3,7 @@ open Result
 module Ops = Primops
 
 let action stx ana estr =
-  Read.read_string estr >>| (fun cexp ->
+  Read.read_all estr >>| (fun cexp ->
     (if ana
      then cexp |> Analyze.analyze |> Data.sexp_of_ast
      else if stx

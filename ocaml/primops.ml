@@ -32,6 +32,7 @@ let fn_merge = function
 let () =
   let_expr "fn-merge" fn_merge;
 
+  let_expr "rec"  (fun args -> Record (args.(0), Array.subo args ~pos:1));
   let_expr "rlen" (fun [|Record (_, fs)|] -> Int (Array.length fs));
   let_expr "rref" (fun [|Record (_, fs); Int i|] -> fs.(i));
   let_stmt "rset" (fun [|Record (_, fs); Int i; v|] -> fs.(i) <- v);
@@ -44,6 +45,9 @@ let () =
   let_expr "bior" (fun [|Bool a; Bool b|] -> Bool (a || b));
   let_expr "band" (fun [|Bool a; Bool b|] -> Bool (a && b));
   let_expr "bnot" (fun [|Bool a|] -> Bool (not a));
+
+  let_expr "stx" (fun [|expr; Stx (_, scopes, pos)|] -> Stx (expr, scopes, pos));
+  let_expr "stx-expr" (fun [|Stx (e, _, _)|] -> e);
 
   let_ctrl "brf" (fun [|(Bool a)|] [|thn; els|] -> if a then thn else els);
 

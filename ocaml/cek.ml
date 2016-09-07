@@ -6,6 +6,7 @@ module Env = Environment
 
 type cont = Fn of ast * env * cont
           | Arg of value * env * cont
+          | Def of Symbol.t * env * cont
           | Primop of primop * value list * ast array * int * ast array
                     * env * cont
           | Do of ast array * int * env * cont
@@ -29,6 +30,8 @@ let interpret ast =
       continue (FnClosure (name, formal, ref payload)) k
     | Data.App (f, args) ->
       eval f env (Fn (args, env, k))
+    | Data.Def (_, name, expr) ->
+      eval expr env (Def (name, env, k))
     | Data.Primop (op, [||], conts) ->
       apply_primop op [||] conts env k
     | Data.Primop (op, args, conts) ->
@@ -55,6 +58,10 @@ let interpret ast =
       eval arg env (Arg (v, env, k'))
     | Arg (f, env, k') ->
       apply f v k'
+    | Def (name, env, k') ->
+      Env.def env name v;
+      (* FIXME: should continue with empty tuple: *)
+      continue (Bool false) k'
     | Primop (op, vals, args, i, conts, env, k') ->
       let i' = i + 1 in
       let vals' = v::vals in

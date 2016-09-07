@@ -12,16 +12,18 @@ let gensym = function
     Gensym (s, g)
 
 let sf_name = function
-  | Symbol str -> 
-    if String.slice str 0 5 = "##sf#"
-    then Some (String.slice str 5 (String.length str))
+  | Symbol str ->
+    let len = String.length str in
+    if len > 5 && String.slice str 0 5 = "##sf#"
+    then Some (String.slice str 5 len)
     else None
   | Gensym _ -> None
 
 let intr_name = function
   | Symbol str -> 
-    if String.slice str 0 7 = "##intr#"
-    then Some (String.slice str 7 (String.length str))
+    let len = String.length str in
+    if len > 7 && String.slice str 0 7 = "##intr#"
+    then Some (String.slice str 7 len)
     else None
   | Gensym _ -> None
 

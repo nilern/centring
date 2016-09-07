@@ -20,6 +20,10 @@ let rec analyze = function
   | Stx (List (Stx (Symbol op, _, _)::args), _, _)
     when Option.is_some (Symbol.intr_name op) -> 
     analyze_intr op args
+  | Stx (List (callee::args), _, _) ->
+    App (analyze callee, 
+         Primop (Option.value_exn (Primops.get "rec"),
+                 Array.of_list_map args analyze, [||]))
   | Stx (Symbol sym, _, _) -> Id sym
   | Stx (v, _, _) -> Const v
 

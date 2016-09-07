@@ -172,6 +172,13 @@ let read_string s =
   let (res, _) = parse expr (String_seq.of_string s) in
   res
 
+let read_all s =
+  let (res, _) = parse (many expr) (String_seq.of_string s) in
+  Result.map res
+             (fun (Stx (_, s, p)::_ as es) ->
+               Stx (List ((Stx (Symbol (Symbol.of_string "##sf#do"), s, p))::es),
+                    s, p))
+
 (* Init *)
 
 let () =
