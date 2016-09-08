@@ -6,7 +6,11 @@ let sexp_of_bytes _ = Sexp.Atom "<bytes>"
 type src_info = {filename: string; index: int; row: int; col: int}
                 [@@deriving sexp_of]
 
-type phase = int
+module Phase = Int
+
+module Scope = Symbol
+
+type ctx = (Scope.Set.t) Phase.Map.t
 
 type env = (Symbol.t, value) Env.t
 
@@ -24,7 +28,7 @@ and value = Int of int
           | Char of char
           | Symbol of Symbol.t
           | List of value list
-          | Stx of value * phase * (Symbol.t, Symbol.comparator_witness) Set.t * src_info
+          | Stx of value * ctx * src_info
           | FnClosure of Symbol.t * Symbol.t * fnbody ref
           | Record of value * value array
           | Bytes of value * bytes
@@ -84,7 +88,7 @@ let rec sexp_of_value = function
   | Char c -> Sexp.Atom (String.of_char_list ['#'; '\\'; c])
   | Symbol s -> Symbol.sexp_of_t s
   | List es -> Sexp.List (List.map es sexp_of_value)
-  | Stx (e, _, _, _) -> Sexp.List [Sexp.Atom "Stx"; sexp_of_value e]
+  | Stx (e, _, _) -> Sexp.List [Sexp.Atom "Stx"; sexp_of_value e]
   | FnClosure (name, _ , _) ->
     Sexp.Atom (sprintf "#<Fn %s>" (Symbol.to_string name))
   | Record (_, _) -> Sexp.Atom "#<record>"
