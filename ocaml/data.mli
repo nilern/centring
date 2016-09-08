@@ -15,7 +15,7 @@ and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
         | Closure of env * ast
         | Do of ast array
         | Id of Symbol.t
-        | Const of value [@@deriving sexp_of]
+        | Const of value
 
 and value = Int of int
           | Bool of bool
@@ -41,8 +41,6 @@ and clause = atom array
 
 and condition = clause array
 
-exception CtrError of value * value [@@deriving sexp_of]
-
 (* Accessors *)
 
 val atom_ast : atom -> ast
@@ -59,10 +57,12 @@ val postwalk : (ast -> ast) -> ast -> ast
 
 (* Print *)
 
+val sexp_of_atom : atom -> Sexp.t
+
 val sexp_of_ast : ast -> Sexp.t
 
-val sexp_of_primop : primop -> Sexp.t
-
-val value_to_string : value -> string
-
 val sexp_of_value : value -> Sexp.t
+
+(* Exceptions *)
+
+exception CtrError of value * value [@@deriving sexp_of]

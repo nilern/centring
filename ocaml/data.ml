@@ -15,7 +15,7 @@ and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
         | Closure of env * ast
         | Do of ast array
         | Id of Symbol.t
-        | Const of value [@@deriving sexp_of]
+        | Const of value
 
 and value = Int of int
           | Bool of bool
@@ -40,8 +40,6 @@ and atom = Not of ast
 and clause = atom array
 
 and condition = clause array
-
-exception CtrError of value * value [@@deriving sexp_of]
 
 (* Accessors *)
 
@@ -78,18 +76,58 @@ let rec postwalk f ast = walk (postwalk f) f ast
 
 (* Conversions *)
 
-let sexp_of_primop _ = Sexp.Atom "#<primop>"
-
-let rec value_to_string = function
-  | Int i -> Int.to_string i
-  | Bool b -> if b then "#t" else "#f"
-  | Char c -> String.of_char_list ['#'; '\\'; c]
-  | Symbol s -> Symbol.to_string s
-  | FnClosure (name, _ , _) -> sprintf "#<Fn %s>" (Symbol.to_string name)
-  | Record (t, _) -> value_to_string t
-  | Bytes (t, _) -> value_to_string t
-
-let sexp_of_value = function
+let rec sexp_of_value = function
+  | Int i -> Int.sexp_of_t i
+  | Bool b -> if b then Sexp.Atom "#t" else Sexp.Atom "#f"
+  | Char c -> Sexp.Atom (String.of_char_list ['#'; '\\'; c])
+  | Symbol s -> Symbol.sexp_of_t s
   | List es -> Sexp.List (List.map es sexp_of_value)
   | Stx (e, _, _) -> Sexp.List [Sexp.Atom "Stx"; sexp_of_value e]
-  | e -> Sexp.Atom (value_to_string e)
+  | FnClosure (name, _ , _) ->
+    Sexp.Atom (sprintf "#<Fn %s>" (Symbol.to_string name))
+  | Record (_, _) -> Sexp.Atom "#<record>"
+  | Bytes (_, _) -> Sexp.Atom "#<bytes>"
+
+let rec sexp_of_atom = function
+  | Not e -> Sexp.List [Sexp.Atom "Not"; sexp_of_ast e]
+  | Base e -> sexp_of_ast e
+
+and sexp_of_ast = function
+  | Fn (name, formal, cases) ->
+    let sexp_of_case (cond, body) =
+      Sexp.List [Array.sexp_of_t (Array.sexp_of_t sexp_of_atom) cond;
+                 sexp_of_ast body] in
+    Sexp.List (Sexp.Atom "$fn"
+               ::(Sexp.Atom (Symbol.to_string name))
+               ::(Sexp.Atom (Symbol.to_string formal))
+               ::Array.(map sexp_of_case cases |> to_list))
+  | App (callee, arg) ->
+    Sexp.List [Sexp.Atom "$apply"; sexp_of_ast callee; sexp_of_ast arg]
+  | Def (phase, name, expr) ->
+    Sexp.List [Sexp.Atom "$def";
+               Sexp.Atom (Int.to_string phase);
+               Sexp.Atom (Symbol.to_string name);
+               sexp_of_ast expr]
+  | Primop ((Expr (opname, _) | Stmt (opname, _) | Ctrl (opname, _)),
+            args, [||]) ->
+    Sexp.List (Sexp.Atom ("%" ^ opname)
+               ::Array.(map sexp_of_ast args |> to_list))
+  | Primop ((Expr (opname, _) | Stmt (opname, _) | Ctrl (opname, _)),
+            args, conts) ->
+    Sexp.List (Sexp.Atom ("%" ^ opname)
+               ::(Array.(map sexp_of_ast args |> to_list))
+                  @ (Array.(map sexp_of_ast conts |> to_list)))
+  | Closure (_, expr) ->
+    Sexp.List [Sexp.Atom "Closure"; sexp_of_ast expr]
+  | Do stmts ->
+    Sexp.List (Sexp.Atom "$do"::Array.(map sexp_of_ast stmts |> to_list))
+  | Id name ->
+    Symbol.sexp_of_t name
+  | Const (Symbol sym) ->
+    Sexp.List [Sexp.Atom "$quote"; Symbol.sexp_of_t sym]
+  | Const v ->
+    sexp_of_value v
+
+(* Exceptions *)
+
+exception CtrError of value * value [@@deriving sexp_of]
