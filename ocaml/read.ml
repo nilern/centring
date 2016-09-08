@@ -122,7 +122,7 @@ let int =
   let int_of_char_list pos cs = cs
     |> String.of_char_list 
     |> Int.of_string
-    |> (fun i -> Stx (Int i, String.Set.empty, pos)) in
+    |> (fun i -> Stx (Int i, 0, Set.empty Symbol.comparator, pos)) in
   get_pos >>= (fun pos ->
     map (many_one digit) (int_of_char_list pos))
 
@@ -133,16 +133,16 @@ let isymstr = (many_one isymchar)
 let sym_of_char_list pos cs = cs
   |> String.of_char_list
   |> Symbol.of_string
-  |> (fun sym -> Stx (Symbol sym, String.Set.empty, pos))
+  |> (fun sym -> Stx (Symbol sym, 0, Set.empty Symbol.comparator, pos))
 let isym_of_char_list pos cs =
   Stx (Symbol (Symbol.of_string ("##" ^ String.of_char_list cs)),
-       String.Set.empty, pos)
+       0, Set.empty Symbol.comparator, pos)
 let symbol = get_pos >>= (fun pos -> map symstr (sym_of_char_list pos))
 let isymbol = get_pos >>= (fun pos -> 
   char '#' >> map isymstr (isym_of_char_list pos))
 
 let bool c b = get_pos >>= (fun pos ->
-  char c >> return (Stx (Bool b, String.Set.empty, pos)))
+  char c >> return (Stx (Bool b, 0, Set.empty Symbol.comparator, pos)))
 
 let readtable = Hashtbl.create ~hashable: Char.hashable ()
 let sharptable = Hashtbl.create ~hashable: Char.hashable ()
@@ -155,18 +155,18 @@ let expr =
 
 let list = get_pos >>= (fun pos ->
   map (between (char '(') (char ')') (many expr))
-      (fun es -> Stx (List es, String.Set.empty, pos)))
+      (fun es -> Stx (List es, 0, Set.empty Symbol.comparator, pos)))
 
 let quote = get_pos >>= (fun pos ->
   char '\'' >> expr >>= (fun e ->
-    return (Stx (List [Stx (Symbol (Symbol.of_string "quote"), String.Set.empty, pos);
-                       e], String.Set.empty, pos))))
+    return (Stx (List [Stx (Symbol (Symbol.of_string "quote"), 0, Set.empty Symbol.comparator, pos);
+                       e], 0, Set.empty Symbol.comparator, pos))))
 
 let tuple = get_pos >>= (fun pos ->
-  let nw = Stx (Symbol (Symbol.of_string "new"), String.Set.empty, pos) in
-  let tup = Stx (Symbol (Symbol.of_string "Tuple"), String.Set.empty, pos) in
+  let nw = Stx (Symbol (Symbol.of_string "new"), 0, Set.empty Symbol.comparator, pos) in
+  let tup = Stx (Symbol (Symbol.of_string "Tuple"), 0, Set.empty Symbol.comparator, pos) in
   map (between (char '(') (char ')') (many expr))
-      (fun es -> Stx (List (nw::tup::es), String.Set.empty, pos)))
+      (fun es -> Stx (List (nw::tup::es), 0, Set.empty Symbol.comparator, pos)))
 
 let read_string s =
   let (res, _) = parse expr (String_seq.of_string s) in
@@ -175,9 +175,9 @@ let read_string s =
 let read_all s =
   let (res, _) = parse (many expr) (String_seq.of_string s) in
   Result.map res
-             (fun (Stx (_, s, p)::_ as es) ->
-               Stx (List ((Stx (Symbol (Symbol.of_string "##sf#do"), s, p))::es),
-                    s, p))
+             (fun (Stx (_, ph, s, pos)::_ as es) ->
+               Stx (List ((Stx (Symbol (Symbol.of_string "##sf#do"), ph, s, pos))
+                          ::es), ph, s, pos))
 
 (* Init *)
 

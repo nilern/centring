@@ -6,6 +6,8 @@ val sexp_of_bytes : bytes -> Sexp.t
 type src_info = {filename: string; index: int; row: int; col: int}
                 [@@deriving sexp_of]
 
+type phase = int
+
 type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
@@ -22,7 +24,7 @@ and value = Int of int
           | Char of char
           | Symbol of Symbol.t
           | List of value list
-          | Stx of value * String.Set.t * src_info
+          | Stx of value * phase * (Symbol.t, Symbol.comparator_witness) Set.t * src_info
           | FnClosure of Symbol.t * Symbol.t * fnbody ref
           | Record of value * value array
           | Bytes of value * bytes

@@ -46,8 +46,9 @@ let () =
   let_expr "band" (fun [|Bool a; Bool b|] -> Bool (a && b));
   let_expr "bnot" (fun [|Bool a|] -> Bool (not a));
 
-  let_expr "stx" (fun [|expr; Stx (_, scopes, pos)|] -> Stx (expr, scopes, pos));
-  let_expr "stx-expr" (fun [|Stx (e, _, _)|] -> e);
+  let_expr "stx" (fun [|expr; Stx (_, phase, scopes, pos)|] ->
+                    Stx (expr, phase, scopes, pos));
+  let_expr "stx-expr" (fun [|Stx (e, _, _, _)|] -> e);
 
   let_ctrl "brf" (fun [|(Bool a)|] [|thn; els|] -> if a then thn else els);
 
