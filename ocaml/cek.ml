@@ -88,4 +88,4 @@ let interpret ast =
     (* FIXME: should continue with empty tuple: *)
     | Stmt (_, f) -> f vals; continue (Bool false) k
     | Ctrl (_, f) -> eval (f vals conts) env k in
-  eval ast (Env.empty ()) Halt
+  eval ast (Bootstrap.env ()) Halt

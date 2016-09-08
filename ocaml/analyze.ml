@@ -12,6 +12,7 @@ exception Invalid_case of value [@@deriving sexp_of]
 exception Invalid_fn of value list [@@deriving sexp_of]
 exception Invalid_app of value list [@@deriving sexp_of]
 exception Invalid_def of value list [@@deriving sexp_of]
+exception Invalid_quote of value list [@@deriving sexp_of]
 
 let rec analyze = function
   | Stx (List (Stx (Symbol op, _, _)::args), _, _)
@@ -60,6 +61,10 @@ and analyze_sf sf_name args =
      | _ -> raise (Invalid_def args))
   | Some "do" ->
     Do (Array.of_list_map args analyze)
+  | Some "quote" ->
+    (match args with
+     | [(Stx (value, _, _))] -> Const value
+     | _ -> raise (Invalid_quote args))
   | Some name ->
     raise (Unrecognized_sf name)
   | None ->
