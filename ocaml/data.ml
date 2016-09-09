@@ -8,8 +8,6 @@ type src_info = {filename: string; index: int; row: int; col: int}
 
 module Phase = Int
 
-module Scope = Symbol
-
 type ctx = (Scope.Set.t) Phase.Map.t
 
 type env = (Symbol.t, value) Env.t
@@ -137,3 +135,14 @@ and sexp_of_ast = function
 (* Exceptions *)
 
 exception CtrError of value * value [@@deriving sexp_of]
+
+exception Not_in_scope of Symbol.t * Scope.Set.t [@@deriving sexp_of]
+exception Unbound of Symbol.t [@@deriving sexp_of]
+exception Primop_not_found of string [@@deriving sexp_of]
+exception Not_a_sf of string [@@deriving sexp_of]
+exception Unrecognized_sf of string [@@deriving sexp_of]
+exception Invalid_case of value [@@deriving sexp_of]
+exception Invalid_fn of value list [@@deriving sexp_of]
+exception Invalid_app of value list [@@deriving sexp_of]
+exception Invalid_def of value list [@@deriving sexp_of]
+exception Invalid_quote of value list [@@deriving sexp_of]

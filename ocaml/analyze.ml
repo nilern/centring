@@ -5,14 +5,7 @@ open Dispatch
 (* TODO: save src_info in AST *)
 (* FIXME: exhaustive pattern matches *)
 
-exception Primop_not_found of string
-exception Not_a_sf of string
-exception Unrecognized_sf of string
-exception Invalid_case of value [@@deriving sexp_of]
-exception Invalid_fn of value list [@@deriving sexp_of]
-exception Invalid_app of value list [@@deriving sexp_of]
-exception Invalid_def of value list [@@deriving sexp_of]
-exception Invalid_quote of value list [@@deriving sexp_of]
+let resolve sym ctx = Expand.resolve sym (Map.find ctx 0)
 
 let rec analyze = function
   | Stx (List (Stx (Symbol op, _, _)::args), _, _)
@@ -25,7 +18,7 @@ let rec analyze = function
     App (analyze callee, 
          Primop (Option.value_exn (Primops.get "rec"),
                  Array.of_list_map args analyze, [||]))
-  | Stx (Symbol sym, _, _) -> Id sym
+  | Stx (Symbol sym, ctx, _) -> Id (resolve sym ctx)
   | Stx (v, _, _) -> Const v
 
 and analyze_intr op_name args =
@@ -40,14 +33,14 @@ and analyze_intr op_name args =
     raise (Primop_not_found (Symbol.to_string op_name))
 
 and analyze_sf sf_name args =
-  match (Symbol.sf_name sf_name) with
+  match Symbol.sf_name sf_name with
   | Some "fn" ->
     let analyze_case = function
       | Stx (List [cond; body], _, _) -> (dnf (analyze cond), analyze body)
       | case -> raise (Invalid_case case) in
     (match args with
-     | (Stx (Symbol name, _, _))::(Stx (Symbol formal, _, _))::cases ->
-       Fn (name, formal, Array.of_list_map cases analyze_case)
+     | (Stx (Symbol name, nctx, _))::(Stx (Symbol formal, fctx, _))::cases ->
+       Fn (name, resolve formal fctx, Array.of_list_map cases analyze_case)
      | _ -> raise (Invalid_fn args))
   | Some "apply" ->
     (match args with
