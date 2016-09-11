@@ -1,0 +1,15 @@
+;; (defrecord Macro transformer)
+(##sf#def 1 Macro
+  (##intr#rec Type #f (##sf#quote Macro) (##sf#quote transformer)))
+
+;; (defmacro def
+;;   ((_ name expr) #t
+;;    #`(##sf#def ,name ,expr)))
+(##sf#def 1 def
+  (Macro (##sf#fn def expr
+          ((##intr#band (: (##intr#stx-expr expr) List.Pair)
+                        (length (##intr#stx-expr expr) 3)
+                  		(: (nth 1 (##intr#stx-expr expr)) Symbol))
+     	   (##intr#stx (prepend (##sf#quote ##sf#def) 
+     	   	                    (rest (##intr#stx-expr expr)))
+                       expr)))))
