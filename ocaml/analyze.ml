@@ -49,8 +49,8 @@ and analyze_sf sf_name args =
      | _ -> raise (Invalid_app args))
   | Some "def" ->
     (match args with
-     | [(Stx (Int i, _, _)); (Stx (Symbol name, _, _)); val_expr] ->
-       Def (i, name, analyze val_expr)
+     | [(Stx (Int 0, _, _)); (Stx (Symbol name, _, _)); val_expr] ->
+       Def (name, analyze val_expr)
      | _ -> raise (Invalid_def args))
   | Some "do" ->
     Do (Array.of_list_map args analyze)

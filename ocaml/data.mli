@@ -14,7 +14,7 @@ type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
         | App of ast * ast
-        | Def of int * Symbol.t * ast
+        | Def of Symbol.t * ast
         | Primop of primop * ast array * ast array
         | Closure of env * ast
         | Do of ast array

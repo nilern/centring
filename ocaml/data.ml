@@ -14,7 +14,7 @@ type env = (Symbol.t, value) Env.t
 
 and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
         | App of ast * ast
-        | Def of int * Symbol.t * ast
+        | Def of Symbol.t * ast
         | Primop of primop * ast array * ast array
         | Closure of env * ast
         | Do of ast array
@@ -107,9 +107,8 @@ and sexp_of_ast = function
                ::Array.(map sexp_of_case cases |> to_list))
   | App (callee, arg) ->
     Sexp.List [Sexp.Atom "$apply"; sexp_of_ast callee; sexp_of_ast arg]
-  | Def (phase, name, expr) ->
+  | Def (name, expr) ->
     Sexp.List [Sexp.Atom "$def";
-               Sexp.Atom (Int.to_string phase);
                Sexp.Atom (Symbol.to_string name);
                sexp_of_ast expr]
   | Primop ((Expr (opname, _) | Stmt (opname, _) | Ctrl (opname, _)),

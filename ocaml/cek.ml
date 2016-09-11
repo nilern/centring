@@ -30,7 +30,7 @@ let interpret ast =
       continue (FnClosure (name, formal, ref payload)) k
     | Data.App (f, args) ->
       eval f env (Fn (args, env, k))
-    | Data.Def (_, name, expr) ->
+    | Data.Def (name, expr) ->
       eval expr env (Def (name, env, k))
     | Data.Primop (op, [||], conts) ->
       apply_primop op [||] conts env k
