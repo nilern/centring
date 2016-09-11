@@ -13,9 +13,9 @@
 
 # Primops
 
-    type primop = Expr string ([|value|] => value)
-                | Stmt string ([|value|] => ())
-                | Ctrl string ([|value|] => [|ast|] => ast)
+    type primop = Expr string ([|value|] -> value)
+                | Stmt string ([|value|] -> ())
+                | Ctrl string ([|value|] -> [|ast|] -> ast)
 
 # CEK
 
@@ -34,7 +34,7 @@
 * apply
 * do
 * def
-* syntax
+* meta
 * quote
 
 ## Fn
@@ -43,7 +43,8 @@
 
 ### Expansion time
 
-    new_scope = Scope.fresh (Scope.Fn nsym)
+Create a fresh scope. Add it to and expand subforms. Reassemble the `fn` form 
+from those.
 
 ### Analysis time
 
@@ -90,9 +91,11 @@ Execute `stmts` in sequence.
 
 ## Def
 
-    (##sf#def phase : <uint> name : <symbol> expr)
+    (##sf#def name : <symbol> expr)
 
 ### Expansion time
+
+Expand `name` and `expr`. Remove any use-site scopes from `name`.
 
 ### Analysis time
 
@@ -102,6 +105,24 @@ Execute `stmts` in sequence.
 
 Evaluate `expr` and associate the result with `name` in the current environment
 frame.
+
+## Meta
+
+    (##sf#meta phase-increment : <uint> expr)
+
+### Expansion time
+
+Increment `phase` by `phase-increment`, then expand and eval expr, leaving
+`(##sf#do)` in its place. Restore the previous value of `phase` afterwards.
+
+### Analysis time
+
+It is an error if this occurs at analysis time.
+
+### Runtime
+
+Since `expr` was executed at expansion time there is nothing left to do but
+return `#()`.
 
 ## Quote
 
