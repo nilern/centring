@@ -8,7 +8,7 @@ let action stx estx ana estr =
     (if ana
      then cexp |> Expand.expand (Env.empty ()) |> Analyze.analyze |> Data.sexp_of_ast
      else if estx
-     then cexp |> Expand.expand (Env.empty ()) |> Data.sexp_of_value
+     then cexp |> Expand.expand (Env.empty ()) |> Data.sexp_of_stx
      else if stx
      then cexp |> Data.sexp_of_value
      else cexp |> Expand.expand (Env.empty ()) |> Analyze.analyze |> Cek.interpret |> Data.sexp_of_value))

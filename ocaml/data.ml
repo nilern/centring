@@ -18,7 +18,7 @@ and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
         | Primop of primop * ast array * ast array
         | Closure of env * ast
         | Do of ast array
-        | Id of Symbol.t
+        | Var of Symbol.t
         | Const of value
 
 and value = Int of int
@@ -27,6 +27,7 @@ and value = Int of int
           | Symbol of Symbol.t
           | List of value list
           | Stx of value * ctx * src_info
+          | Id of value
           | FnClosure of Symbol.t * Symbol.t * fnbody ref
           | Record of value * value array
           | Bytes of value * bytes
@@ -71,7 +72,7 @@ let rec ast_map f = function
     Closure (env, f ast')
   | Do stmts ->
     Do (Array.map f stmts)
-  | (Id _ as node) | (Const _ as node) ->
+  | (Var _ as node) | (Const _ as node) ->
     node
 
 let walk inner outer ast = outer (ast_map inner ast)
@@ -80,7 +81,19 @@ let rec postwalk f ast = walk (postwalk f) f ast
 
 (* Conversions *)
 
-let rec sexp_of_value = function
+let rec sexp_of_stx = function
+  | Stx (payload, ctx, _) ->
+    let sexp_of_payload = function
+      | List stxen -> Sexp.List (List.map stxen sexp_of_stx)
+      | v -> sexp_of_value v in
+    let sexp_of_ctx ctx =
+      Map.to_alist ctx 
+      |> List.map ~f:(fun (k, v) ->
+                        Sexp.List [Phase.sexp_of_t k; Scope.Set.sexp_of_t v])
+      |> Sexp.List in
+    Sexp.List [Sexp.Atom "Stx"; sexp_of_payload payload; sexp_of_ctx ctx]
+
+and sexp_of_value = function
   | Int i -> Int.sexp_of_t i
   | Bool b -> if b then Sexp.Atom "#t" else Sexp.Atom "#f"
   | Char c -> Sexp.Atom (String.of_char_list ['#'; '\\'; c])
@@ -124,7 +137,7 @@ and sexp_of_ast = function
     Sexp.List [Sexp.Atom "Closure"; sexp_of_ast expr]
   | Do stmts ->
     Sexp.List (Sexp.Atom "$do"::Array.(map sexp_of_ast stmts |> to_list))
-  | Id name ->
+  | Var name ->
     Symbol.sexp_of_t name
   | Const (Symbol sym) ->
     Sexp.List [Sexp.Atom "$quote"; Symbol.sexp_of_t sym]
@@ -135,6 +148,7 @@ and sexp_of_ast = function
 
 exception CtrError of value * value [@@deriving sexp_of]
 
+exception Not_an_stx of value [@@deriving sexp_of]
 exception Not_in_scope of Symbol.t * Scope.Set.t [@@deriving sexp_of]
 exception Unbound of Symbol.t [@@deriving sexp_of]
 exception Primop_not_found of string [@@deriving sexp_of]

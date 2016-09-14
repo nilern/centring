@@ -18,7 +18,7 @@ and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
         | Primop of primop * ast array * ast array
         | Closure of env * ast
         | Do of ast array
-        | Id of Symbol.t
+        | Var of Symbol.t
         | Const of value
 
 and value = Int of int
@@ -27,6 +27,7 @@ and value = Int of int
           | Symbol of Symbol.t
           | List of value list
           | Stx of value * ctx * src_info
+          | Id of value
           | FnClosure of Symbol.t * Symbol.t * fnbody ref
           | Record of value * value array
           | Bytes of value * bytes
@@ -65,12 +66,15 @@ val sexp_of_atom : atom -> Sexp.t
 
 val sexp_of_ast : ast -> Sexp.t
 
+val sexp_of_stx : value -> Sexp.t
+
 val sexp_of_value : value -> Sexp.t
 
 (* Exceptions *)
 
 exception CtrError of value * value [@@deriving sexp_of]
 
+exception Not_an_stx of value [@@deriving sexp_of]
 exception Not_in_scope of Symbol.t * Scope.Set.t [@@deriving sexp_of]
 exception Unbound of Symbol.t [@@deriving sexp_of]
 exception Primop_not_found of string [@@deriving sexp_of]

@@ -43,7 +43,7 @@ let interpret ast =
       continue (Bool false) k
     | Data.Do stmts ->
       eval stmts.(0) env (Do (stmts, 0, env, k))
-    | Id name ->
+    | Var name ->
       (match Env.lookup env name with
        | Some v -> continue v k
        | None -> 
@@ -77,8 +77,9 @@ let interpret ast =
 
   and apply f arg k =
     match f with
-    | FnClosure (_, formal, payload) ->
+    | FnClosure (fname, formal, payload) ->
       let env = Env.empty () in
+      Env.def env fname f;
       Env.def env formal arg;
       eval (Dispatch.fnbody_force payload) env k
 

@@ -1,8 +1,10 @@
 open Core.Std
 open Data
 
-type ct_value
+val get_scopes : int -> value -> Scope.Set.t
 
-val resolve : Symbol.t -> Scope.Set.t option -> Symbol.t
+val resolve : Symbol.t -> Scope.Set.t -> Symbol.t option
 
-val expand : (Symbol.t, ct_value) Env.t -> value -> value
+val resolve_exn : Symbol.t -> Scope.Set.t -> Symbol.t
+
+val expand : (Symbol.t, value) Env.t -> value -> value

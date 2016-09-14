@@ -30,12 +30,12 @@
 
 (Prefixed by ##sf#):
 
-* fn
-* apply
-* do
-* def
-* meta
-* quote
+* fn    -- create Fn (a predicate-dispatching closure)
+* apply -- call functions (or other things, e.g. types as constructors)
+* do    -- treat expressions as statements
+* def   -- add a binding to the current environment frame
+* meta  -- do things at expansion time
+* quote -- prevent evaluation (low-level, does not handle lists etc.)
 
 ## Fn
 
@@ -43,7 +43,7 @@
 
 ### Expansion time
 
-Create a fresh scope. Add it to and expand subforms. Reassemble the `fn` form 
+Create a fresh scope. Add it to and expand subforms. Reassemble the `fn` form
 from those.
 
 ### Analysis time
