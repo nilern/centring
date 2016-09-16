@@ -52,7 +52,7 @@ and analyze_sf sf_name args =
      | _ -> raise (Invalid_app args))
   | Some "def" ->
     (match args with
-     | [(Stx (Int 0, _, _)); (Stx (Symbol nsym, _, _)) as name; val_expr] ->
+     | [(Stx (Symbol nsym, _, _)) as name; val_expr] ->
        Def (Expand.resolve_exn nsym (Expand.get_scopes 0 name), analyze val_expr)
      | _ -> raise (Invalid_def args))
   | Some "do" ->

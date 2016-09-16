@@ -115,13 +115,13 @@ and expand_triv_sf phase env = function
     Stx (List (opsym::(List.map stmts (expand phase env))), ctx, pos)
 
 and expand_def phase env = function
-  | Stx (List [defsym; Stx (Int 0, _, _) as ph;
+  | Stx (List [defsym;
                Stx (Symbol nsym, _, _) as name; val_expr], ctx, pos) as stx ->
     let new_sym = Symbol.gensym nsym in
     add_binding nsym (get_scopes phase stx) new_sym;
     Env.def env new_sym (Id name);
 
-    Stx (List [defsym; ph; name; expand phase env val_expr], ctx, pos)
+    Stx (List [defsym; name; expand phase env val_expr], ctx, pos)
   | Stx (List (_::args), _, _) -> raise (Invalid_def args)
 
 and expand_quote = function
