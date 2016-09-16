@@ -4,16 +4,16 @@ open Data
 let get_scopes phase (Stx (_, ctx, _)) =
   Option.value (Map.find ctx phase) ~default:Scope.Set.empty
 
-let add_to_scopes scope = function
-  | Some scopes -> Set.add scopes scope
-  | None -> Scope.Set.singleton scope
-
-let add_to_ctx scope ctx = Map.update ctx 0 (add_to_scopes scope)
-
-let rec add_scope scope stx =
+let rec add_scope phase scope stx =
+  let add_to_scopes scope = function
+    | Some scopes -> Set.add scopes scope
+    | None -> Scope.Set.singleton scope in
+  let add_to_ctx scope ctx =
+    Map.update ctx phase (add_to_scopes scope) in
   match stx with
   | Stx (List stxen, ctx, pos) ->
-    Stx (List (List.map stxen (add_scope scope)), add_to_ctx scope ctx, pos)
+    Stx (List (List.map stxen (add_scope phase scope)),
+         add_to_ctx scope ctx, pos)
   | Stx (value, ctx, pos) ->
     Stx (value, add_to_ctx scope ctx, pos)
 
@@ -60,69 +60,70 @@ let resolve_exn id scopes =
   | Some v -> v
   | None -> raise (Not_in_scope (id, scopes))
 
-let rec expand env stx =
+let rec expand phase env stx =
   let open Option in
   match stx with
   | Stx (List (Stx (Symbol op, _, _)::args), _, _)
     when is_some (Symbol.sf_name op) ->
-    expand_sf env op stx
+    expand_sf phase env op stx
   | Stx (List stxen, ctx, pos) ->
-    Stx (List (List.map stxen (expand env)), ctx, pos)
+    Stx (List (List.map stxen (expand phase env)), ctx, pos)
   | Stx (Symbol id, ctx, pos) as stx ->
-    let scopes = (get_scopes 0 stx) in
+    let scopes = (get_scopes phase stx) in
   	(match resolve id scopes >>= (Env.lookup env) with
   	 | Some (Id stx') -> stx'
-  	 | None ->
-       let id' = Symbol.gensym id in
-       add_binding id scopes id';
-       Env.def env id' (Id stx);
-       stx)
+  	 | None -> stx)
   | _ -> stx
 
-and expand_sf env op stx =
+and expand_sf phase env op stx =
   match Symbol.sf_name op with
-  | Some "quote" ->
-  	(match stx with
-     | Stx (List [_; quoted], _, _) -> stx
-     | Stx (List (_::quoted), _, _) -> raise (Invalid_quote quoted))
-  | Some "fn" ->
-  	(match stx with
-     | Stx (List (fnsym
-     	            ::(Stx (Symbol nsym, _, _) as name)
-     	            ::(Stx (Symbol _, _, _) as formal)
-     	            ::cases), ctx, pos) ->
-       let env' = Env.merge env (Env.empty ()) in
-       let new_scope = Scope.fresh (Scope.Fn nsym) in
+  | Some "fn" -> expand_fn phase env stx
+  | Some "apply" -> expand_triv_sf phase env stx
+  | Some "do" -> expand_triv_sf phase env stx
+  | Some "def" -> expand_def phase env stx
+  | Some "quote" -> expand_quote stx
 
-       let name' = add_scope new_scope name in
-       let formal' = add_scope new_scope formal in
-       let cases' = List.map cases (add_scope new_scope) in
+  | Some name -> raise (Unrecognized_sf name)
+  | None -> raise (Not_a_sf (Symbol.to_string op))
 
-       let ivars = Stx (List cases', ctx, pos) |> expand env |> defnames 
-         |> Fn.flip Set.add name' |> Fn.flip Set.add formal' in
-       Set.iter ivars (function
-         | Stx (Symbol ivsym, _, _) as ivstx ->
-           let ivsym' = Symbol.gensym ivsym in
-           add_binding ivsym (get_scopes 0 ivstx) ivsym';
-           Env.def env' ivsym' (Id ivstx));
+and expand_fn phase env = function
+  | Stx (List (fnsym
+               ::(Stx (Symbol nsym, _, _) as name)
+               ::(Stx (Symbol _, _, _) as formal)
+                ::cases), ctx, pos) ->
+    let env' = Env.push_frame env in
+    let new_scope = Scope.fresh (Scope.Fn nsym) in
 
-       let cases'' = List.map cases' (expand env') in
-       Stx (List (fnsym::name'::formal'::cases''), ctx, pos))
-  | Some "def" ->
-    (match stx with
-     | Stx (List [defsym; Stx (Int 0, _, _) as ph;
-                  Stx (Symbol nsym, _, _) as name; val_expr], ctx, pos) ->
-       let new_sym = Symbol.gensym nsym in
-       add_binding nsym (get_scopes 0 stx) new_sym;
-       Env.def env new_sym (Id name);
+    let name' = add_scope phase new_scope name in
+    let formal' = add_scope phase new_scope formal in
+    let cases' = List.map cases (add_scope phase new_scope) in
 
-       Stx (List [defsym; ph; name; expand env val_expr], ctx, pos)
-     | Stx (List (_::args), _, _) -> raise (Invalid_def args))
-  | Some "do" | Some "apply" ->
-  	(match stx with
-  	 | Stx (List (opsym::stmts), ctx, pos) ->
-  	   Stx (List (opsym::(List.map stmts (expand env))), ctx, pos))
-  | Some name ->
-    raise (Unrecognized_sf name)
-  | None ->
-    raise (Not_a_sf (Symbol.to_string op))
+    let ivars = Stx (List cases', ctx, pos)
+      |> expand phase (Env.push_frame env) |> defnames 
+      |> Fn.flip Set.add name' |> Fn.flip Set.add formal' in
+    Set.iter ivars (function
+      | Stx (Symbol ivsym, _, _) as ivstx ->
+        let ivsym' = Symbol.gensym ivsym in
+        add_binding ivsym (get_scopes phase ivstx) ivsym';
+        Env.def env' ivsym' (Id ivstx));
+
+    let cases'' = List.map cases' (expand phase env') in
+    Stx (List (fnsym::name'::formal'::cases''), ctx, pos)
+
+and expand_triv_sf phase env = function
+  | Stx (List (opsym::stmts), ctx, pos) ->
+    Stx (List (opsym::(List.map stmts (expand phase env))), ctx, pos)
+
+and expand_def phase env = function
+  | Stx (List [defsym; Stx (Int 0, _, _) as ph;
+               Stx (Symbol nsym, _, _) as name; val_expr], ctx, pos) as stx ->
+    let new_sym = Symbol.gensym nsym in
+    add_binding nsym (get_scopes phase stx) new_sym;
+    Env.def env new_sym (Id name);
+
+    Stx (List [defsym; ph; name; expand phase env val_expr], ctx, pos)
+  | Stx (List (_::args), _, _) -> raise (Invalid_def args)
+
+and expand_quote = function
+  | Stx (List [_; quoted], _, _) as stx -> stx
+  | Stx (List (_::quoted), _, _) -> raise (Invalid_quote quoted)

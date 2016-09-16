@@ -7,4 +7,4 @@ val resolve : Symbol.t -> Scope.Set.t -> Symbol.t option
 
 val resolve_exn : Symbol.t -> Scope.Set.t -> Symbol.t
 
-val expand : (Symbol.t, value) Env.t -> value -> value
+val expand : Phase.t -> env -> value -> value

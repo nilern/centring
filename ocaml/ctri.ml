@@ -6,12 +6,12 @@ module Ops = Primops
 let action stx estx ana estr =
   Read.read_all estr >>| (fun cexp ->
     (if ana
-     then cexp |> Expand.expand (Env.empty ()) |> Analyze.analyze |> Data.sexp_of_ast
+     then cexp |> Expand.expand 0 (Env.empty ()) |> Analyze.analyze |> Data.sexp_of_ast
      else if estx
-     then cexp |> Expand.expand (Env.empty ()) |> Data.sexp_of_stx
+     then cexp |> Expand.expand 0 (Env.empty ()) |> Data.sexp_of_stx
      else if stx
      then cexp |> Data.sexp_of_value
-     else cexp |> Expand.expand (Env.empty ()) |> Analyze.analyze |> Cek.interpret |> Data.sexp_of_value))
+     else cexp |> Expand.expand 0 (Env.empty ()) |> Analyze.analyze |> Cek.interpret |> Data.sexp_of_value))
 
 let command =
   Command.basic
