@@ -1,4 +1,4 @@
 open Core.Std
 open Data
 
-val analyze : value -> ast
+val analyze : Phase.t -> value -> ast

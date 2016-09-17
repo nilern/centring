@@ -50,6 +50,14 @@ and condition = clause array
 
 val atom_ast : atom -> ast
 
+(* Syntax Object Scope Operations *)
+
+val get_scopes : Phase.t -> value -> Scope.Set.t
+
+val add_scope : Phase.t -> Scope.t -> value -> value
+
+val flip_scope : Phase.t -> Scope.t -> value -> value
+
 (* Traversals *)
 
 val atom_map : (ast -> ast) -> atom -> atom
@@ -85,3 +93,4 @@ exception Invalid_fn of value list [@@deriving sexp_of]
 exception Invalid_app of value list [@@deriving sexp_of]
 exception Invalid_def of value list [@@deriving sexp_of]
 exception Invalid_quote of value list [@@deriving sexp_of]
+exception Invalid_syntax of value list [@@deriving sexp_of]

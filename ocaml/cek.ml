@@ -12,7 +12,7 @@ type cont = Fn of ast * env * cont
           | Do of ast array * int * env * cont
           | Halt
 
-let interpret ast = 
+let interpret env ast = 
   let rec eval ctrl env k =
     match ctrl with
     | Data.Fn (name, formal, 
@@ -89,4 +89,4 @@ let interpret ast =
     (* FIXME: should continue with empty tuple: *)
     | Stmt (_, f) -> f vals; continue (Bool false) k
     | Ctrl (_, f) -> eval (f vals conts) env k in
-  eval ast (Bootstrap.env ()) Halt
+  eval ast env Halt

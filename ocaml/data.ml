@@ -52,6 +52,34 @@ let atom_ast = function
   | Base e -> e
   | Not e -> e
 
+(* Syntax Object Scope Operations *)
+
+let get_scopes phase (Stx (_, ctx, _)) =
+  Option.value (Map.find ctx phase) ~default:Scope.Set.empty
+
+let rec scope_adder f phase scope stx =
+  match stx with
+  | Stx (List stxen, ctx, pos) ->
+    Stx (List (List.map stxen (scope_adder f phase scope)),
+         Map.update ctx phase (f scope), pos)
+  | Stx (value, ctx, pos) ->
+    Stx (value, Map.update ctx phase (f scope), pos)
+
+let add_scope =
+  let insert_scope scope = function
+    | Some scopes -> Set.add scopes scope
+    | None -> Scope.Set.singleton scope in
+  scope_adder insert_scope
+
+let flip_scope =
+  let flip_scope scope = function
+    | Some scopes ->
+      if Set.mem scopes scope
+      then Set.remove scopes scope
+      else Set.add scopes scope
+    | None -> Scope.Set.singleton scope in
+  scope_adder flip_scope
+
 (* Traversals *)
 
 let atom_map f = function
@@ -87,7 +115,7 @@ let rec sexp_of_stx = function
       | List stxen -> Sexp.List (List.map stxen sexp_of_stx)
       | v -> sexp_of_value v in
     let sexp_of_ctx ctx =
-      Map.to_alist ctx 
+      Map.to_alist ctx
       |> List.map ~f:(fun (k, v) ->
                         Sexp.List [Phase.sexp_of_t k; Scope.Set.sexp_of_t v])
       |> Sexp.List in
@@ -159,3 +187,4 @@ exception Invalid_fn of value list [@@deriving sexp_of]
 exception Invalid_app of value list [@@deriving sexp_of]
 exception Invalid_def of value list [@@deriving sexp_of]
 exception Invalid_quote of value list [@@deriving sexp_of]
+exception Invalid_syntax of value list [@@deriving sexp_of]

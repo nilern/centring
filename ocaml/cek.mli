@@ -1,4 +1,4 @@
 open Core.Std
 open Data
 
-val interpret : ast -> value
+val interpret : env -> ast -> value

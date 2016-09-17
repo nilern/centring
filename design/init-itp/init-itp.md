@@ -35,7 +35,8 @@
 * do    -- treat expressions as statements
 * def   -- add a binding to the current environment frame
 * meta  -- do things at expansion time
-* quote -- prevent evaluation (low-level, does not handle lists etc.)
+* syntax -- prevent evaluation, leave in syntax object
+* quote -- prevent evaluation, leave in contents of syntax object
 
 ## Fn
 
@@ -108,12 +109,12 @@ frame.
 
 ## Meta
 
-    (##sf#meta phase-increment : <uint> expr)
+    (##sf#meta expr)
 
 ### Expansion time
 
-Increment `phase` by `phase-increment`, then expand and eval expr, leaving
-`(##sf#do)` in its place. Restore the previous value of `phase` afterwards.
+Increment `phase`, then expand and eval expr, leaving `(##sf#do)` in its place.
+Restore the previous value of `phase` afterwards.
 
 ### Analysis time
 
@@ -123,6 +124,22 @@ It is an error if this occurs at analysis time.
 
 Since `expr` was executed at expansion time there is nothing left to do but
 return `#()`.
+
+## Syntax
+
+    (##sf#syntax expr)
+
+### Expansion time
+
+Return the form unchanged.
+
+### Analysis time
+
+`Const expr`.
+
+### Runtime
+
+Return the constant.
 
 ## Quote
 
@@ -134,7 +151,7 @@ Return the form unchanged.
 
 ### Analysis time
 
-`Const expr`.
+`Const (%stx-expr expr)`.
 
 ### Runtime
 
