@@ -60,16 +60,19 @@ let atom_closures methods =
   methods >>= (fun (clause, body, env) ->
                 Util.seq_of_array_map (fun e -> (atom_ast e, env)) clause)
 
+let atom_closure_equal (a1, env1) (a2, env2) = ast_equal a1 a2 && env1 == env2
+
 let target_closures expr methods' exprs =
-  Util.seq_intersection (Sequence.filter ~f:(fun (e, _) -> e <> expr) exprs)
-                        (atom_closures methods')
+  Util.seq_intersection atom_closure_equal
+    (Sequence.filter ~f:(fun (e, _) -> not (ast_equal e expr)) exprs)
+    (atom_closures methods')
 
 let target_methods expr truthy methods =
   let atom_passes atom =
     match (truthy, atom) with
     | (true, Base _) -> true
-    | (true, Not e) -> e <> expr
-    | (false, Base e) -> e <> expr
+    | (true, Not e) -> not (ast_equal e expr)
+    | (false, Base e) -> not (ast_equal e expr)
     | (false, Not _) -> true in
   let method_passes (clause, _, _) = Array.for_all clause atom_passes in
   Sequence.filter methods method_passes
@@ -100,7 +103,7 @@ let build_dag methods =
                    [|build_sub_dag_ass expr true methods exprs;
                      build_sub_dag_ass expr false methods exprs|])
     | None -> compute_target methods
-  and build_sub_dag_ass expr truthy methods exprs = 
+  and build_sub_dag_ass expr truthy methods exprs =
     let methods' = target_methods expr truthy methods in
     let exprs' = target_closures expr methods' exprs in
     build_sub_dag methods' exprs' in

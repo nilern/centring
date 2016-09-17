@@ -57,7 +57,7 @@ and expand_fn phase env = function
   | Stx (List (fnsym
                ::(Stx (Symbol nsym, _, _) as name)
                ::(Stx (Symbol _, _, _) as formal)
-                ::cases), ctx, pos) ->
+               ::cases), ctx, pos) ->
     let env' = Env.push_frame env in
     let new_scope = Scope.fresh (Scope.Fn nsym) in
 

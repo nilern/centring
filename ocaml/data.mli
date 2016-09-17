@@ -50,6 +50,12 @@ and condition = clause array
 
 val atom_ast : atom -> ast
 
+(* Comparisons *)
+
+val value_equal : value -> value -> bool
+
+val ast_equal : ast -> ast -> bool
+
 (* Syntax Object Scope Operations *)
 
 val get_scopes : Phase.t -> value -> Scope.Set.t

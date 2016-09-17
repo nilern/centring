@@ -16,4 +16,5 @@ let seq_of_array_map f arr =
     else Some (f arr.(i), i + 1) in
   Sequence.unfold 0 step
 
-let seq_intersection s1 s2 = Sequence.(filter ~f:(mem (memoize s2)) s1)
+let seq_intersection equal s1 s2 =
+  Sequence.(filter ~f:(mem ~equal (memoize s2)) s1)

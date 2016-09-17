@@ -8,12 +8,12 @@ open Cek
 let action stx estx ana estr =
   Read.read_all estr >>| (fun cexp ->
     (if ana
-     then cexp |> expand 0 (Env.empty ()) |> analyze 0 |> sexp_of_ast
+     then cexp |> expand 0 (Bootstrap.env ()) |> analyze 0 |> sexp_of_ast
      else if estx
-     then cexp |> expand 0 (Env.empty ()) |> sexp_of_stx
+     then cexp |> expand 0 (Bootstrap.env ()) |> sexp_of_stx
      else if stx
      then cexp |> sexp_of_stx
-     else cexp |> expand 0 (Env.empty ()) |> analyze 0
+     else cexp |> expand 0 (Bootstrap.env ()) |> analyze 0
                |> interpret (Bootstrap.env ()) |> sexp_of_value))
 
 let command =
@@ -30,7 +30,7 @@ let command =
     (fun expr_str stx estx ana filename () ->
       let estr = match expr_str with
                 | Some estr -> Ok estr
-                | None -> 
+                | None ->
                   of_option filename "No FILENAME or expr specified"
                   >>| In_channel.read_all in
       match estr >>= action stx estx ana with

@@ -52,6 +52,70 @@ let atom_ast = function
   | Base e -> e
   | Not e -> e
 
+(* Comparisons *)
+
+let rec value_equal v1 v2 =
+  match (v1, v2) with
+  | (Int i1, Int i2) ->
+    let open Int in i1 = i2
+  | (Bool b1, Bool b2) ->
+    let open Bool in b1 = b2
+  | (Char c1, Char c2) ->
+    let open Char in c1 = c2
+  | (Symbol s1, Symbol s2) ->
+    let open Symbol in s1 = s2
+  | (List l1, List l2) ->
+    List.equal l1 l2 value_equal
+  | (Stx (v1, scopes1, pos1), Stx (v2, scopes2, pos2)) ->
+    value_equal v1 v2
+    && Map.equal Scope.Set.equal scopes1 scopes2
+    && pos1 == pos2
+  | (Id v1, Id v2) ->
+    value_equal v1 v2
+  | (FnClosure (name1, formal1, body1), FnClosure (name2, formal2, body2)) ->
+    v1 == v2
+  | (Record (t1, vs1), Record (t2, vs2)) ->
+    value_equal t1 t2
+    && Array.equal vs1 vs2 value_equal
+  | (Bytes (t1, bs1), Bytes (t2, bs2)) ->
+    value_equal t1 t2
+    && bs1 = bs2
+  | _ -> false
+
+let rec ast_equal ast1 ast2 =
+  let atom_equal a1 a2 =
+    match (a1, a2) with
+    | (Base e1, Base e2) | (Not e1, Not e2) ->
+      ast_equal e1 e2
+    | _ -> false in
+  let cond_equal = Array.equal  ~equal:(Array.equal ~equal:atom_equal) in
+  let case_equal (cond1, body1) (cond2, body2) =
+    cond_equal cond1 cond2
+    && ast_equal body1 body2 in
+  match (ast1, ast2) with
+  | (Fn (name1, formal1, cases1), Fn (name2, formal2, cases2)) ->
+    let open Symbol in
+    name1 = name2
+    && formal1 = formal2
+    && Array.equal cases1 cases2 case_equal
+  | (App (callee1, arg1), App (callee2, arg2)) ->
+    ast_equal callee1 callee2 && ast_equal arg1 arg2
+  | (Def (name1, expr1), Def (name2, expr2)) ->
+    let open Symbol in name1 = name2 && ast_equal expr1 expr2
+  | (Primop (op1, args1, conts1), Primop (op2, args2, conts2)) ->
+    op1 == op2
+    && Array.equal args1 args2 ast_equal
+    && Array.equal conts1 conts2 ast_equal
+  | (Closure (env1, expr1), Closure (env2, expr2)) ->
+    env1 == env2 && ast_equal expr1 expr2
+  | (Do stmts1, Do stmts2) ->
+    Array.equal stmts1 stmts2 ast_equal
+  | (Var name1, Var name2) ->
+    let open Symbol in name1 = name2
+  | (Const v1, Const v2) ->
+    value_equal v1 v2
+  | _ -> false
+
 (* Syntax Object Scope Operations *)
 
 let get_scopes phase (Stx (_, ctx, _)) =
