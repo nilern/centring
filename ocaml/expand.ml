@@ -31,9 +31,11 @@ let rec expand phase env stx =
             let stx =
               stx |> add_scope phase scope_u |> add_scope phase scope_i in
             let mac_res = Cek.interpret env (App (Const mac, Const stx)) in
-            flip_scope phase scope_i mac_res
+            expand phase env (flip_scope phase scope_i mac_res)
           | Some _ | None ->
             Stx (List (List.map stxen (expand phase env)), ctx, pos))
+  | Stx (List stxen, ctx, pos) ->
+    Stx (List (List.map stxen (expand phase env)), ctx, pos)
   | Stx (Symbol id, ctx, pos) as stx ->
     let scopes = (get_scopes phase stx) in
   	(match resolve id scopes >>= (Env.lookup env) with

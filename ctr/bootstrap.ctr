@@ -1,10 +1,11 @@
 ; (defn :
-;   (#(v) #t
-;    (##intr#type v)))
+;   (#(v T) #t
+;    (##intr#eq? (##intr#type v) T)))
 (##sf#def :
   (##sf#fn : args
-    ((##intr#band (##intr#type args Tuple) (##intr#ieq? (##intr#rlen args) 1))
-     (##intr#type (##intr#rref args 0)))))
+    ((##intr#band (##intr#eq? (##intr#type args) Tuple)
+                  (##intr#ieq? (##intr#rlen args) 2))
+     (##intr#eq? (##intr#type (##intr#rref args 0)) (##intr#rref args 1)))))
 
 ; (defn rest
 ;   (#(ls) (: ls List.Pair)
@@ -13,10 +14,10 @@
 ;    ls))
 (##sf#def rest
   (##sf#fn rest args
-    ((##intr#band (##intr#type args Tuple) (##intr#ieq? (##intr#rlen args) 1)
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1)
                   (: (##intr#rref args 0) List.Pair))
      (##intr#cdr (##intr#rref args 0)))
-    ((##intr#band (##intr#type args Tuple) (##intr#ieq? (##intr#rlen args) 1)
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1)
                   (: (##intr#rref args 0) List.Empty))
      (##intr#rref args 0))))
 
@@ -25,7 +26,7 @@
 ;    (##intr#cons v ls)))
 (##sf#def prepend
   (##sf#fn prepend args
-    ((##intr#band (##intr#type args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
                   (##intr#bior (: (##intr#rref args 1) List.Pair)
                                (: (##intr#rref args 1) List.Empty)))
      (##intr#cons (##intr#rref args 0) (##intr#rref args 1)))))
@@ -40,18 +41,16 @@
 ;    (ls-len ls 0)))
 (##sf#def length
   (##sf#fn length args
-    ((##intr#band (##intr#type args Tuple) (##intr#ieq? (##intr#rlen args) 1)
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1)
                   (##intr#bior (: (##intr#rref args 0) List.Pair)
                                (: (##intr#rref args 0) List.Empty)))
      (##sf#do
        (##sf#def ls-len
          (##sf#fn ls-len args
-           ((##intr#band (##intr#type args Tuple)
-                         (##intr#ieq? (##intr#rlen args) 2)
+           ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
                          (: (##intr#rref args 0) List.Pair))
             (ls-len (rest (##intr#rref args 0)) (inc (##intr#rref args 1))))
-           ((##intr#band (##intr#type args Tuple)
-                         (##intr#ieq? (##intr#rlen args) 2)
+           ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
                          (: (##intr#rref args 0) List.Empty))
             (##intr#rref args 1))))
        (ls-len (##intr#rref args 0) 0)))))
@@ -61,7 +60,7 @@
 ;    (##intr#iadd a b)))
 (##sf#def +
   (##sf#fn + args
-    ((##intr#band (##intr#type args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
                   (: (##intr#rref args 0) Int)
                   (: (##intr#rref args 1) Int))
      (##intr#iadd (##intr#rref args 0) (##intr#rref args 1)))))
@@ -69,15 +68,13 @@
 ; (defn inc (#(n) #t (+ n 1)))
 (##sf#def inc
   (##sf#fn inc args
-    ((##intr#band (##intr#type args Tuple) (##intr#ieq? (##intr#rlen args) 1))
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1))
      (+ (##intr#rref args 0) 1))))
-
-(##intr#type 3)
 
 ; (##sf#def def
 ;   (##sf#meta
 ;     (##sf#fn def expr
-;       ((##intr#band (##intr#type (##intr#stx-expr expr) List.Pair)
+;       ((##intr#band (: (##intr#stx-expr expr) List.Pair)
 ;                     (##intr#ieq? (length (##intr#stx-expr expr)) 3)
 ;                     (##intr#type (##intr#stx-expr (nth 1 (##intr#stx-expr expr)))
 ;                                  Symbol))

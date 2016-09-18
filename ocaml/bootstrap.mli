@@ -10,4 +10,6 @@ val pair_t : value
 val stx_t : value
 val fn_t : value
 
-val env : unit -> (Symbol.t, value) Env.t
+val tuple_t : value
+
+val envs : unit -> ((Symbol.t, value) Env.t * (Symbol.t, value) Env.t)

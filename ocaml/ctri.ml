@@ -7,14 +7,15 @@ open Cek
 
 let action stx estx ana estr =
   Read.read_all estr >>| (fun cexp ->
-    (if ana
-     then cexp |> expand 0 (Bootstrap.env ()) |> analyze 0 |> sexp_of_ast
-     else if estx
-     then cexp |> expand 0 (Bootstrap.env ()) |> sexp_of_stx
-     else if stx
-     then cexp |> sexp_of_stx
-     else cexp |> expand 0 (Bootstrap.env ()) |> analyze 0
-               |> interpret (Bootstrap.env ()) |> sexp_of_value))
+    let (env_ct, env_rt) = Bootstrap.envs () in
+    if ana
+    then cexp |> expand 0 env_ct |> analyze 0 |> sexp_of_ast
+    else if estx
+    then cexp |> expand 0 env_ct |> sexp_of_stx
+    else if stx
+    then cexp |> sexp_of_stx
+    else cexp |> expand 0 env_ct |> analyze 0
+              |> interpret env_rt |> sexp_of_value)
 
 let command =
   Command.basic

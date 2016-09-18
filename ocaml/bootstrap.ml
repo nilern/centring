@@ -1,3 +1,4 @@
+open Core.Std
 open Data
 
 let rec type_t =
@@ -23,23 +24,29 @@ let tuple_t = Record (type_t, [|Bool true;
                                 Symbol (Symbol.of_string "Tuple");
                                 Symbol (Symbol.of_string "vals")|])
 
-let build_in env name v =
+let build_in (env_ct, env_rt) name v =
   let sym = Symbol.of_string name in
-  let sym' = Symbol.gensym sym in
-  Id_store.add_binding sym Scope.Set.empty sym';
-  Env.def env sym' v
+  let sym_ct = Symbol.gensym sym in
+  let sym_rt = Symbol.gensym sym in
+  Id_store.add_binding sym Scope.Set.empty sym_ct;
+  Env.def env_ct sym_ct v;
+  Env.def env_ct sym_rt (Id (Stx (Symbol sym, Phase.Map.empty,
+                                  {filename = ""; index = 0; row = 1; col = 0})));
+  Id_store.add_binding sym Scope.Set.empty sym_rt;
+  Env.def env_rt sym_rt v
 
-let env () =
-  let res = Env.empty () in
-  build_in res "Type" type_t;
-  build_in res "Int" int_t;
-  build_in res "Bool" bool_t;
-  build_in res "Char" char_t;
-  build_in res "Symbol" type_t;
-  build_in res "List.Empty" nil_t;
-  build_in res "List.Pair" pair_t;
-  build_in res "Syntax" stx_t;
-  build_in res "Fn" fn_t;
+(* TODO: Compile-time env needs these also wrapped in Id *)
+let envs () =
+  let envs = (Env.empty (), Env.empty ()) in
+  build_in envs "Type" type_t;
+  build_in envs "Int" int_t;
+  build_in envs "Bool" bool_t;
+  build_in envs "Char" char_t;
+  build_in envs "Symbol" type_t;
+  build_in envs "List.Empty" nil_t;
+  build_in envs "List.Pair" pair_t;
+  build_in envs "Syntax" stx_t;
+  build_in envs "Fn" fn_t;
 
-  build_in res "Tuple" tuple_t;
-  res
+  build_in envs "Tuple" tuple_t;
+  envs

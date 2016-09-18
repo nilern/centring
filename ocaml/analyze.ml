@@ -16,7 +16,9 @@ let rec analyze phase = function
     (* FIXME: output should include `Tuple` *)
     App (analyze phase callee,
          Primop (Option.value_exn (Primops.get "rec"),
-                 Array.of_list_map args (analyze phase), [||]))
+                 Array.of_list (Const Bootstrap.tuple_t
+                                ::List.map args (analyze phase)),
+                 [||]))
   | Stx (Symbol sym, ctx, _) as stx ->
     Var (Id_store.resolve_exn sym (get_scopes phase stx))
   | Stx (v, _, _) -> Const v

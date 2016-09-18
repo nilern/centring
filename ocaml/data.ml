@@ -75,10 +75,10 @@ let rec value_equal v1 v2 =
   | (FnClosure (name1, formal1, body1), FnClosure (name2, formal2, body2)) ->
     v1 == v2
   | (Record (t1, vs1), Record (t2, vs2)) ->
-    value_equal t1 t2
+    t1 == t2
     && Array.equal vs1 vs2 value_equal
   | (Bytes (t1, bs1), Bytes (t2, bs2)) ->
-    value_equal t1 t2
+    t1 == t2
     && bs1 = bs2
   | _ -> false
 

@@ -13,3 +13,4 @@ hs/ctrc
 *.pdf
 _build
 *.native
+*.byte

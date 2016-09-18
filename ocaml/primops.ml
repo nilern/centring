@@ -32,6 +32,7 @@ let fn_merge = function
 let () =
   let_expr "fn-merge" fn_merge;
 
+  let_expr "eq?" (fun [|a; b|] -> Bool (a == b));
   let_expr "type" (function
     | [|Int _|] -> Bootstrap.int_t
     | [|Bool _|] -> Bootstrap.bool_t
