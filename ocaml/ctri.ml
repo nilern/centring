@@ -5,9 +5,8 @@ open Expand
 open Analyze
 open Cek
 
-let action stx estx ana estr =
+let action stx estx ana (env_ct, env_rt) estr =
   Read.read_all estr >>| (fun cexp ->
-    let (env_ct, env_rt) = Bootstrap.envs () in
     if ana
     then cexp |> expand 0 env_ct |> analyze 0 |> sexp_of_ast
     else if estx
@@ -16,6 +15,17 @@ let action stx estx ana estr =
     then cexp |> sexp_of_stx
     else cexp |> expand 0 env_ct |> analyze 0
               |> interpret env_rt |> sexp_of_value)
+
+(* MAYBE: relative paths *)
+let make_load (env_ct, env_rt) =
+  Expr ("load", (function
+    | [|Stx (Symbol filename, _, _)|] ->
+      let estr = In_channel.read_all (Symbol.to_string filename) in
+      match Read.read_all estr with
+      | Ok cexp ->
+        cexp |> expand 0 env_ct |> analyze 0 |> interpret env_rt
+      | Error msg ->
+        assert false)) (* FIXME *)
 
 let command =
   Command.basic
@@ -34,7 +44,10 @@ let command =
                 | None ->
                   of_option filename "No FILENAME or expr specified"
                   >>| In_channel.read_all in
-      match estr >>= action stx estx ana with
+      let envs = Bootstrap.envs () in
+      let action = action stx estx ana envs in
+      Hashtbl.set Primops.primops ~key:"load" ~data:(make_load envs);
+      match estr >>= action with
       | Ok sexp -> Sexp.pp_hum Format.std_formatter sexp
       | Error msg -> Out_channel.output_string stdout msg)
 

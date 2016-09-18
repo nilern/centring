@@ -70,14 +70,3 @@
   (##sf#fn inc args
     ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1))
      (+ (##intr#rref args 0) 1))))
-
-; (##sf#def def
-;   (##sf#meta
-;     (##sf#fn def expr
-;       ((##intr#band (: (##intr#stx-expr expr) List.Pair)
-;                     (##intr#ieq? (length (##intr#stx-expr expr)) 3)
-;                     (##intr#type (##intr#stx-expr (nth 1 (##intr#stx-expr expr)))
-;                                  Symbol))
-;        (##intr#stx
-;          (prepend (##sf#syntax ##sf#def) (rest (##intr#stx-expr expr)))
-;          expr)))))

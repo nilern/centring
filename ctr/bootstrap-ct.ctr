@@ -1,0 +1,18 @@
+(##sf#meta (##intr#load (##sf#syntax bootstrap-rt.ctr)))
+
+(##sf#def def
+  (##sf#meta
+    (##sf#fn def expr
+      ((##intr#band (: (##intr#stx-expr expr) List.Pair)
+                    (##intr#ieq? (length (##intr#stx-expr expr)) 3)
+                    ; (##intr#type (##intr#stx-expr (nth 1 (##intr#stx-expr expr)))
+                    ;              Symbol)
+                                 )
+       (rest (##intr#stx-expr expr))))))
+      ;  (##intr#stx
+      ;    (prepend (##sf#syntax ##sf#def) (rest (##intr#stx-expr expr)))
+      ;    expr)))))
+
+(def foo 3)
+
+foo

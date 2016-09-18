@@ -12,20 +12,20 @@ type cont = Fn of ast * env * cont
           | Do of ast array * int * env * cont
           | Halt
 
-let interpret env ast = 
+let interpret env ast =
   let rec eval ctrl env k =
     match ctrl with
-    | Data.Fn (name, formal, 
+    | Data.Fn (name, formal,
                [|([|[|Base (Const (Bool true))|] as clause|], body)|]) ->
       (* TODO: move this optimization to analysis phase *)
-      let payload = Done (Closure (env, body), 
+      let payload = Done (Closure (env, body),
                           Sequence.singleton (clause, body, env)) in
       continue (FnClosure (name, formal, ref payload)) k
     | Data.Fn (name, formal, methods) ->
       let open Sequence in
       let split_close (clauses, body) =
         Util.seq_of_array_map (fun clause -> (clause, body, env)) clauses in
-      let payload = 
+      let payload =
         Pending ((Util.seq_of_array methods) >>= split_close) in
       continue (FnClosure (name, formal, ref payload)) k
     | Data.App (f, args) ->
@@ -39,14 +39,13 @@ let interpret env ast =
     | Data.Closure (env', ast') ->
       eval ast' (Env.merge env env') k
     | Data.Do [||] ->
-      (* FIXME: should continue with empty tuple: *)
-      continue (Bool false) k
+      continue (Record (Bootstrap.tuple_t, [||])) k
     | Data.Do stmts ->
       eval stmts.(0) env (Do (stmts, 0, env, k))
     | Var name ->
       (match Env.lookup env name with
        | Some v -> continue v k
-       | None -> 
+       | None ->
          raise (CtrError (Symbol (Symbol.of_string "UnboundVariable"),
                           Symbol name)))
     | Const v ->
@@ -60,8 +59,7 @@ let interpret env ast =
       apply f v k'
     | Def (name, env, k') ->
       Env.def env name v;
-      (* FIXME: should continue with empty tuple: *)
-      continue (Bool false) k'
+      continue (Record (Bootstrap.tuple_t, [||])) k'
     | Primop (op, vals, args, i, conts, env, k') ->
       let i' = i + 1 in
       let vals' = v::vals in
@@ -86,7 +84,6 @@ let interpret env ast =
   and apply_primop op vals conts env k =
     match op with
     | Expr (_, f) -> continue (f vals) k
-    (* FIXME: should continue with empty tuple: *)
-    | Stmt (_, f) -> f vals; continue (Bool false) k
+    | Stmt (_, f) -> f vals; continue (Record (Bootstrap.tuple_t, [||])) k
     | Ctrl (_, f) -> eval (f vals conts) env k in
   eval ast env Halt
