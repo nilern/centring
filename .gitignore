@@ -4,6 +4,7 @@ git_stats
 scm/ctrc
 scm/ctri
 cek/ctri
+hs/dist
 *.so
 *.import.scm
 hs/ctrc
