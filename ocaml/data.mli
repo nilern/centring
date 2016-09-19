@@ -12,14 +12,14 @@ type ctx = (Scope.Set.t) Phase.Map.t
 
 type env = (Symbol.t, value) Env.t
 
-and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
-        | App of ast * ast
-        | Def of Symbol.t * ast
-        | Primop of primop * ast array * ast array
-        | Closure of env * ast
-        | Do of ast array
-        | Var of Symbol.t
-        | Const of value
+and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array * src_info
+        | App of ast * ast * src_info
+        | Def of Symbol.t * ast * src_info
+        | Primop of primop * ast array * ast array * src_info
+        | Closure of env * ast * src_info
+        | Do of ast array * src_info
+        | Var of Symbol.t * src_info
+        | Const of value * src_info
 
 and value = Int of int
           | Bool of bool
@@ -49,6 +49,8 @@ and condition = clause array
 (* Accessors *)
 
 val atom_ast : atom -> ast
+
+val ast_pos : ast -> src_info
 
 (* Comparisons *)
 
@@ -91,6 +93,7 @@ exception CtrError of value * value [@@deriving sexp_of]
 exception Not_an_stx of value [@@deriving sexp_of]
 exception Not_in_scope of Symbol.t * Scope.Set.t [@@deriving sexp_of]
 exception Unbound of Symbol.t [@@deriving sexp_of]
+exception Uncallable of value [@@deriving sexp_of]
 exception Primop_not_found of string [@@deriving sexp_of]
 exception Not_a_sf of string [@@deriving sexp_of]
 exception Unrecognized_sf of string [@@deriving sexp_of]

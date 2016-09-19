@@ -17,7 +17,7 @@ let fn_merge = function
   | [|FnClosure (name, formal1, {contents = Done (_, meths1) | Pending meths1});
       FnClosure (_, formal2, {contents = Done (_, meths2) | Pending meths2})|] ->
     let replace_formal = function
-      | Var name when name = formal2 -> Var formal1
+      | Var (name, pos) when name = formal2 -> Var (formal1, pos)
       | node -> node in
     let replace_atom = function
       | Base ast -> Base (postwalk replace_formal ast)

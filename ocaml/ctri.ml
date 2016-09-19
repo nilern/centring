@@ -16,6 +16,7 @@ let action stx estx ana (env_ct, env_rt) estr =
     else cexp |> expand 0 env_ct |> analyze 0
               |> interpret env_rt |> sexp_of_value)
 
+(* FIXME: need to deal properly with phases and environments *)
 (* MAYBE: relative paths *)
 let make_load (env_ct, env_rt) =
   Expr ("load", (function

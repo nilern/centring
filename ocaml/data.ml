@@ -12,14 +12,14 @@ type ctx = (Scope.Set.t) Phase.Map.t
 
 type env = (Symbol.t, value) Env.t
 
-and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array
-        | App of ast * ast
-        | Def of Symbol.t * ast
-        | Primop of primop * ast array * ast array
-        | Closure of env * ast
-        | Do of ast array
-        | Var of Symbol.t
-        | Const of value
+and ast = Fn of Symbol.t * Symbol.t * (condition * ast) array * src_info
+        | App of ast * ast * src_info
+        | Def of Symbol.t * ast * src_info
+        | Primop of primop * ast array * ast array * src_info
+        | Closure of env * ast * src_info
+        | Do of ast array * src_info
+        | Var of Symbol.t * src_info
+        | Const of value * src_info
 
 and value = Int of int
           | Bool of bool
@@ -51,6 +51,16 @@ and condition = clause array
 let atom_ast = function
   | Base e -> e
   | Not e -> e
+
+let ast_pos = function
+  | Fn (_, _, _, pos) -> pos
+  | App (_, _, pos) -> pos
+  | Def (_, _, pos) -> pos
+  | Primop (_, _, _, pos) -> pos
+  | Closure (_, _, pos) -> pos
+  | Do (_, pos) -> pos
+  | Var (_, pos) -> pos
+  | Const (_, pos) -> pos
 
 (* Comparisons *)
 
@@ -93,26 +103,26 @@ let rec ast_equal ast1 ast2 =
     cond_equal cond1 cond2
     && ast_equal body1 body2 in
   match (ast1, ast2) with
-  | (Fn (name1, formal1, cases1), Fn (name2, formal2, cases2)) ->
+  | (Fn (name1, formal1, cases1, _), Fn (name2, formal2, cases2, _)) ->
     let open Symbol in
     name1 = name2
     && formal1 = formal2
     && Array.equal cases1 cases2 case_equal
-  | (App (callee1, arg1), App (callee2, arg2)) ->
+  | (App (callee1, arg1, _), App (callee2, arg2, _)) ->
     ast_equal callee1 callee2 && ast_equal arg1 arg2
-  | (Def (name1, expr1), Def (name2, expr2)) ->
+  | (Def (name1, expr1, _), Def (name2, expr2, _)) ->
     let open Symbol in name1 = name2 && ast_equal expr1 expr2
-  | (Primop (op1, args1, conts1), Primop (op2, args2, conts2)) ->
+  | (Primop (op1, args1, conts1, _), Primop (op2, args2, conts2, _)) ->
     op1 == op2
     && Array.equal args1 args2 ast_equal
     && Array.equal conts1 conts2 ast_equal
-  | (Closure (env1, expr1), Closure (env2, expr2)) ->
+  | (Closure (env1, expr1, _), Closure (env2, expr2, _)) ->
     env1 == env2 && ast_equal expr1 expr2
-  | (Do stmts1, Do stmts2) ->
+  | (Do (stmts1, _), Do (stmts2, _)) ->
     Array.equal stmts1 stmts2 ast_equal
-  | (Var name1, Var name2) ->
+  | (Var (name1, _), Var (name2, _)) ->
     let open Symbol in name1 = name2
-  | (Const v1, Const v2) ->
+  | (Const (v1, _), Const (v2, _)) ->
     value_equal v1 v2
   | _ -> false
 
@@ -151,19 +161,19 @@ let atom_map f = function
   | Not ast -> Not (f ast)
 
 let rec ast_map f = function
-  | Fn (name, formal, methods) ->
+  | Fn (name, formal, methods, pos) ->
     let meth_map (clauses, body) =
       (Array.map ~f:(Array.map ~f:(atom_map (ast_map f))) clauses,
        ast_map f body) in
-    Fn (name, formal, Array.map meth_map methods)
-  | App (callee, arg) ->
-    App (f callee, f arg)
-  | Primop (op, args, conts) ->
-    Primop (op, Array.map f args, Array.map f conts)
-  | Closure (env, ast') ->
-    Closure (env, f ast')
-  | Do stmts ->
-    Do (Array.map f stmts)
+    Fn (name, formal, Array.map meth_map methods, pos)
+  | App (callee, arg, pos) ->
+    App (f callee, f arg, pos)
+  | Primop (op, args, conts, pos) ->
+    Primop (op, Array.map f args, Array.map f conts, pos)
+  | Closure (env, ast', pos) ->
+    Closure (env, f ast', pos)
+  | Do (stmts, pos) ->
+    Do (Array.map f stmts, pos)
   | (Var _ as node) | (Const _ as node) ->
     node
 
@@ -192,6 +202,7 @@ and sexp_of_value = function
   | Symbol s -> Symbol.sexp_of_t s
   | List es -> Sexp.List (List.map es sexp_of_value)
   | Stx (e, _, _) -> Sexp.List [Sexp.Atom "Stx"; sexp_of_value e]
+  | Id v -> Sexp.List [Sexp.Atom "Id"; sexp_of_value v]
   | FnClosure (name, _ , _) ->
     Sexp.Atom (sprintf "#<Fn %s>" (Symbol.to_string name))
   | Record (_, _) -> Sexp.Atom "#<record>"
@@ -202,7 +213,7 @@ let rec sexp_of_atom = function
   | Base e -> sexp_of_ast e
 
 and sexp_of_ast = function
-  | Fn (name, formal, cases) ->
+  | Fn (name, formal, cases, _) ->
     let sexp_of_case (cond, body) =
       Sexp.List [Array.sexp_of_t (Array.sexp_of_t sexp_of_atom) cond;
                  sexp_of_ast body] in
@@ -210,30 +221,30 @@ and sexp_of_ast = function
                ::(Sexp.Atom (Symbol.to_string name))
                ::(Sexp.Atom (Symbol.to_string formal))
                ::Array.(map sexp_of_case cases |> to_list))
-  | App (callee, arg) ->
+  | App (callee, arg, _) ->
     Sexp.List [Sexp.Atom "$apply"; sexp_of_ast callee; sexp_of_ast arg]
-  | Def (name, expr) ->
+  | Def (name, expr, _) ->
     Sexp.List [Sexp.Atom "$def";
                Sexp.Atom (Symbol.to_string name);
                sexp_of_ast expr]
   | Primop ((Expr (opname, _) | Stmt (opname, _) | Ctrl (opname, _)),
-            args, [||]) ->
+            args, [||], _) ->
     Sexp.List (Sexp.Atom ("%" ^ opname)
                ::Array.(map sexp_of_ast args |> to_list))
   | Primop ((Expr (opname, _) | Stmt (opname, _) | Ctrl (opname, _)),
-            args, conts) ->
+            args, conts, _) ->
     Sexp.List (Sexp.Atom ("%" ^ opname)
                ::(Array.(map sexp_of_ast args |> to_list))
                   @ (Array.(map sexp_of_ast conts |> to_list)))
-  | Closure (_, expr) ->
+  | Closure (_, expr, _) ->
     Sexp.List [Sexp.Atom "Closure"; sexp_of_ast expr]
-  | Do stmts ->
+  | Do (stmts, _) ->
     Sexp.List (Sexp.Atom "$do"::Array.(map sexp_of_ast stmts |> to_list))
-  | Var name ->
+  | Var (name, _) ->
     Symbol.sexp_of_t name
-  | Const (Symbol sym) ->
+  | Const (Symbol sym, _) ->
     Sexp.List [Sexp.Atom "$quote"; Symbol.sexp_of_t sym]
-  | Const v ->
+  | Const (v, _) ->
     sexp_of_value v
 
 (* Exceptions *)
@@ -243,6 +254,7 @@ exception CtrError of value * value [@@deriving sexp_of]
 exception Not_an_stx of value [@@deriving sexp_of]
 exception Not_in_scope of Symbol.t * Scope.Set.t [@@deriving sexp_of]
 exception Unbound of Symbol.t [@@deriving sexp_of]
+exception Uncallable of value [@@deriving sexp_of]
 exception Primop_not_found of string [@@deriving sexp_of]
 exception Not_a_sf of string [@@deriving sexp_of]
 exception Unrecognized_sf of string [@@deriving sexp_of]

@@ -16,39 +16,39 @@ let interpret env ast =
   let rec eval ctrl env k =
     match ctrl with
     | Data.Fn (name, formal,
-               [|([|[|Base (Const (Bool true))|] as clause|], body)|]) ->
+               [|([|[|Base (Const (Bool true, _))|] as clause|], body)|], pos) ->
       (* TODO: move this optimization to analysis phase *)
-      let payload = Done (Closure (env, body),
+      let payload = Done (Closure (env, body, pos),
                           Sequence.singleton (clause, body, env)) in
       continue (FnClosure (name, formal, ref payload)) k
-    | Data.Fn (name, formal, methods) ->
+    | Data.Fn (name, formal, methods, _) ->
       let open Sequence in
       let split_close (clauses, body) =
         Util.seq_of_array_map (fun clause -> (clause, body, env)) clauses in
       let payload =
         Pending ((Util.seq_of_array methods) >>= split_close) in
       continue (FnClosure (name, formal, ref payload)) k
-    | Data.App (f, args) ->
+    | Data.App (f, args, _) ->
       eval f env (Fn (args, env, k))
-    | Data.Def (name, expr) ->
+    | Data.Def (name, expr, _) ->
       eval expr env (Def (name, env, k))
-    | Data.Primop (op, [||], conts) ->
+    | Data.Primop (op, [||], conts, _) ->
       apply_primop op [||] conts env k
-    | Data.Primop (op, args, conts) ->
+    | Data.Primop (op, args, conts, _) ->
       eval args.(0) env (Primop (op, [], args, 0, conts, env, k))
-    | Data.Closure (env', ast') ->
+    | Data.Closure (env', ast', _) ->
       eval ast' (Env.merge env env') k
-    | Data.Do [||] ->
+    | Data.Do ([||], _) ->
       continue (Record (Bootstrap.tuple_t, [||])) k
-    | Data.Do stmts ->
+    | Data.Do (stmts, _) ->
       eval stmts.(0) env (Do (stmts, 0, env, k))
-    | Var name ->
+    | Var (name, _) ->
       (match Env.lookup env name with
        | Some v -> continue v k
        | None ->
          raise (CtrError (Symbol (Symbol.of_string "UnboundVariable"),
                           Symbol name)))
-    | Const v ->
+    | Const (v, _) ->
       continue v k
 
   and continue v k =
@@ -80,6 +80,7 @@ let interpret env ast =
       Env.def env fname f;
       Env.def env formal arg;
       eval (Dispatch.fnbody_force payload) env k
+    | _ -> raise (Uncallable f)
 
   and apply_primop op vals conts env k =
     match op with

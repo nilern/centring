@@ -7,12 +7,16 @@ let bnot = Primops.get "bnot" |> Option.value_exn
 let brf = Primops.get "brf" |> Option.value_exn
 let err = Primops.get "err" |> Option.value_exn
 
+let nopos = {filename = ""; index = 0; row = 0; col = 0}
+
 let wrap_connectives node = [|[|Base node|]|]
 
-let or_default = (wrap_connectives (Const (Bool false)))
-let and_default = (wrap_connectives (Const (Bool true)))
+let or_default =
+  (wrap_connectives (Const (Bool false, nopos)))
+let and_default =
+  (wrap_connectives (Const (Bool true, nopos)))
 
-let negate expr = Primop (bnot, [|expr|], [||])
+let negate expr = Primop (bnot, [|expr|], [||], ast_pos expr)
 
 (* Like Array.fold, but only uses default when array is non-empty: *)
 let fold_conds default f = function
@@ -28,9 +32,9 @@ let fold_conds default f = function
     loop 0 conds.(0)
 
 let rec dnf = function
-  | Primop (Expr ("bior", _), args, _) -> (* Flatten Ors *)
+  | Primop (Expr ("bior", _), args, _, _) -> (* Flatten Ors *)
     fold_conds or_default Array.append (Array.map dnf args)
-  | Primop (Expr ("band", _), args, _) -> (* Distribute And over Ors *)
+  | Primop (Expr ("band", _), args, _, _) -> (* Distribute And over Ors *)
     let combine acc v =
       let acc_len = Array.length acc in
       let v_len = Array.length v in
@@ -44,13 +48,13 @@ let rec dnf = function
       done;
       res in
     fold_conds and_default combine (Array.map dnf args)
-  | Primop (Expr ("bnot", _), [|arg|], _) as ast ->
+  | Primop (Expr ("bnot", _), [|arg|], _, _) as ast ->
     (match arg with
-     | Primop (Expr ("bior", _), args, _) -> (* De Morgan *)
-       dnf (Primop (band, Array.map negate args, [||]))
-     | Primop (Expr ("band", _), args, _) -> (* De Morgan *)
-       dnf (Primop (bior, Array.map negate args, [||]))
-     | Primop (Expr ("bnot", _), [|inner_arg|], _) -> (* Double negation *)
+     | Primop (Expr ("bior", _), args, _, pos) -> (* De Morgan *)
+       dnf (Primop (band, Array.map negate args, [||], pos))
+     | Primop (Expr ("band", _), args, _, pos) -> (* De Morgan *)
+       dnf (Primop (bior, Array.map negate args, [||], pos))
+     | Primop (Expr ("bnot", _), [|inner_arg|], _, _) -> (* Double negation *)
        dnf inner_arg
      | _ -> [|[|Not arg|]|])
   | ast -> wrap_connectives ast
@@ -85,23 +89,25 @@ let pick_closure exprs methods = Sequence.hd exprs
 let compute_target methods =
   match Sequence.bounded_length methods 1 with
   | `Is 0 ->
-    Primop (err, [|Const (Symbol (Symbol.of_string "NoMethodError"));
-                   Const (Bool false)|], [||])
+    Primop (err, [|Const (Symbol (Symbol.of_string "NoMethodError"), nopos);
+                   Const (Bool false, nopos)|], [||], nopos)
   | `Is 1 ->
     let (_, body, env) = Sequence.hd_exn methods in
-    Closure (env, body)
+    Closure (env, body, ast_pos body)
   | `Greater ->
-    Primop (err, [|Const (Symbol (Symbol.of_string "AmbiguousMethodError"));
-                   Const (Bool false)|], [||])
+    Primop (err, [|Const (Symbol (Symbol.of_string "AmbiguousMethodError"), nopos);
+                   Const (Bool false, nopos)|], [||], nopos)
 
 (* OPTIMIZE: memoization *)
 let build_dag methods =
   let rec build_sub_dag methods exprs =
     match pick_closure exprs methods with
     | Some (expr, env) ->
-      Primop (brf, [|Closure (env, expr)|],
+      let pos = ast_pos expr in
+      Primop (brf, [|Closure (env, expr, pos)|],
                    [|build_sub_dag_ass expr true methods exprs;
-                     build_sub_dag_ass expr false methods exprs|])
+                     build_sub_dag_ass expr false methods exprs|],
+                   pos)
     | None -> compute_target methods
   and build_sub_dag_ass expr truthy methods exprs =
     let methods' = target_methods expr truthy methods in

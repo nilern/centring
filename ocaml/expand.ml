@@ -30,7 +30,8 @@ let rec expand phase env stx =
             let scope_i = Scope.fresh (Scope.Intro macname) in
             let stx =
               stx |> add_scope phase scope_u |> add_scope phase scope_i in
-            let mac_res = Cek.interpret env (App (Const mac, Const stx)) in
+            let mac_res =
+              Cek.interpret env (App (Const (mac, pos), Const (stx, pos), pos)) in
             expand phase env (flip_scope phase scope_i mac_res)
           | Some _ | None ->
             Stx (List (List.map stxen (expand phase env)), ctx, pos))
