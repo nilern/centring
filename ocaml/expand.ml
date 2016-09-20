@@ -53,8 +53,13 @@ and expand_sf phase env op stx =
   | Some "meta" -> let (stx', _) = expand_meta phase env stx in stx'
   | Some "quote" | Some "syntax" -> expand_quote stx
 
-  | Some name -> raise (Unrecognized_sf name)
-  | None -> raise (Not_a_sf (Symbol.to_string op))
+  | Some name ->
+    (match stx with
+     | Stx (_, _ , pos) -> raise (Unrecognized_sf (name, pos))
+     | _ -> raise (Unrecognized_sf (name, {filename = "";
+                                           index = 0; row = 0; col = 0})))
+  | None -> raise (Unrecognized_sf ("", {filename = "";
+                                         index = 0; row = 0; col = 0}))
 
 and expand_fn phase env = function
   | Stx (List (fnsym
@@ -98,7 +103,8 @@ and expand_def phase env = function
      | _ ->
        Env.def env new_sym (Id name);
        Stx (List [defsym; name; expand phase env expr], ctx, pos))
-  | Stx (List (_::args), _, _) -> raise (Invalid_def args)
+  | Stx (List (_::args), _, pos) ->
+    raise (Sf_args ("def", args, pos))
 
 and expand_meta phase env = function
   | Stx (List [op; expr], ctx, pos) ->
@@ -108,4 +114,4 @@ and expand_meta phase env = function
 
 and expand_quote = function
   | Stx (List [_; quoted], _, _) as stx -> stx
-  | Stx (List (_::quoted), _, _) -> raise (Invalid_quote quoted)
+  | Stx (List (_::args), _, pos) -> raise (Sf_args ("quote", args, pos))

@@ -249,18 +249,15 @@ and sexp_of_ast = function
 
 (* Exceptions *)
 
-exception CtrError of value * value [@@deriving sexp_of]
+exception Ctr_error of value * value * src_info [@@deriving sexp_of]
 
-exception Not_an_stx of value [@@deriving sexp_of]
-exception Not_in_scope of Symbol.t * Scope.Set.t [@@deriving sexp_of]
-exception Unbound of Symbol.t [@@deriving sexp_of]
-exception Uncallable of value [@@deriving sexp_of]
-exception Primop_not_found of string [@@deriving sexp_of]
-exception Not_a_sf of string [@@deriving sexp_of]
-exception Unrecognized_sf of string [@@deriving sexp_of]
-exception Invalid_case of value [@@deriving sexp_of]
-exception Invalid_fn of value list [@@deriving sexp_of]
-exception Invalid_app of value list [@@deriving sexp_of]
-exception Invalid_def of value list [@@deriving sexp_of]
-exception Invalid_quote of value list [@@deriving sexp_of]
-exception Invalid_syntax of value list [@@deriving sexp_of]
+exception Primop_not_found of string * src_info [@@deriving sexp_of]
+exception Unrecognized_sf of string * src_info [@@deriving sexp_of]
+exception Sf_args of string * value list * src_info [@@deriving sexp_of]
+exception Invalid_case of value * src_info [@@deriving sexp_of]
+
+exception Not_in_scope of Symbol.t * Scope.Set.t * src_info [@@deriving sexp_of]
+exception Unbound of Symbol.t * src_info [@@deriving sexp_of]
+
+exception Type_error of value * value * src_info [@@deriving sexp_of]
+exception Uncallable of value * src_info [@@deriving sexp_of]

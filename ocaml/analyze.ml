@@ -21,7 +21,7 @@ let rec analyze phase = function
                  [||], pos),
          pos)
   | Stx (Symbol sym, ctx, pos) as stx ->
-    Var (Id_store.resolve_exn sym (get_scopes phase stx), pos)
+    Var (Id_store.resolve_exn sym (get_scopes phase stx) pos, pos)
   | Stx (v, _, pos) -> Const (v, pos)
 
 and analyze_intr phase op_name args pos =
@@ -34,7 +34,7 @@ and analyze_intr phase op_name args pos =
   | Some op ->
 	  Primop (op, Array.of_list_map args (analyze phase), [||], pos)
   | None ->
-    raise (Primop_not_found (Symbol.to_string op_name))
+    raise (Primop_not_found (Symbol.to_string op_name, pos))
 
 and analyze_sf phase sf_name args pos =
   match Symbol.sf_name sf_name with
@@ -42,39 +42,39 @@ and analyze_sf phase sf_name args pos =
     let analyze_case = function
       | Stx (List [cond; body], _, _) ->
         (dnf (analyze phase cond), analyze phase body)
-      | case ->
-        raise (Invalid_case case) in
+      | Stx (_, _, pos) as case ->
+        raise (Invalid_case (case, pos)) in
     (match args with
-     | (Stx (Symbol nname, nctx, _) as name)
-             ::(Stx (Symbol fname, _, _) as formal)
+     | (Stx (Symbol nname, nctx, npos) as name)
+             ::(Stx (Symbol fname, _, fpos) as formal)
              ::cases ->
-       Fn (Id_store.resolve_exn nname (get_scopes phase name),
-           Id_store.resolve_exn fname (get_scopes phase formal),
+       Fn (Id_store.resolve_exn nname (get_scopes phase name) npos,
+           Id_store.resolve_exn fname (get_scopes phase formal) fpos,
            Array.of_list_map cases analyze_case,
            pos)
-     | _ -> raise (Invalid_fn args))
+     | _ -> raise (Sf_args ("fn", args, pos)))
   | Some "apply" ->
     (match args with
      | [callee; arg] ->
        App (analyze phase callee, analyze phase arg, pos)
-     | _ -> raise (Invalid_app args))
+     | _ -> raise (Sf_args ("apply", args, pos)))
   | Some "def" ->
     (match args with
-     | [(Stx (Symbol nsym, _, _)) as name; val_expr] ->
-       Def (Id_store.resolve_exn nsym (get_scopes phase name),
+     | [(Stx (Symbol nsym, _, npos)) as name; val_expr] ->
+       Def (Id_store.resolve_exn nsym (get_scopes phase name) npos,
             analyze phase val_expr, pos)
-     | _ -> raise (Invalid_def args))
+     | _ -> raise (Sf_args ("def", args, pos)))
   | Some "do" ->
     Do (Array.of_list_map args (analyze phase), pos)
   | Some "quote" ->
     (match args with
      | [(Stx (value, _, _))] -> Const (value, pos)
-     | _ -> raise (Invalid_quote args))
+     | _ -> raise (Sf_args ("quote", args, pos)))
    | Some "syntax" ->
      (match args with
       | [Stx (_, _, pos) as stx] -> Const (stx, pos)
-      | _ -> raise (Invalid_syntax args))
+      | _ -> raise (Sf_args ("syntax", args, pos)))
   | Some name ->
-    raise (Unrecognized_sf name)
+    raise (Unrecognized_sf (name, pos))
   | None ->
-    raise (Not_a_sf (Symbol.to_string sf_name))
+    raise (Unrecognized_sf (Symbol.to_string sf_name, pos))

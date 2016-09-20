@@ -70,4 +70,5 @@ let () =
 
   let_ctrl "brf" (fun [|(Bool a)|] [|thn; els|] -> if a then thn else els);
 
-  let_stmt "err" (fun [|kind; msg|] -> raise (CtrError (kind, msg)))
+  let_stmt "err" (fun [|kind; Stx (msg, _, pos)|] ->
+                   raise (Ctr_error (kind, msg, pos)))

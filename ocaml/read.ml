@@ -24,7 +24,7 @@ module Parser = struct
       else if s.[index] = '\n'
            then {ssq with pos = {pos with index = index + 1;
                                           row = row + 1;
-                                          col = col + 1}}
+                                          col = 0}}
            else {ssq with pos = {pos with index = index + 1;
                                           col = col + 1}}
   end
@@ -120,7 +120,7 @@ let ws = many_one (many_one ws_char <|> comment)
 let digit = sat Char.is_digit
 let int =
   let int_of_char_list pos cs = cs
-    |> String.of_char_list 
+    |> String.of_char_list
     |> Int.of_string
     |> (fun i -> Stx (Int i, Phase.Map.empty, pos)) in
   get_pos >>= (fun pos ->
@@ -138,7 +138,7 @@ let isym_of_char_list pos cs =
   Stx (Symbol (Symbol.of_string ("##" ^ String.of_char_list cs)),
        Phase.Map.empty, pos)
 let symbol = get_pos >>= (fun pos -> map symstr (sym_of_char_list pos))
-let isymbol = get_pos >>= (fun pos -> 
+let isymbol = get_pos >>= (fun pos ->
   char '#' >> map isymstr (isym_of_char_list pos))
 
 let bool c b = get_pos >>= (fun pos ->
@@ -149,8 +149,8 @@ let sharptable = Hashtbl.create ~hashable: Char.hashable ()
 
 let expr =
   surr (maybe ws)
-       (tabular readtable 
-        <|> int 
+       (tabular readtable
+        <|> int
         <|> symbol)
 
 let list = get_pos >>= (fun pos ->
