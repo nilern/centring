@@ -13,7 +13,3 @@
          (##intr#stx
            (prepend (##sf#syntax ##sf#def) (rest (##intr#stx-expr expr)))
            expr))))))
-
-(def foo 3)
-
-foo

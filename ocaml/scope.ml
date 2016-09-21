@@ -1,9 +1,10 @@
 open Core.Std
 
 module T = struct
-	type t = Fn of Symbol.t
-	       | Use of Symbol.t
-	       | Intro of Symbol.t [@@deriving compare, sexp]
+  type t = Fn of Symbol.t
+         | Use of Symbol.t
+         | Intro of Symbol.t
+         | Root of int [@@deriving compare, sexp]
 end
 
 include T

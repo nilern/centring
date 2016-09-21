@@ -99,15 +99,17 @@ and expand_def phase env = function
   | Stx (List [defsym; Stx (Symbol nsym, _, _) as name; expr],
          ctx, pos) as stx ->
     let new_sym = Symbol.gensym nsym in
-    add_binding nsym (get_scopes phase stx) new_sym;
     (match expr with
      | Stx (List [Stx (Symbol op, _, _); _], _, _)
        when Symbol.sf_name op = Some "meta" ->
        let (stx', v) = expand_meta phase env expr in
        Env.def env new_sym v;
+       add_binding nsym (get_scopes phase stx) new_sym;
        stx'
      | _ ->
+       let name = prune_use_site_scopes phase name in
        Env.def env new_sym (Id name);
+       add_binding nsym (get_scopes phase name) new_sym;
        Stx (List [defsym; name; expand phase env expr], ctx, pos))
   | Stx (List (_::args), _, pos) ->
     raise (Sf_args ("def", args, pos))

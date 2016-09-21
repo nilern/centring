@@ -130,7 +130,9 @@ let rec ast_equal ast1 ast2 =
 (* Syntax Object Scope Operations *)
 
 let get_scopes phase (Stx (_, ctx, _)) =
-  Option.value (Map.find ctx phase) ~default:Scope.Set.empty
+  let phase_scope = Scope.Root phase in
+  let scopes = Option.value (Map.find ctx phase) ~default:Scope.Set.empty in
+  Set.add scopes phase_scope
 
 let rec scope_adder f phase scope stx =
   match stx with
@@ -154,6 +156,14 @@ let flip_scope =
       else Set.add scopes scope
     | None -> Scope.Set.singleton scope in
   scope_adder flip_scope
+
+let prune_use_site_scopes phase (Stx (v, ctx, pos)) =
+  let ctx = Map.change ctx phase ~f:(function
+              | Some scopes -> Some (Set.filter scopes (function
+                                       | Use _ -> false
+                                       | _ -> true))
+              | None -> None) in
+  Stx (v, ctx, pos)
 
 (* Traversals *)
 

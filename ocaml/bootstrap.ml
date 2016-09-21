@@ -31,11 +31,11 @@ let build_in (env_ct, env_rt) name v =
   let sym = Symbol.of_string name in
   let sym_ct = Symbol.gensym sym in
   let sym_rt = Symbol.gensym sym in
-  Id_store.add_binding sym Scope.Set.empty sym_ct;
+  Id_store.add_binding sym (Scope.Set.singleton (Scope.Root 1)) sym_ct;
   Env.def env_ct sym_ct v;
   Env.def env_ct sym_rt (Id (Stx (Symbol sym, Phase.Map.empty,
                                   {filename = ""; index = 0; row = 1; col = 0})));
-  Id_store.add_binding sym Scope.Set.empty sym_rt;
+  Id_store.add_binding sym (Scope.Set.singleton (Scope.Root 0)) sym_rt;
   Env.def env_rt sym_rt v
 
 (* TODO: Compile-time env needs these also wrapped in Id *)

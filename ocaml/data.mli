@@ -67,6 +67,8 @@ val add_scope : Phase.t -> Scope.t -> value -> value
 
 val flip_scope : Phase.t -> Scope.t -> value -> value
 
+val prune_use_site_scopes : Phase.t -> value -> value
+
 (* Traversals *)
 
 val atom_map : (ast -> ast) -> atom -> atom
