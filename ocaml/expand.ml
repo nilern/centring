@@ -25,7 +25,7 @@ let rec expand phase env stx =
     then expand_sf phase env op stx
     else let scopes = (get_scopes phase stx) in
          (match resolve op scopes >>= (Env.lookup env) with
-          | Some (FnClosure (macname, _, _) as mac) ->
+          | Some (FnClosure (macname, _, _, _) as mac) ->
             let scope_u = Scope.fresh (Scope.Use macname) in
             let scope_i = Scope.fresh (Scope.Intro macname) in
             let stx =

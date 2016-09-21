@@ -86,22 +86,22 @@ let pick_closure exprs methods = Sequence.hd exprs
 
 (* TODO: deal with overrides ("min<=_method") *)
 (* TODO: error messages *)
-let compute_target methods =
+let compute_target name pos methods =
   match Sequence.bounded_length methods 1 with
   | `Is 0 ->
-    Primop (err, [|Const (Symbol (Symbol.of_string "NoMethodError"), nopos);
-                   Const (Stx (Bool false, Phase.Map.empty, nopos), nopos)|],
-                   [||], nopos)
+    Primop (err, [|Const (Symbol (Symbol.of_string "NoMethodError"), pos);
+                   Const (Stx (Symbol name, Phase.Map.empty, pos), pos)|],
+                   [||], pos)
   | `Is 1 ->
     let (_, body, env) = Sequence.hd_exn methods in
     Closure (env, body, ast_pos body)
   | `Greater ->
-    Primop (err, [|Const (Symbol (Symbol.of_string "AmbiguousMethodError"), nopos);
-                   Const (Stx (Bool false, Phase.Map.empty, nopos), nopos)|],
-                   [||], nopos)
+    Primop (err, [|Const (Symbol (Symbol.of_string "AmbiguousMethodError"), pos);
+                   Const (Stx (Symbol name, Phase.Map.empty, pos), pos)|],
+                   [||], pos)
 
 (* OPTIMIZE: memoization *)
-let build_dag methods =
+let build_dag fname fpos methods =
   let rec build_sub_dag methods exprs =
     match pick_closure exprs methods with
     | Some (expr, env) ->
@@ -110,16 +110,16 @@ let build_dag methods =
                    [|build_sub_dag_ass expr true methods exprs;
                      build_sub_dag_ass expr false methods exprs|],
                    pos)
-    | None -> compute_target methods
+    | None -> compute_target fname fpos methods
   and build_sub_dag_ass expr truthy methods exprs =
     let methods' = target_methods expr truthy methods in
     let exprs' = target_closures expr methods' exprs in
     build_sub_dag methods' exprs' in
   build_sub_dag methods (atom_closures methods)
 
-let fnbody_force = function
+let fnbody_force name pos = function
   | {contents = Done (body, _)} -> body
   | {contents = Pending methods} as r ->
-    let body = build_dag methods in
+    let body = build_dag name pos methods in
     r := Done (body, methods);
     body

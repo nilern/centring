@@ -28,7 +28,7 @@ and value = Int of int
           | List of value list
           | Stx of value * ctx * src_info
           | Id of value
-          | FnClosure of Symbol.t * Symbol.t * fnbody ref
+          | FnClosure of Symbol.t * Symbol.t * fnbody ref * src_info
           | Record of value * value array
           | Bytes of value * bytes
 

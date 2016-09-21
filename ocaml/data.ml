@@ -28,7 +28,7 @@ and value = Int of int
           | List of value list
           | Stx of value * ctx * src_info
           | Id of value
-          | FnClosure of Symbol.t * Symbol.t * fnbody ref
+          | FnClosure of Symbol.t * Symbol.t * fnbody ref * src_info
           | Record of value * value array
           | Bytes of value * bytes
 
@@ -83,7 +83,7 @@ let rec value_equal v1 v2 =
     && pos1 == pos2
   | (Id v1, Id v2) ->
     value_equal v1 v2
-  | (FnClosure (name1, formal1, body1), FnClosure (name2, formal2, body2)) ->
+  | (FnClosure _, FnClosure _) ->
     v1 == v2
   | (Record (t1, vs1), Record (t2, vs2)) ->
     t1 == t2
@@ -204,7 +204,7 @@ and sexp_of_value = function
   | List es -> Sexp.List (List.map es sexp_of_value)
   | Stx (e, _, _) -> Sexp.List [Sexp.Atom "Stx"; sexp_of_value e]
   | Id v -> Sexp.List [Sexp.Atom "Id"; sexp_of_value v]
-  | FnClosure (name, _ , _) ->
+  | FnClosure (name, _ , _, _) ->
     Sexp.Atom (sprintf "#<Fn %s>" (Symbol.to_string name))
   | Record (_, _) -> Sexp.Atom "#<record>"
   | Bytes (_, _) -> Sexp.Atom "#<bytes>"

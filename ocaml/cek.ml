@@ -20,14 +20,14 @@ let interpret phase env ast =
       (* TODO: move this optimization to analysis phase *)
       let payload = Done (Closure (env, body, pos),
                           Sequence.singleton (clause, body, env)) in
-      continue (FnClosure (name, formal, ref payload)) k
-    | Data.Fn (name, formal, methods, _) ->
+      continue (FnClosure (name, formal, ref payload, pos)) k
+    | Data.Fn (name, formal, methods, pos) ->
       let open Sequence in
       let split_close (clauses, body) =
         Util.seq_of_array_map (fun clause -> (clause, body, env)) clauses in
       let payload =
         Pending ((Util.seq_of_array methods) >>= split_close) in
-      continue (FnClosure (name, formal, ref payload)) k
+      continue (FnClosure (name, formal, ref payload, pos)) k
     | Data.App (f, args, pos) ->
       eval f env (Fn (args, env, k, pos))
     | Data.Def (name, expr, pos) ->
@@ -75,11 +75,11 @@ let interpret phase env ast =
 
   and apply f arg k pos =
     match f with
-    | FnClosure (fname, formal, payload) ->
+    | FnClosure (fname, formal, payload, pos) ->
       let env = Env.empty () in
       Env.def env fname f;
       Env.def env formal arg;
-      eval (Dispatch.fnbody_force payload) env k
+      eval (Dispatch.fnbody_force fname pos payload) env k
     | _ ->
       raise (Uncallable (f, pos))
 

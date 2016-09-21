@@ -14,8 +14,8 @@ let get name = Hashtbl.find primops name
 (* Ops *)
 
 let fn_merge = function
-  | [|FnClosure (name, formal1, {contents = Done (_, meths1) | Pending meths1});
-      FnClosure (_, formal2, {contents = Done (_, meths2) | Pending meths2})|] ->
+  | [|FnClosure (name, formal1, {contents = Done (_, meths1) | Pending meths1}, fpos);
+      FnClosure (_, formal2, {contents = Done (_, meths2) | Pending meths2}, _)|] ->
     let replace_formal = function
       | Var (name, pos) when name = formal2 -> Var (formal1, pos)
       | node -> node in
@@ -27,7 +27,7 @@ let fn_merge = function
         (Array.map replace_atom clause, postwalk replace_formal body, env) in
     let meths2' = Sequence.map meths2 replace_meth_formal in
     FnClosure (Symbol.gensym name, formal1,
-               ref (Pending (Sequence.append meths1 meths2')))
+               ref (Pending (Sequence.append meths1 meths2')), fpos)
 
 let () =
   let_expr "fn-merge" fn_merge;
