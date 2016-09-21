@@ -23,6 +23,9 @@ let fn_t = builtin_t "Fn"
 let tuple_t = Record (type_t, [|Bool true;
                                 Symbol (Symbol.of_string "Tuple");
                                 Symbol (Symbol.of_string "vals")|])
+let macro_t = Record (type_t, [|Bool false;
+                                Symbol (Symbol.of_string "Macro");
+                                Symbol (Symbol.of_string "callable")|])
 
 let build_in (env_ct, env_rt) name v =
   let sym = Symbol.of_string name in
@@ -49,4 +52,5 @@ let envs () =
   build_in envs "Fn" fn_t;
 
   build_in envs "Tuple" tuple_t;
+  build_in envs "Macro" macro_t;
   envs

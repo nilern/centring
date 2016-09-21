@@ -11,5 +11,6 @@ val stx_t : value
 val fn_t : value
 
 val tuple_t : value
+val macro_t : value
 
 val envs : unit -> ((Symbol.t, value) Env.t * (Symbol.t, value) Env.t)

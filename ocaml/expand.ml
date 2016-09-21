@@ -25,13 +25,19 @@ let rec expand phase env stx =
     then expand_sf phase env op stx
     else let scopes = (get_scopes phase stx) in
          (match resolve op scopes >>= (Env.lookup env) with
-          | Some (FnClosure (macname, _, _, _) as mac) ->
-            let scope_u = Scope.fresh (Scope.Use macname) in
-            let scope_i = Scope.fresh (Scope.Intro macname) in
+          | Some (Record (t, [|mac|])) when t == Bootstrap.macro_t ->
+            let (scope_u, scope_i) = match mac with
+            | FnClosure (macname, _, _, _) ->
+              (Scope.fresh (Scope.Use macname),
+               Scope.fresh (Scope.Intro macname))
+            | _ ->
+             (Scope.fresh (Scope.Use (Symbol.of_string "macro")),
+              Scope.fresh (Scope.Intro (Symbol.of_string "macro"))) in
             let stx =
               stx |> add_scope phase scope_u |> add_scope phase scope_i in
             let mac_res =
-              Cek.interpret phase env (App (Const (mac, pos), Const (stx, pos), pos)) in
+              Cek.interpret phase env (App (Const (mac, pos),
+                                            Const (stx, pos), pos)) in
             expand phase env (flip_scope phase scope_i mac_res)
           | Some _ | None ->
             Stx (List (List.map stxen (expand phase env)), ctx, pos))
