@@ -31,7 +31,7 @@ let rec expand phase env stx =
             let stx =
               stx |> add_scope phase scope_u |> add_scope phase scope_i in
             let mac_res =
-              Cek.interpret env (App (Const (mac, pos), Const (stx, pos), pos)) in
+              Cek.interpret phase env (App (Const (mac, pos), Const (stx, pos), pos)) in
             expand phase env (flip_scope phase scope_i mac_res)
           | Some _ | None ->
             Stx (List (List.map stxen (expand phase env)), ctx, pos))
@@ -110,7 +110,7 @@ and expand_meta phase env = function
   | Stx (List [op; expr], ctx, pos) ->
     let phase' = phase + 1 in
     (Stx (List [Stx (Symbol (Symbol.of_string "##sf#do"), ctx, pos)], ctx, pos),
-     expr |> expand phase' env |> Analyze.analyze phase' |> Cek.interpret env)
+     expr |> expand phase' env |> Analyze.analyze phase' |> Cek.interpret phase' env)
 
 and expand_quote = function
   | Stx (List [_; quoted], _, _) as stx -> stx

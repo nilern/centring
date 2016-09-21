@@ -14,19 +14,20 @@ let action stx estx ana (env_ct, env_rt) estr =
     else if stx
     then cexp |> sexp_of_stx
     else cexp |> expand 0 env_ct |> analyze 0
-              |> interpret env_rt |> sexp_of_value)
+              |> interpret 0 env_rt |> sexp_of_value)
 
 (* FIXME: need to deal properly with phases and environments *)
 (* MAYBE: relative paths *)
 let make_load (env_ct, env_rt) =
-  Expr ("load", (function
+  PhExpr ("load", (fun phase -> function
     | [|Stx (Symbol filename, _, _)|] ->
       let estr = In_channel.read_all (Symbol.to_string filename) in
-      match Read.read_all estr with
-      | Ok cexp ->
-        cexp |> expand 0 env_ct |> analyze 0 |> interpret env_rt
-      | Error msg ->
-        assert false)) (* FIXME *)
+      (match Read.read_all estr with
+       | Ok cexp ->
+         cexp |> expand phase env_ct |> analyze phase
+         |> interpret phase (if phase = 0 then env_rt else env_ct)
+       | Error msg ->
+         assert false))) (* FIXME *)
 
 let command =
   Command.basic

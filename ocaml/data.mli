@@ -35,6 +35,7 @@ and value = Int of int
 and primop = Expr of string * (value array -> value)
            | Stmt of string * (value array -> unit)
            | Ctrl of string * (value array -> ast array -> ast)
+           | PhExpr of string * (Phase.t -> value array -> value)
 
 and fnbody = Done of ast * (clause * ast * env) Sequence.t
            | Pending of (clause * ast * env) Sequence.t

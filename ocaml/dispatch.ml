@@ -90,13 +90,15 @@ let compute_target methods =
   match Sequence.bounded_length methods 1 with
   | `Is 0 ->
     Primop (err, [|Const (Symbol (Symbol.of_string "NoMethodError"), nopos);
-                   Const (Bool false, nopos)|], [||], nopos)
+                   Const (Stx (Bool false, Phase.Map.empty, nopos), nopos)|],
+                   [||], nopos)
   | `Is 1 ->
     let (_, body, env) = Sequence.hd_exn methods in
     Closure (env, body, ast_pos body)
   | `Greater ->
     Primop (err, [|Const (Symbol (Symbol.of_string "AmbiguousMethodError"), nopos);
-                   Const (Bool false, nopos)|], [||], nopos)
+                   Const (Stx (Bool false, Phase.Map.empty, nopos), nopos)|],
+                   [||], nopos)
 
 (* OPTIMIZE: memoization *)
 let build_dag methods =

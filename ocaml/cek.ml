@@ -12,7 +12,7 @@ type cont = Fn of ast * env * cont * src_info
           | Do of ast array * int * env * cont * src_info
           | Halt
 
-let interpret env ast =
+let interpret phase env ast =
   let rec eval ctrl env k =
     match ctrl with
     | Data.Fn (name, formal,
@@ -87,5 +87,6 @@ let interpret env ast =
     match op with
     | Expr (_, f) -> continue (f vals) k
     | Stmt (_, f) -> f vals; continue (Record (Bootstrap.tuple_t, [||])) k
-    | Ctrl (_, f) -> eval (f vals conts) env k in
+    | Ctrl (_, f) -> eval (f vals conts) env k
+    | PhExpr (_, f) -> continue (f phase vals) k in
   eval ast env Halt
