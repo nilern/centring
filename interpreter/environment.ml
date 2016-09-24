@@ -13,3 +13,5 @@ let lookup env key = List.find_map env (fun frame -> Hashtbl.find frame key)
 let def env key value = Hashtbl.set (List.hd_exn env) key value
 
 let sexp_of_t _ _ _ = Sexp.Atom "<env>"
+
+let sexp_of_env f g env = List.sexp_of_t (Hashtbl.sexp_of_t f g) env

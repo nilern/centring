@@ -194,17 +194,17 @@ let rec postwalk f ast = walk (postwalk f) f ast
 
 (* Conversions *)
 
-let rec sexp_of_stx = function
-  | Stx (payload, ctx, _) ->
-    let sexp_of_payload = function
-      | List stxen -> Sexp.List (List.map stxen sexp_of_stx)
-      | v -> sexp_of_value v in
-    let sexp_of_ctx ctx =
-      Map.to_alist ctx
-      |> List.map ~f:(fun (k, v) ->
-                        Sexp.List [Phase.sexp_of_t k; Scope.Set.sexp_of_t v])
-      |> Sexp.List in
-    Sexp.List [Sexp.Atom "Stx"; sexp_of_payload payload; sexp_of_ctx ctx]
+let rec sexp_of_stx (Stx (payload, ctx, _) as stx) =
+  let sexp_of_payload = function
+    | List stxen -> Sexp.List (List.map stxen sexp_of_stx)
+    | v -> sexp_of_value v in
+  let sexp_of_ctx ctx =
+    Map.keys ctx
+    |> List.map ~f:(fun k ->
+                      Sexp.List [Phase.sexp_of_t k;
+                                 get_scopes k stx |> Scope.Set.sexp_of_t])
+    |> Sexp.List in
+  Sexp.List [Sexp.Atom "Stx"; sexp_of_payload payload; sexp_of_ctx ctx]
 
 and sexp_of_value = function
   | Int i -> Int.sexp_of_t i

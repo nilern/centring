@@ -20,6 +20,12 @@ let rec defnames stx =
 let rec expand phase env stx =
   let open Option in
   match stx with
+  | Stx (List [(Stx (Symbol op, _, _)); (Stx (Symbol fl, _, _))], _, _)
+    when Symbol.to_string op = "##intr#include" ->
+    (* TODO: relative paths *)
+    (match fl |> Symbol.to_string |> In_channel.read_all |> Read.read_all with
+    | Ok stx -> expand phase env stx
+    | Error msg -> assert false) (* FIXME *)
   | Stx (List (Stx (Symbol op, _, _)::args as stxen), ctx, pos) ->
     if is_some (Symbol.sf_name op)
     then expand_sf phase env op stx

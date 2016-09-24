@@ -1,4 +1,4 @@
-(##sf#meta (##intr#load (##sf#syntax bootstrap-rt.ctr)))
+(##sf#meta (##intr#include bootstrap-rt.ctr))
 
 (##sf#def def
   (##sf#meta
