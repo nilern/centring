@@ -1,0 +1,4 @@
+*.ml linguist-language=OCaml
+*.mli linguist-language=OCaml
+*.ctr linguist-language=Centring
+design/* linguist-documentation
