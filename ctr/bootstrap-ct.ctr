@@ -13,3 +13,76 @@
          (##intr#stx
            (prepend (##sf#syntax ##sf#def) (rest (##intr#stx-expr expr)))
            expr))))))
+
+; (defsyntax defsyntax
+;   (syntax-fn
+;     ((_ name xform) #t
+;      #`(def ,name (##sf#meta (##intr#rec Macro ,xform))))))
+(def defsyntax
+  (##sf#meta
+    (##intr#rec
+      Macro
+      (##sf#fn defsyntax expr
+        ((##intr#band (: (##intr#stx-expr expr) List.Pair)
+                      (##intr#ieq? (length (##intr#stx-expr expr)) 3))
+         (##sf#do
+           (def args (rest (##intr#stx-expr expr)))
+           (def name (##intr#car args))
+           (def xform (##intr#car (rest args)))
+           (##intr#stx
+             (list (##sf#syntax def) name
+               (##intr#stx
+                 (list (##sf#syntax ##sf#meta)
+                   (##intr#stx
+                     (list (##sf#syntax ##intr#rec) (##sf#syntax Macro) xform)
+                     expr))
+                 expr))
+             expr)))))))
+
+; (defsyntax do
+;   (syntax-fn
+;     ((_ (... stmts)) #t
+;      #`(##sf#do ,@stmts))))
+(defsyntax do
+  (##sf#fn do expr
+    ((##intr#band (: (##intr#stx-expr expr) List.Pair)
+                  (##intr#ige? (length (##intr#stx-expr expr)) 1))
+     (##intr#stx
+       (prepend (##sf#syntax ##sf#do) (rest (##intr#stx-expr expr)))
+       expr))))
+
+; (defsyntax syntax
+;   (syntax-fn
+;     ((_ v) #t
+;      #`(##sf#syntax ,v))))
+(defsyntax syntax
+  (##sf#fn syntax expr
+    ((##intr#band (: (##intr#stx-expr expr) List.Pair)
+                  (##intr#ieq? (length (##intr#stx-expr expr)) 2))
+     (do
+       (def v (##intr#car (rest (##intr#stx-expr expr))))
+       (##intr#stx (list (##sf#syntax ##sf#syntax) v) expr)))))
+
+; (defsyntax quote
+;   (syntax-fn
+;     ((_ v) #t
+;      #`(##sf#quote ,v))))
+(defsyntax quote
+  (##sf#fn quote expr
+    ((##intr#band (: (##intr#stx-expr expr) List.Pair)
+                  (##intr#ieq? (length (##intr#stx-expr expr)) 2))
+     (do
+       (def v (##intr#car (rest (##intr#stx-expr expr))))
+       (##intr#stx (list (syntax ##sf#quote) v) expr)))))
+
+; (defsyntax meta
+;   (syntax-fn
+;     ((_ v) #t
+;      #`(##sf#meta ,v))))
+(defsyntax meta
+  (##sf#fn meta expr
+    ((##intr#band (: (##intr#stx-expr expr) List.Pair)
+                  (##intr#ieq? (length (##intr#stx-expr expr)) 2))
+     (do
+       (def v (##intr#car (rest (##intr#stx-expr expr))))
+       (##intr#stx (list (syntax ##sf#meta) v) expr)))))

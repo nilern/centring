@@ -26,11 +26,10 @@ let rec expand phase env stx =
     (match fl |> Symbol.to_string |> In_channel.read_all |> Read.read_all with
     | Ok stx -> expand phase env stx
     | Error msg -> assert false) (* FIXME *)
-  | Stx (List (Stx (Symbol op, _, _)::args as stxen), ctx, pos) ->
-    if is_some (Symbol.sf_name op)
-    then expand_sf phase env op stx
-    else let scopes = (get_scopes phase stx) in
-         (match resolve op scopes >>= (Env.lookup env) with
+  | Stx (List (Stx (Symbol opname, _, _) as op::args as stxen), ctx, pos) ->
+    if is_some (Symbol.sf_name opname)
+    then expand_sf phase env opname stx
+    else (match resolve opname (get_scopes phase op) >>= (Env.lookup env) with
           | Some (Record (t, [|mac|])) when t == Bootstrap.macro_t ->
             let (scope_u, scope_i) = match mac with
             | FnClosure (macname, _, _, _) ->
@@ -105,15 +104,18 @@ and expand_def phase env = function
   | Stx (List [defsym; Stx (Symbol nsym, _, _) as name; expr],
          ctx, pos) as stx ->
     let new_sym = Symbol.gensym nsym in
+    let name = prune_use_site_scopes phase name in
     (match expr with
      | Stx (List [Stx (Symbol op, _, _); _], _, _)
        when Symbol.sf_name op = Some "meta" ->
        let (stx', v) = expand_meta phase env expr in
+       let scopes = Set.filter (get_scopes phase name) ~f:(function
+                    | Scope.Root _ -> false (* HACK? *)
+                    | _ -> true) in
        Env.def env new_sym v;
-       add_binding nsym (get_scopes phase stx) new_sym;
+       add_binding nsym scopes new_sym;
        stx'
      | _ ->
-       let name = prune_use_site_scopes phase name in
        Env.def env new_sym (Id name);
        add_binding nsym (get_scopes phase name) new_sym;
        Stx (List [defsym; name; expand phase env expr], ctx, pos))

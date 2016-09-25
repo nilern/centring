@@ -60,6 +60,10 @@ let () =
   let_expr "idiv" (fun [|Int a; Int b|] -> Int (a / b));
 
   let_expr "ieq?" (fun [|Int a; Int b|] -> let open Int in Bool (a = b));
+  let_expr "ilt?" (fun [|Int a; Int b|] -> let open Int in Bool (a < b));
+  let_expr "igt?" (fun [|Int a; Int b|] -> let open Int in Bool (a > b));
+  let_expr "ile?" (fun [|Int a; Int b|] -> let open Int in Bool (a <= b));
+  let_expr "ige?" (fun [|Int a; Int b|] -> let open Int in Bool (a >= b));
 
   let_expr "bior" (fun [|Bool a; Bool b|] -> Bool (a || b));
   let_expr "band" (fun [|Bool a; Bool b|] -> Bool (a && b));

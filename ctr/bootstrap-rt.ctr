@@ -7,6 +7,14 @@
                   (##intr#ieq? (##intr#rlen args) 2))
      (##intr#eq? (##intr#type (##intr#rref args 0)) (##intr#rref args 1)))))
 
+; (defn apply
+;   (#(callee arg) #t
+;    (##sf#apply callee arg)))
+(##sf#def apply
+  (##sf#fn apply args
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2))
+     (##sf#apply (##intr#rref args 0) (##intr#rref args 1)))))
+
 ; (defn rest
 ;   (#(ls) (: ls List.Pair)
 ;    (##intr#cdr ls))
@@ -65,8 +73,63 @@
                   (: (##intr#rref args 1) Int))
      (##intr#iadd (##intr#rref args 0) (##intr#rref args 1)))))
 
+; (defn -
+;   (#(a b) (and (: a Int) (: b Int))
+;    (##intr#isub a b)))
+(##sf#def -
+(##sf#fn - args
+  ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                (: (##intr#rref args 0) Int)
+                (: (##intr#rref args 1) Int))
+   (##intr#isub (##intr#rref args 0) (##intr#rref args 1)))))
+
+; (defn dec (#(n) #t (- n 1)))
+(##sf#def dec
+(##sf#fn dec args
+  ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1))
+   (- (##intr#rref args 0) 1))))
+
 ; (defn inc (#(n) #t (+ n 1)))
 (##sf#def inc
   (##sf#fn inc args
     ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1))
      (+ (##intr#rref args 0) 1))))
+
+; (defn foldr
+;   (#(f v coll) (: coll Tuple)
+;    (defn loop
+;      (#(acc i) (< i 0)
+;       acc)
+;      (#(acc i) #t
+;       (loop (f (get coll i) acc) (dec i))))
+;    (loop v (dec (length coll)))))
+; TODO: use overload resolution when it becomes available
+(##sf#def foldr
+  (##sf#fn + args
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 3)
+                  (: (##intr#rref args 2) Tuple))
+     (##sf#do
+       (##sf#def f (##intr#rref args 0))
+       (##sf#def v (##intr#rref args 1))
+       (##sf#def coll (##intr#rref args 2))
+       (##sf#def loop
+         (##sf#fn loop args
+           ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                         (: (##intr#rref args 1) Int)
+                         (##intr#ilt? (##intr#rref args 1) 0))
+            (##intr#rref args 0))
+           ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                         (: (##intr#rref args 1) Int)
+                         (##intr#bnot (##intr#ilt? (##intr#rref args 1) 0)))
+            (##sf#do
+              (##sf#def i (##intr#rref args 1))
+              (loop (f (##intr#rref coll i) (##intr#rref args 0)) (dec i))))))
+       (loop v (dec (##intr#rlen coll)))))))
+
+; (defn list
+;   (args (: args Tuple)
+;    (foldr prepend '() args)))
+(##sf#def list
+  (##sf#fn list args
+    ((: args Tuple)
+     (foldr prepend (##sf#quote ()) args))))
