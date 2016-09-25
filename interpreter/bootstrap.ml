@@ -45,7 +45,7 @@ let envs () =
   build_in envs "Int" int_t;
   build_in envs "Bool" bool_t;
   build_in envs "Char" char_t;
-  build_in envs "Symbol" type_t;
+  build_in envs "Symbol" symbol_t;
   build_in envs "List.Empty" nil_t;
   build_in envs "List.Pair" pair_t;
   build_in envs "Syntax" stx_t;

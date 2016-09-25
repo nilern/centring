@@ -54,6 +54,9 @@ let () =
   let_expr "cdr" (fun [|List (_::v)|] -> List v);
   let_expr "cons" (fun [|x; List xs|] -> List (x::xs));
 
+  let_expr "sym-eq?" (fun [|Symbol a; Symbol b|] ->
+                        let open Symbol in Bool (a = b));
+
   let_expr "iadd" (fun [|Int a; Int b|] -> Int (a + b));
   let_expr "isub" (fun [|Int a; Int b|] -> Int (a - b));
   let_expr "imul" (fun [|Int a; Int b|] -> Int (a * b));
@@ -72,7 +75,9 @@ let () =
   let_expr "stx" (fun [|expr; Stx (_, ctx, pos)|] -> Stx (expr, ctx, pos));
   let_expr "stx-expr" (fun [|Stx (e, _, _)|] -> e);
 
-  let_ctrl "brf" (fun [|(Bool a)|] [|thn; els|] -> if a then thn else els);
+  let_ctrl "brf" (function
+                  | [|(Bool false)|] -> (fun [|_; els|] -> els)
+                  | [|_|] -> (fun [|thn; _|] -> thn));
 
   let_stmt "err" (fun [|kind; Stx (msg, _, pos)|] ->
                    raise (Ctr_error (kind, msg, pos)))

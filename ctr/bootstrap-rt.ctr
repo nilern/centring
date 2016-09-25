@@ -39,6 +39,29 @@
                                (: (##intr#rref args 1) List.Empty)))
      (##intr#cons (##intr#rref args 0) (##intr#rref args 1)))))
 
+; (defn concat
+;   (#(ls1 ls2) (and (: ls1 List.Pair) (: ls2 List.Pair))
+;    (prepend (##intr#car ls1) (concat (rest ls1) ls2)))
+;   (#(ls1 ls2) (and (: ls1 List.Empty) (: ls2 List.Pair))
+;    ls2)
+;   (#(ls1 ls2) (and (: ls1 List.Pair) (: ls2 List.Empty))
+;    ls1))
+(##sf#def concat
+  (##sf#fn concat args
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                  (: (##intr#rref args 0) List.Pair)
+                  (: (##intr#rref args 1) List.Pair))
+     (prepend (##intr#car (##intr#rref args 0))
+              (concat (rest (##intr#rref args 0)) (##intr#rref args 1))))
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                  (: (##intr#rref args 0) List.Empty)
+                  (: (##intr#rref args 1) List.Pair))
+     (##intr#rref args 1))
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+             (: (##intr#rref args 0) List.Pair)
+             (: (##intr#rref args 1) List.Empty))
+     (##intr#rref args 0))))
+
 ; (defn length
 ;   (#(ls) (or (: ls List.Pair) (: ls List.Empty))
 ;    (defn ls-len
@@ -95,6 +118,23 @@
     ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1))
      (+ (##intr#rref args 0) 1))))
 
+; (defn foldl
+;   (#(f v coll) (: coll List.Pair)
+;    (foldl f (f v (##sf#car coll)) (rest coll)))
+;   (#(f v coll) (: coll List.Empty)
+;    v))
+(##sf#def foldl
+  (##sf#fn foldl args
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 3)
+                  (: (##intr#rref args 2) List.Pair))
+     (foldl (##intr#rref args 0)
+            ((##intr#rref args 0) (##intr#rref args 1)
+             (##intr#car (##intr#rref args 2)))
+            (rest (##intr#rref args 2))))
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 3)
+                  (: (##intr#rref args 2) List.Empty))
+     (##intr#rref args 1))))
+
 ; (defn foldr
 ;   (#(f v coll) (: coll Tuple)
 ;    (defn loop
@@ -105,7 +145,7 @@
 ;    (loop v (dec (length coll)))))
 ; TODO: use overload resolution when it becomes available
 (##sf#def foldr
-  (##sf#fn + args
+  (##sf#fn foldr args
     ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 3)
                   (: (##intr#rref args 2) Tuple))
      (##sf#do
@@ -124,7 +164,59 @@
             (##sf#do
               (##sf#def i (##intr#rref args 1))
               (loop (f (##intr#rref coll i) (##intr#rref args 0)) (dec i))))))
-       (loop v (dec (##intr#rlen coll)))))))
+       (loop v (dec (##intr#rlen coll)))))
+   ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 3)
+                 (: (##intr#rref args 2) List.Pair))
+    (##sf#do
+      (##sf#def f (##intr#rref args 0))
+      (##sf#def v (##intr#rref args 1))
+      (##sf#def coll (##intr#rref args 2))
+      (f (##intr#car coll) (foldr f v (rest coll)))))
+   ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 3)
+                 (: (##intr#rref args 2) List.Empty))
+    (##intr#rref args 1))))
+
+(##sf#def map
+  (##sf#fn map args
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                  (##intr#bior (: (##intr#rref args 1) List.Pair)
+                               (: (##intr#rref args 1) List.Empty)))
+     (##sf#do
+       (##sf#def f (##intr#rref args 0))
+       (foldr (##sf#fn combine args
+                ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2))
+                 (prepend (f (##intr#rref args 0)) (##intr#rref args 1))))
+              (##sf#quote ())
+              (##intr#rref args 1))))))
+
+(##sf#def every?
+  (##sf#fn every? args
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                  (: (##intr#rref args 1) List.Pair)
+                  ((##intr#rref args 0) (##intr#car (##intr#rref args 1))))
+     (every? (##intr#rref args 0) (rest (##intr#rref args 1))))
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                  (: (##intr#rref args 1) List.Pair)
+                  (##intr#bnot
+                    ((##intr#rref args 0) (##intr#car (##intr#rref args 1)))))
+     #f)
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                  (: (##intr#rref args 1) List.Empty))
+     #t)))
+
+(##sf#def reverse
+  (##sf#fn reverse args
+    ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 1)
+                  (##intr#bior (: (##intr#rref args 0) List.Pair)
+                               (: (##intr#rref args 0) List.Empty)))
+     (##sf#do
+       (##sf#def revcons
+         (##sf#fn revcons args
+           ((##intr#band (: args Tuple) (##intr#ieq? (##intr#rlen args) 2)
+                         (##intr#bior (: (##intr#rref args 0) List.Pair)
+                                      (: (##intr#rref args 0) List.Empty)))
+            (prepend (##intr#rref args 1) (##intr#rref args 0)))))
+       (foldl revcons (##sf#quote ()) (##intr#rref args 0))))))
 
 ; (defn list
 ;   (args (: args Tuple)
