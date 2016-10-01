@@ -38,45 +38,33 @@
 
 ## bootstrap0.ctr
 
-    (def max-method-indices
-      (fn max-method-indices
-        (#(>method method-count ais i) #t
-         (def loop
-           (fn loop
-            (#(ais i) #t
-             (if (< i method-count)
-               (if (empty? ais)
-                 (loop (prepend i ais) (inc i))
-                 (do
-                   (def ai (first ais))
-                   (loop
-                     (let/cc k
-                       (def cmp-all
-                         (fn cmp-all
-                           (#(ord ais*) #t
-                            (if (empty? ais*) ; no acc-methods left?
-                              ord             ; return result.
-                              (cmp-all
-                                (%switch ord
-                                 (if (>method (first ais*) i)
-                                   1                    ; m overridden by yet another!
-                                   (k (prepend i ais))) ; became inconclusive...
-                                 (if (>method (first ais*) am)
-                                   2                     ; m overrides yet another!
-                                   (k (prepend i ais)))) ; became inconclusive...
-                                (rest ais*))))))
-                         (%switch (cmp-all
-                                    (if (>method ai i)
-                                      (if (>method i ai)
-                                        (k (prepend i ais)) ; <=> override => inconclusive
-                                        1)                  ; am > m => am
-                                      (if (>method i ai)
-                                        2                     ; m > am => m
-                                        (k (prepend i ais)))) ; no override => inconclusive
-                                    (rest ais))
-                         (prepend i ais) ; inconclusive => add m to ams
-                         ais             ; m was overridden by every method in ams => discard m
-                         #{m}))          ; m overrode every method in ams => discard ams
-                     (inc i))))
-               ais)))))
-        (loop ais i)))
+### High Level
+
+    (defn max-method-indices
+      (#(method-cmp n) #t
+       (defn cmp-all
+         (#(mmis i) (empty? mmis) ; nothing to compare i against?
+          #{i})                   ; put i in the set.
+         (#(mmis i) #t
+          (defn step
+            (#(ord mmi) (= ord (method-cmp i mmi)) ; still the same result?
+             ord)                                  ; keep it.
+            (#(_ _) #t                             ; results disagree?
+             (Unknown)))                           ; inconclusive.
+          (match (foldl step (method-cmp i (first mmis)) (rest mmis))
+            ((Left) #t mmis)             ; ignore i, it can't win
+            ((Unknown) #t (conj mmis i)) ; put i in the set
+            ((Right) #t #{i}))))         ; i overrode the whole set, discard those
+       (foldl cmp-all #{} (range n))))
+
+#### Possible Optimizations
+
+* Use call-cc to break out of the inner loop as soon as the result becomes
+  inconclusive and also directly after computing `(method-cmp i (first mmis))`
+
+#### Required Lowerings
+
+* Use lists instead of sets
+* Use raw tail recursion instead of `foldl` and `range`
+* Represent Left-Unknown-Right as 0-1-2
+* `%switch` instead of `match`
