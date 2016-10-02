@@ -1,3 +1,5 @@
+(##intr#include bootstrap0.ctr)
+
 ; (defn :
 ;   (#(v T) #t
 ;    (##intr#eq? (##intr#type v) T)))

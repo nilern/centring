@@ -47,7 +47,7 @@
           #{i})                   ; put i in the set.
          (#(mmis i) #t
           (defn step
-            (#(ord mmi) (= ord (method-cmp i mmi)) ; still the same result?
+            (#(ord mmi) (= (method-cmp i mmi) ord) ; still the same result?
              ord)                                  ; keep it.
             (#(_ _) #t                             ; results disagree?
              (Unknown)))                           ; inconclusive.
@@ -56,15 +56,3 @@
             ((Unknown) #t (conj mmis i)) ; put i in the set
             ((Right) #t #{i}))))         ; i overrode the whole set, discard those
        (foldl cmp-all #{} (range n))))
-
-#### Possible Optimizations
-
-* Use call-cc to break out of the inner loop as soon as the result becomes
-  inconclusive and also directly after computing `(method-cmp i (first mmis))`
-
-#### Required Lowerings
-
-* Use lists instead of sets
-* Use raw tail recursion instead of `foldl` and `range`
-* Represent Left-Unknown-Right as 0-1-2
-* `%switch` instead of `match`

@@ -78,6 +78,7 @@ let () =
   let_ctrl "brf" (function
                   | [|(Bool false)|] -> (fun [|_; els|] -> els)
                   | [|_|] -> (fun [|thn; _|] -> thn));
+  let_ctrl "switch" (fun [|(Int i)|] conts -> conts.(i));
 
   let_stmt "err" (fun [|kind; Stx (msg, _, pos)|] ->
                    raise (Ctr_error (kind, msg, pos)))

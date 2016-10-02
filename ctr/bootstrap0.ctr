@@ -1,0 +1,68 @@
+; (defn max-method-indices
+;   (#(method-cmp n) #t
+;    (let loop ((mmis '()) (i 0))
+;      (if (< i n)
+;        (loop
+;          (if (empty? mmis)
+;            (list i)
+;            (do
+;              (def init (method-cmp i (first mmis)))
+;              (%switch (if (= init 1)
+;                         1
+;                         (let cmp-all ((ord init) (mmis* (rest mmis)))
+;                           (cond
+;                            ((empty? mmis*) ord)
+;                            ((= (method-cmp i (first mmis*)) ord)
+;                             (cmp-all ord (rest mmis*)))
+;                            (#t
+;                             1))))
+;                mmis
+;                (prepend i mmis)
+;                (list i))))
+;          (inc i))
+;        mmis))))
+(##sf#def max-method-indices
+  (##sf#fn max-method-indices args
+    ((##intr#band (##intr#eq? (##intr#type args) Tuple)
+                  (##intr#ieq? (##intr#rlen args) 2))
+     (##sf#do
+       (##sf#def method-cmp (##intr#rref args 0))
+       (##sf#def n (##intr#rref args 1))
+       (##sf#def loop
+         (##sf#fn loop args
+           ((##intr#band (##intr#eq? (##intr#type args) Tuple)
+                         (##intr#ieq? (##intr#rlen args) 2))
+            (##intr#brf (##intr#ilt? (##intr#rref args 1) n)
+              (##sf#do
+                (##sf#def mmis (##intr#rref args 0))
+                (##sf#def i (##intr#rref args 1))
+                (loop
+                  (##intr#brf (##intr#eq? (##intr#type mmis) List.Empty)
+                    (##intr#cons i (##sf#quote ()))
+                    (##sf#do
+                      (##sf#def init (method-cmp i (##intr#car mmis)))
+                      (##intr#switch
+                        (##intr#brf (##intr#ieq? init 1)
+                          1
+                          (##sf#do
+                            (##sf#def cmp-all
+                              (##sf#fn cmp-all args
+                                (#t
+                                 (##intr#brf (##intr#eq?
+                                               (##intr#type (##intr#rref args 1))
+                                               List.Empty)
+                                   (##intr#rref args 0)
+                                   (##intr#brf
+                                     (##intr#ieq?
+                                      (method-cmp i (##intr#car (##intr#rref args 1)))
+                                      (##intr#rref args 0))
+                                     (cmp-all (##intr#rref args 0)
+                                              (##intr#cdr (##intr#rref args 1)))
+                                     1)))))
+                            (cmp-all init (##intr#cdr mmis))))
+                        mmis
+                        (##intr#cons i mmis)
+                        (##intr#cons i (##sf#quote ())))))
+                  (##intr#iadd i 1)))
+              (##intr#rref args 0)))))
+       (loop (##sf#quote ()) 0)))))
