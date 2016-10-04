@@ -84,7 +84,61 @@ let target_methods expr truthy methods =
 (* OPTIMIZE: implement heuristics *)
 let pick_closure exprs methods = Sequence.hd exprs
 
-(* TODO: deal with overrides ("min<=_method") *)
+(* TODO: actually resolve overloads *)
+let emit_override_expr pos meth1 meth2 = Const (Int 1, pos)
+
+let disambiguate name pos methods =
+  let methods_arr = Sequence.to_array methods in
+  let (_, _, env0) = methods_arr.(0) in
+  let method_cmp = (* ($fn method-cmp args
+                       ((%band (: args Tuple) (%ieq? (%rlen args) 2))
+                        (%switch (%rref args 0)
+                          (%switch (%rref args 1) ...)
+                          ...))) *)
+    let args_sym = "args" |> Symbol.of_string |> Symbol.gensym in
+    let args_var = Var (args_sym, pos) in
+    let override_switch i meth =
+      Ast.ctrl "switch" (Ast.expr "rref" [|args_var; Const (Int 1, pos)|] pos)
+        (Array.map ~f:(emit_override_expr pos meth) methods_arr)
+        pos in
+    Fn ("method-cmp" |> Symbol.of_string |> Symbol.gensym,
+        args_sym,
+        [|([|[|Base (Ast.isa args_var (Const (Bootstrap.tuple_t, pos)) pos);
+               Base (Ast.expr "ieq?" [|Ast.expr "rlen" [|args_var|] pos;
+                                       Const (Int 2, pos)|] pos)|]|],
+           Ast.ctrl "switch"
+             (Ast.expr "rref" [|args_var; Const (Int 0, pos)|] pos)
+             (Array.mapi ~f:override_switch methods_arr) pos)|],
+        pos) in
+  let mmis_sym = "mmis" |> Symbol.of_string |> Symbol.gensym in
+  let mmis_var = Var (mmis_sym, pos) in
+  let mmis = (* (max-method-indices ,method_cmp ,(length methods)) *)
+    App (Closure(env0, Var (Id_store.resolve_exn Bootstrap.mmis_sym
+                              (Scope.Set.singleton (Scope.Root 0)) pos, pos),
+                 pos),
+         Ast.expr "rec" [|Const (Bootstrap.tuple_t, pos);
+                          method_cmp;
+                          Const (Int (Sequence.length methods), pos)|] pos,
+         pos) in
+  let type_test = (* (%brf (: (%cdr ,mmis_sym) List.Empty)) *)
+    Ast.isa (Ast.expr "cdr" [|mmis_var|] pos)
+            (Const (Bootstrap.nil_t, pos)) pos in
+  let method_switch =
+    Ast.ctrl "switch" (Ast.expr "car" [|mmis_var|] pos)
+      (Array.map ~f:(fun (_, body, env) -> Closure (env, body, ast_pos body))
+                 methods_arr)
+      pos in
+  let amb_err = (* (%err 'AmbiguousMethodError ,name) *)
+    Ast.stmt "err"
+      [|Const (Symbol (Symbol.of_string "AmbiguousMethodError"), pos);
+        Const (Stx (Symbol name, Phase.Map.empty, pos), pos)|]
+      pos in
+  Do ([|(* ($def ,mmis_sym ,mmis) *)
+        Def (mmis_sym, mmis, pos);
+        (* (%brf ,type_test ,method_switch ,amb_err) *)
+        Ast.ctrl "brf" type_test [|method_switch; amb_err|] pos|],
+      pos)
+
 (* TODO: error messages *)
 let compute_target name pos methods =
   match Sequence.bounded_length methods 1 with
@@ -96,9 +150,7 @@ let compute_target name pos methods =
     let (_, body, env) = Sequence.hd_exn methods in
     Closure (env, body, ast_pos body)
   | `Greater ->
-    Primop (err, [|Const (Symbol (Symbol.of_string "AmbiguousMethodError"), pos);
-                   Const (Stx (Symbol name, Phase.Map.empty, pos), pos)|],
-                   [||], pos)
+    disambiguate name pos methods
 
 (* OPTIMIZE: memoization *)
 let build_dag fname fpos methods =

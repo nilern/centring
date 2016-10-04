@@ -38,9 +38,14 @@ let build_in (env_ct, env_rt) name v =
   Id_store.add_binding sym (Scope.Set.singleton (Scope.Root 0)) sym_rt;
   Env.def env_rt sym_rt v
 
-(* TODO: Compile-time env needs these also wrapped in Id *)
+let mmis_sym = Symbol.of_string "max-method-indices"
+let mmis_sym_rt = Symbol.gensym mmis_sym
+let mmis_stx = Stx (Symbol mmis_sym, Phase.Map.empty,
+                    {filename = ""; index = 0; row = 1; col = 0})
+let mmis_id = Id mmis_stx
+
 let envs () =
-  let envs = (Env.empty (), Env.empty ()) in
+  let (env_ct, _) as envs = (Env.empty (), Env.empty ()) in
   build_in envs "Type" type_t;
   build_in envs "Int" int_t;
   build_in envs "Bool" bool_t;
@@ -53,4 +58,8 @@ let envs () =
 
   build_in envs "Tuple" tuple_t;
   build_in envs "Macro" macro_t;
+
+  Env.def env_ct mmis_sym_rt mmis_id;
+  Id_store.add_binding mmis_sym (Scope.Set.singleton (Scope.Root 0)) mmis_sym_rt;
+
   envs

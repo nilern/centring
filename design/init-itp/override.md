@@ -14,7 +14,7 @@
     * What about the case when we can determine nothing? Is it `Const(False)`?
 2. Generate something like the following:
 
-        ($def mmis (max-method-indices
+        ($def mmis (($closure _ max-method-indices)
                     (fn
                       (#(i1 i2) #t
                        (%switch i1
