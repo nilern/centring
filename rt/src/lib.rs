@@ -1,11 +1,13 @@
-#![feature(alloc, heap_api)]
+#![feature(alloc, heap_api, libc)]
 
 extern crate alloc;
+extern crate libc;
 
 use std::slice;
 use std::mem::{size_of, align_of, transmute, swap};
-use alloc::heap;
 use std::ptr;
+use alloc::heap;
+use libc::size_t;
 
 // TODO: also consider blobs when polling and triggering collections
 
@@ -101,7 +103,7 @@ impl ValueRef {
     }
 }
 
-struct GCState {
+pub struct GCState {
     fromspace: Vec<usize>,
     tospace: Vec<usize>,
     blobspace: *mut usize
@@ -193,51 +195,46 @@ impl GCState {
             }
         }
     }
-
-    fn print_heaps(&self) {
-        unsafe {
-            println!("# Blobspace");
-            let mut blob = self.blobspace;
-            while !blob.is_null() {
-                let val = ValueRef(blob.offset(1));
-                let size = val.field_count();
-                let typ = val.typeref();
-                let data = slice::from_raw_parts(blob.offset(3) as *const u8, size);
-
-                print!("  {:p} -> blob<{}, {:p}>[",
-                       val.as_ptr(), size, typ.as_ptr());
-                for n in data {
-                    print!(" {}", n);
-                }
-                println!("]");
-
-                blob = *blob as *mut usize;
-            }
-
-            println!("# Fromspace");
-            let mut rec = self.fromspace.as_ptr();
-            let end = rec.offset(self.fromspace.len() as isize);
-            while rec < end {
-                let val = ValueRef(rec as *mut usize);
-                let size = val.field_count();
-                let typ = val.typeref();
-                let data = slice::from_raw_parts(rec.offset(2), size);
-
-                print!("  {:p} -> rec<{}, {:p}>[", rec, size, typ.as_ptr());
-                for v in data {
-                    print!(" {:p}", v as *const usize);
-                }
-                println!("]");
-
-                rec = rec.offset(2 + size as isize);
-            }
-        }
-    }
 }
 
 /// # API
 
 // TODO
+
+#[no_mangle]
+pub extern fn ctr_gc_new(heapsize: usize) -> *mut GCState {
+    Box::into_raw(Box::new(GCState::new(heapsize)))
+}
+
+#[no_mangle]
+pub extern fn ctr_gc_free(gc: *mut GCState) {
+    unsafe { Box::from_raw(gc); }
+}
+
+#[no_mangle]
+pub extern fn ctr_poll_rec(gc: *mut GCState, word_count: size_t) -> bool {
+    unsafe { (&mut *gc).rec_poll(word_count) }
+}
+
+#[no_mangle]
+pub extern fn ctr_alloc_rec(gc: *mut GCState, field_count: size_t) -> *mut usize {
+    unsafe { (&mut *gc).alloc_rec(field_count).0 }
+}
+
+#[no_mangle]
+pub extern fn ctr_alloc_blob(gc: *mut GCState, byte_count: size_t) -> *mut usize {
+    unsafe { (&mut *gc).alloc_blob(byte_count).0 }
+}
+
+#[no_mangle]
+pub extern fn ctr_mark(val: *mut usize, gc: *mut GCState) -> *mut usize {
+    unsafe { ValueRef(val).mark(&mut *gc).0 }
+}
+
+#[no_mangle]
+pub extern fn ctr_collect(gc: *mut GCState) {
+    unsafe { (&mut *gc).collect(); }
+}
 
 /// # Tests
 
@@ -245,6 +242,41 @@ impl GCState {
 mod tests {
     use super::{GCState, ValueRef};
     use std::mem::{size_of, transmute};
+    use std::slice;
+
+    #[test]
+    fn it_works() {
+        let mut gc = GCState::new(1024);
+
+        let (tup, a) = alloc(&mut gc);
+
+        print_heaps(&gc);
+
+        println!("\ncollecting...\n");
+        tup.mark(&mut gc);
+        gc.collect();
+
+        print_heaps(&gc);
+
+        println!("\ncollecting...\n");
+        a.mark(&mut gc);
+        gc.collect();
+
+        print_heaps(&gc);
+    }
+
+    #[test]
+    fn stress() {
+        let mut gc = GCState::new(1024);
+        let (_, mut a) = alloc(&mut gc);
+        for _ in 0..1000_000 {
+            if gc.rec_poll(10) {
+                a.mark(&mut gc);
+                gc.collect();
+            }
+            a = alloc(&mut gc).1;
+        }
+    }
 
     fn alloc(gc: &mut GCState) -> (ValueRef, ValueRef) {
         let a = gc.alloc_blob(size_of::<usize>());
@@ -271,37 +303,43 @@ mod tests {
         return (tup, a);
     }
 
-    #[test]
-    fn it_works() {
-        let mut gc = GCState::new(1024);
+    fn print_heaps(gc: &GCState) {
+        unsafe {
+            println!("# Blobspace");
+            let mut blob = gc.blobspace;
+            while !blob.is_null() {
+                let val = ValueRef(blob.offset(1));
+                let size = val.field_count();
+                let typ = val.typeref();
+                let data = slice::from_raw_parts(blob.offset(3) as *const u8, size);
 
-        let (tup, a) = alloc(&mut gc);
+                print!("  {:p} -> blob<{}, {:p}>[",
+                       val.as_ptr(), size, typ.as_ptr());
+                for n in data {
+                    print!(" {}", n);
+                }
+                println!("]");
 
-        gc.print_heaps();
-
-        println!("\ncollecting...\n");
-        tup.mark(&mut gc);
-        gc.collect();
-
-        gc.print_heaps();
-
-        println!("\ncollecting...\n");
-        a.mark(&mut gc);
-        gc.collect();
-
-        gc.print_heaps();
-    }
-
-    #[test]
-    fn stress() {
-        let mut gc = GCState::new(1024);
-        let (_, mut a) = alloc(&mut gc);
-        for _ in 0..1000_000 {
-            if gc.rec_poll(10) {
-                a.mark(&mut gc);
-                gc.collect();
+                blob = *blob as *mut usize;
             }
-            a = alloc(&mut gc).1;
+
+            println!("# Fromspace");
+            let mut rec = gc.fromspace.as_ptr();
+            let end = rec.offset(gc.fromspace.len() as isize);
+            while rec < end {
+                let val = ValueRef(rec as *mut usize);
+                let size = val.field_count();
+                let typ = val.typeref();
+                let data = slice::from_raw_parts(rec.offset(2), size);
+
+                print!("  {:p} -> rec<{}, {:p}>[", rec, size, typ.as_ptr());
+                for v in data {
+                    print!(" {:p}", v as *const usize);
+                }
+                println!("]");
+
+                rec = rec.offset(2 + size as isize);
+            }
         }
     }
 }
