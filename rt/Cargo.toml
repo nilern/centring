@@ -1,0 +1,6 @@
+[package]
+name = "ctr-rt"
+version = "0.1.0"
+authors = ["Pauli Jaakkola <pauli.jaakkola@iki.fi>"]
+
+[dependencies]
