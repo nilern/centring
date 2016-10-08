@@ -202,7 +202,7 @@ impl GCState {
 // TODO
 
 #[no_mangle]
-pub extern fn ctr_gc_new(heapsize: usize) -> *mut GCState {
+pub extern fn ctr_gc_new(heapsize: size_t) -> *mut GCState {
     Box::into_raw(Box::new(GCState::new(heapsize)))
 }
 
@@ -217,17 +217,17 @@ pub extern fn ctr_poll_rec(gc: *mut GCState, word_count: size_t) -> bool {
 }
 
 #[no_mangle]
-pub extern fn ctr_alloc_rec(gc: *mut GCState, field_count: size_t) -> *mut usize {
+pub extern fn ctr_alloc_rec(gc: *mut GCState, field_count: size_t) -> *mut size_t {
     unsafe { (&mut *gc).alloc_rec(field_count).0 }
 }
 
 #[no_mangle]
-pub extern fn ctr_alloc_blob(gc: *mut GCState, byte_count: size_t) -> *mut usize {
+pub extern fn ctr_alloc_blob(gc: *mut GCState, byte_count: size_t) -> *mut size_t {
     unsafe { (&mut *gc).alloc_blob(byte_count).0 }
 }
 
 #[no_mangle]
-pub extern fn ctr_mark(val: *mut usize, gc: *mut GCState) -> *mut usize {
+pub extern fn ctr_mark(val: *mut size_t, gc: *mut GCState) -> *mut size_t {
     unsafe { ValueRef(val).mark(&mut *gc).0 }
 }
 
@@ -237,6 +237,8 @@ pub extern fn ctr_collect(gc: *mut GCState) {
 }
 
 /// # Tests
+
+// TODO: use extern:ed API here
 
 #[cfg(test)]
 mod tests {
