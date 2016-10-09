@@ -1,11 +1,13 @@
 open Core.Std
-open Result
+open Core_extended.Std
+open Readline
 open Data
 open Expand
 open Analyze
 open Cek
 
 let action stx estx ana (env_ct, env_rt) estr =
+  let open Result in
   Read.read_all estr >>| (fun cexp ->
     if ana
     then cexp |> expand 0 env_ct |> analyze 0 |> sexp_of_ast
@@ -15,6 +17,29 @@ let action stx estx ana (env_ct, env_rt) estr =
     then cexp |> sexp_of_stx
     else cexp |> expand 0 env_ct |> analyze 0
               |> interpret 0 env_rt |> sexp_of_value)
+
+let act action estr =
+  let act_and_print estr =
+    try (match action estr with
+         | Ok sexp ->
+           Sexp.pp_hum Format.std_formatter sexp;
+           Format.print_newline ()
+         | Error err ->
+           Out_channel.output_string stderr err) with
+    | e ->
+      Printf.eprintf "Error: %s\n" (Exn.to_string e);
+      Out_channel.flush stderr in
+  match estr with
+  | Some estr ->
+    act_and_print estr
+  | None ->
+    let rec loop () =
+      (match Readline.input_line ~prompt: "ctr> " () with
+       | Some estr ->
+         act_and_print estr;
+         loop ()
+       | None -> ()) in
+    loop ()
 
 (* FIXME: need to deal properly with phases and environments *)
 (* MAYBE: relative paths *)
@@ -42,15 +67,10 @@ let command =
     )
     (fun expr_str stx estx ana filename () ->
       let estr = match expr_str with
-                | Some estr -> Ok estr
-                | None ->
-                  of_option filename "No FILENAME or expr specified"
-                  >>| In_channel.read_all in
+                 | Some estr -> Some estr
+                 | None -> Option.map ~f:In_channel.read_all filename in
       let envs = Bootstrap.envs () in
-      let action = action stx estx ana envs in
       Hashtbl.set Primops.primops ~key:"load" ~data:(make_load envs);
-      match estr >>= action with
-      | Ok sexp -> Sexp.pp_hum Format.std_formatter sexp
-      | Error msg -> Out_channel.output_string stdout msg)
+      act (action stx estx ana envs) estr)
 
 let () = Command.run command
