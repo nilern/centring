@@ -84,8 +84,25 @@ let target_methods expr truthy methods =
 (* OPTIMIZE: implement heuristics *)
 let pick_closure exprs methods = Sequence.hd exprs
 
-(* TODO: actually resolve overloads *)
-let emit_override_expr pos meth1 meth2 = Const (Int 1, pos)
+let emit_override_expr pos meth1 meth2 =
+  let tautology cond =
+    Array.for_all cond ~f:(function
+      | Base Const (Bool false, _) -> false
+      | Base Const (v, _) -> true
+      | Not Const (Bool false, _) -> true
+      | Not Const (c, _) -> false
+      | _ -> false) in
+  match (meth1, meth2) with
+  | ((_, body1, env1), (_, body2, env2))
+    when body1 == body2 && env1 == env2 -> (* methods execute identically? *)
+    Const (Int 0, pos)
+  | ((c1, _, _), (c2, _, _)) ->
+    (* If the condition of one is a tautology, pick the other one: *)
+    (match (tautology c1, tautology c2) with
+     | (false, false) -> Const (Int 1, pos)
+     | (false, true) -> Const (Int 0, pos)
+     | (true, false) -> Const (Int 2, pos)
+     | (true, true) -> Const (Int 1, pos))
 
 let disambiguate name pos methods =
   let methods_arr = Sequence.to_array methods in
