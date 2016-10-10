@@ -25,59 +25,79 @@
 
 # Types
 
+There are two kinds of types: **bits types** and **aggregate types**.
+
+## Bits Types
+
+Bits types have no internal structure; they are just bags of bits.
+
+    (defbits name: <symbol> size: <nat>)
+
+Each bits type has a size (in bits) and all instances of the type use that many
+contiguous bits to store their data. Implementations are not required to support
+sizes that are not multiples of 8 (one byte).
+
 ## Record Types
 
-<!-- TODO: field inheritance, parametric types -->
+<!-- TODO: parametrics -->
 
-### Definitions
+Record types contain values of other types which may be atomic or aggregate.
 
-    (defrecord (tspec : <type-spec>
-                rspecs : <require-spec>*
-                field-specs : <field-spec>*
-                rest-field-spec : (... <field-spec>)?)
-      body : <expr>*)
+    (defrecord name: <symbol>
+       fspecs: <field-spec>*
+       rfspec: <access-spec*>?)
 
-    <type-spec> : tname : <symbol>
-                | (tname : <symbol>
-                   pspecs : <symbol>*
-                   rest-pspec : (... <symbol>)?)
+    <access-spec> : fname : <symbol>
+                  | (mut fname : <symbol>)
 
-    <require-spec> : (use <symbol>)
-                   | (only <require-spec> <symbol>*)
-                   | (except <require-spec> <symbol>*)
-                   | (prefix <require-spec>)
-                   | (rename <require-spec> (<symbol> <symbol>)*)
-                   | (-> <require-spec> <require-spec'>*)
+    <field-spec> : <access-spec>
+                 | (: <access-spec> <expr>)
+                 | (include <expr>)
 
-    <field-spec> : fname : <symbol>
-                 | (mut fname : <symbol>)
+    <field-spec*> : <access-spec*>
+                  | (: <access-spec*> <expr>)
+                  | (include <expr>)
 
-`tname` will be bound to a type object. See the section on type objects.
+    <access-spec*> : <access-spec>
+                   | (... <access-spec>)
 
-In the `body` `new` will be bound to a constructor function that takes
-$||field-specs||$ arguments if `rest-field-spec` is not specified and
-$\ge ||field-specs||$ arguments if it is specified and constructs an instance of
-the type `tname`.
+Record types consist of fields. Each field has
 
-A `field-spec` of the form `<symbol>` specifies an immutable field. `fname`
-will be bound to a getter function of the field in `body`.
+* A name : Symbol
+* A mutability : Bool (defaults to false = immutable)
+* A type : Type (defaults to Any)
 
-A `field-spec` of the form `(mut <symbol>)` specifies a mutable field. `fname`
-will be bound to a getter function of the field in `body`. That getter also has
-a setter so that `(set! (,fname obj) val)` maybe used in `body`.
+The final field of in a record type may be an **indexed field**. If the type has
+an indexed field, it is **dynamically sized**. Otherwise it is **statically
+sized**.
 
-The `pspec`:s will be bound to a function that get the corresponding parameter
-from a `tname` type.
+Records support multiple inheritance of data. The fields of other record types
+can be included in the record definition and even interspersed with fresh field
+definitions. A dynamically sized type can only be `include`:d at the very end so
+that its indexed field will be the last field in the new type.
 
-The implementation is not required to let these values escape the `defrecord`
-form.
+Note that field inheritance creates no subtype relationship and functions
+dispatching by type will be oblivious to this inheritance. The fields are simply
+copied so there is also no diamond inheritance problem.
 
-Apart from these variables being bound in `body`, it is treated as if it was on
-the same level as the `defrecord`.
+## Memory Representation
 
-### Type Objects
+A type is said to be **flat** when its values contains no value references^[that
+is, runtime-managed pointers]. A flat type should be stored as a contiguous byte
+blob in a C-compatible way. Non-flat types have no such requirements on their
+memory representation and a simple array of value references is sufficient.
 
-## Byte Types
+* All bits types are flat^[even ones that contain raw pointers obtained from
+  e.g. C libraries].
+* A record type is flat if all the types of its fields are flat and
+  fully immutable.
+    * A type is **fully immutable** if
+        * It is a bits type or
+        * It is a record type that has only immutable fields
+
+Note that a flat record type can include mutable fields -- those fields just
+can't store mutable values. C/C++/Rust structs that contain other structs can be
+modelled by using field inheritance.
 
 # Modules
 
