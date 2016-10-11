@@ -90,7 +90,9 @@ memory representation and a simple array of value references is sufficient.
 * All bits types are flat^[even ones that contain raw pointers obtained from
   e.g. C libraries].
 * A record type is flat if all the types of its fields are flat and
-  fully immutable.
+  fully immutable. If the type has a field that has a dynamically sized type it
+  will not be flat unless that field is the last field in the record and it is
+  not an indexed field.
     * A type is **fully immutable** if
         * It is a bits type or
         * It is a record type that has only immutable fields
