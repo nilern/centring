@@ -33,9 +33,14 @@ Bits types have no internal structure; they are just bags of bits.
 
     (defbits name: <symbol> size: <nat>)
 
-Each bits type has a size (in bits) and all instances of the type use that many
-contiguous bits to store their data. Implementations are not required to support
-sizes that are not multiples of 8 (one byte).
+Each bits type has
+
+* A type
+* A name : Symbol
+* A size : UInt (in bits). All instances of the type use that many contiguous
+  bits to store their data. Implementations are not required to support sizes
+  that are not multiples of 8 (one byte).
+* An alignment : UInt
 
 ## Record Types
 
@@ -45,27 +50,63 @@ Record types contain values of other types which may be atomic or aggregate.
 
     (defrecord name: <symbol>
        fspecs: <field-spec>*
-       rfspec: <access-spec*>?)
+       rfspec: <idx-spec>?)
 
-    <access-spec> : fname : <symbol>
-                  | (mut fname : <symbol>)
+    <idx-spec> : <field-spec>
+               | (... <field-spec*>)
 
     <field-spec> : <access-spec>
                  | (: <access-spec> <expr>)
                  | (include <expr>)
 
-    <field-spec*> : <access-spec*>
-                  | (: <access-spec*> <expr>)
-                  | (include <expr>)
+    <field-spec*> : <access-spec>
+                  | (: <access-spec> <expr>)
 
-    <access-spec*> : <access-spec>
-                   | (... <access-spec>)
+    <access-spec> : fname : <symbol>
+                  | (mut fname : <symbol>)
+
+Record types can be defined like the following (but implementations can actually
+store this information any way they like):
+
+    (defrecord RecordType
+      (: name Symbol)
+      (: fixed? Bool)
+      (... (: fields FieldDescr)))
+
+    (defrecord RecordType.Flat
+      (: size UInt)
+      (: align UInt)
+      (include RecordType))
+
+    (defrecord FieldDescr
+      (: name Symbol)
+      (: mutable? Bool)
+      (: type (Option Type)))
+
+    (defrecord FieldDescr.Flat
+      (include FieldDescr)
+      (: offset UInt))
+
+Each record type has
+
+* A type (like any first-class value. not a normal field)
+* A name
+* A size staticality (`fixed?`)
+
+If the record type is flat, it will also have
+
+* A (minimum) size (in bytes)
+* An alignment (in bytes)
 
 Record types consist of fields. Each field has
 
-* A name : Symbol
-* A mutability : Bool (defaults to false = immutable)
-* A type : Type (defaults to Any)
+* A name
+* A mutability (defaults to false = immutable)
+* A type (optional, fields may be untyped)
+
+Fields of flat record types also have
+
+* A byte offset : UInt (in bytes)
 
 The final field of in a record type may be an **indexed field**. If the type has
 an indexed field, it is **dynamically sized**. Otherwise it is **statically
@@ -92,7 +133,7 @@ memory representation and a simple array of value references is sufficient.
 * A record type is flat if all the types of its fields are flat and
   fully immutable. If the type has a field that has a dynamically sized type it
   will not be flat unless that field is the last field in the record and it is
-  not an indexed field.
+  not an indexed field. If the type has any untyped field it will not be flat.
     * A type is **fully immutable** if
         * It is a bits type or
         * It is a record type that has only immutable fields
