@@ -4,3 +4,4 @@ _build
 *.native
 *.byte
 rt/target
+interpreter/target
