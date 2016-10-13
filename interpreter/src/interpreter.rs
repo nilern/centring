@@ -22,7 +22,7 @@ impl Interpreter {
         unsafe { self.stack.pop().map(|vref| vref.unbox()) }
     }
 
-    fn iadd<T: Copy + CheckedAdd>(&mut self) {
+    fn add<T: Copy + CheckedAdd>(&mut self) {
         let a: T = self.pop().unwrap();
         let b: T = self.pop().unwrap();
         let c: T = a.checked_add(b).unwrap();
@@ -37,11 +37,11 @@ mod tests {
     use super::Interpreter;
 
     #[test]
-    fn iadd() {
+    fn i64add() {
         let mut itp = Interpreter::new();
         itp.push::<i64>(2);
         itp.push::<i64>(3);
-        itp.iadd::<i64>();
+        itp.add::<i64>();
         assert_eq!(itp.pop::<i64>().unwrap(), 5);
     }
 }

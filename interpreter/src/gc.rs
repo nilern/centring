@@ -17,13 +17,18 @@ impl ValueRef {
     }
 
     #[inline(always)]
-    pub fn as_ptr(self) -> *const usize {
+    fn as_ptr(self) -> *const usize {
         self.0 as *const usize
     }
 
     #[inline(always)]
-    pub fn as_mut_ptr(self) -> *mut usize {
+    fn as_mut_ptr(self) -> *mut usize {
         self.0
+    }
+
+    #[inline(always)]
+    fn data(self) -> *mut usize {
+        unsafe { self.0.offset(2) }
     }
 
     #[inline(always)]
@@ -97,7 +102,7 @@ impl ValueRef {
     }
 
     pub unsafe fn unbox<T: Copy>(self) -> T {
-        *(self.as_ptr().offset(1) as *const T)
+        *(self.data() as *const T)
     }
 }
 
@@ -154,7 +159,7 @@ impl GCState {
 
     pub unsafe fn alloc<T: Clone>(&mut self, v: T) -> ValueRef {
         let vref = self.alloc_blob(size_of::<T>());
-        *(vref.as_mut_ptr().offset(1) as *mut T) = v;
+        *(vref.as_mut_ptr().offset(2) as *mut T) = v;
         vref
     }
 
@@ -234,7 +239,7 @@ mod tests {
     fn stress() {
         let mut gc = GCState::new(1024);
         let (_, mut a) = alloc(&mut gc);
-        for _ in 0..1000_000 {
+        for _ in 0..10_000 {
             if gc.rec_poll(10) {
                 a.mark(&mut gc);
                 gc.collect();
