@@ -13,6 +13,7 @@ pub enum ParseError {
 pub type ParseResult<T> = Result<T, ParseError>;
 
 impl ParseState {
+    /// Create a new `ParseState` for parsing `str`.
     pub fn new(str: String) -> ParseState {
         ParseState {
             str: str,
@@ -20,19 +21,25 @@ impl ParseState {
         }
     }
 
-    fn tell(&self) -> usize {
+    /// Return the position (byte index) the `ParseState` is at.
+    pub fn tell(&self) -> usize {
         self.pos
     }
 
-    fn seek(&mut self, i: usize) {
-        self.pos = i;
+    /// Set the position (byte index) of the `ParseState` to `pos`.
+    pub fn seek(&mut self, pos: usize) {
+        self.pos = pos;
     }
 
-    fn peek(&self) -> Option<char> {
+    /// Return the character that the `ParseState` is at. Returns `None` if
+    /// it is past the end of the parsee.
+    pub fn peek(&self) -> Option<char> {
         self.str[self.pos..].chars().next()
     }
 
-    fn char(&mut self) -> ParseResult<char> {
+    /// Return the character that the `ParseState` is at. Returns
+    /// `Err(ParseError::EOF)` if it is past the end of the parsee.
+    pub fn pop(&mut self) -> ParseResult<char> {
         if self.pos >= self.str.len() {
             Err(ParseError::EOF)
         } else {
@@ -46,7 +53,7 @@ impl ParseState {
 
 fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
     let oldpos = st.tell();
-    match st.char() {
+    match st.pop() {
         Ok(c) => {
             if f(c) {
                 Ok(c)

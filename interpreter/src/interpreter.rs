@@ -1,4 +1,4 @@
-use gc::{ValueRef, GCState};
+use gc::{ValueRef, Collector};
 use ops::CheckedAdd;
 
 use std::rc::{Rc, Weak};
@@ -10,7 +10,7 @@ pub type WeakValueHandle = Weak<Cell<ValueRef>>;
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
 pub struct Interpreter {
-    gc: GCState,
+    gc: Collector,
     stack_roots: Vec<WeakValueHandle>
 }
 
@@ -18,7 +18,7 @@ impl Interpreter {
     /// Make a new `Interpreter` to execute Centring with.
     pub fn new() -> Interpreter {
         Interpreter {
-            gc: GCState::new(1024),
+            gc: Collector::new(1024),
             stack_roots: vec![]
         }
     }
@@ -32,13 +32,13 @@ impl Interpreter {
         res
     }
 
-    fn collect(&mut self) {
+    unsafe fn collect(&mut self) {
         let gc = &mut self.gc;
         self.stack_roots.retain(|whandle|
             if let Some(handle) = whandle.upgrade() {
                 // Rust still has a live ValueHandle so this is a GC root and
                 // needs to be marked and retained:
-                unsafe { handle.set(handle.get().mark(gc)); }
+                handle.set(handle.get().mark(gc));
                 true
             } else {
                 // The WeakValueHandle has lapsed so Rust no longer has live
@@ -57,11 +57,11 @@ mod tests {
 
     #[test]
     fn collect() {
-        let mut itp = Interpreter::new();
-        let a = itp.alloc::<i64>(5);
-        a.get().set_typeref(a.get());
-        itp.collect();
         unsafe {
+            let mut itp = Interpreter::new();
+            let a = itp.alloc::<i64>(5);
+            a.get().set_typeref(a.get());
+            itp.collect();
             assert_eq!(a.get().unbox::<i64>(), 5);
         }
     }
