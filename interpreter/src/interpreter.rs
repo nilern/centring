@@ -55,13 +55,14 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::Interpreter;
+    use value::ValueRefT;
 
     #[test]
     fn collect() {
         unsafe {
             let mut itp = Interpreter::new();
             let a = itp.alloc::<i64>(5);
-            a.get().set_typeref(a.get());
+            a.get().set_type(a.get());
             itp.collect();
             assert_eq!(a.get().unbox::<i64>(), 5);
         }

@@ -1,4 +1,4 @@
-use value::ValueRef;
+use value::{ValueRef, ValueRefT};
 
 use std::slice;
 use std::mem::{size_of, align_of, transmute, swap};
@@ -42,7 +42,7 @@ impl Collector {
                            align_of::<usize>()));
         *block = self.blobspace as usize;
         self.blobspace = block;
-        ValueRef::new(block.offset(1), size, false, false)
+        ValueRef::from_raw_parts(block.offset(1), size, false, false)
     }
 
     /// Allocate an empty record that can store a type and `field_count` other
@@ -58,14 +58,14 @@ impl Collector {
         self.fromspace.set_len(len + size);
         let dest = self.fromspace.as_mut_ptr().offset(len as isize);
 
-        ValueRef::new(dest, field_count, true, false)
+        ValueRef::from_raw_parts(dest, field_count, true, false)
     }
 
     pub fn move_rec_slice(&mut self, src: &[usize]) -> ValueRef {
         unsafe {
             let dest = self.tospace.as_mut_ptr().offset(self.tospace.len() as isize);
             self.tospace.extend_from_slice(src);
-            ValueRef::from(dest)
+            ValueRef::from_raw(dest)
         }
     }
 
@@ -90,12 +90,12 @@ impl Collector {
     pub unsafe fn collect(&mut self) {
         let mut scan = self.tospace.as_mut_ptr();
         while scan < self.tospace.as_mut_ptr().offset(self.tospace.len() as isize) {
-            let size = ValueRef::from(scan).field_count();
+            let size = ValueRef::from_raw(scan).field_count();
             scan = scan.offset(1);
-            *scan = transmute(ValueRef::from(*scan as *mut usize).mark(self));
+            *scan = transmute(ValueRef::from_raw(*scan as *mut usize).mark(self));
             scan = scan.offset(1);
             for _ in 0..size {
-                *scan = transmute(ValueRef::from(*scan as *mut usize).mark(self));
+                *scan = transmute(ValueRef::from_raw(*scan as *mut usize).mark(self));
                 scan = scan.offset(1);
             }
         }
@@ -112,7 +112,7 @@ impl Collector {
         unsafe {
             let mut blob = &mut self.blobspace as *mut *mut usize;
             while !(*blob).is_null() {
-                let val = ValueRef::from((*blob).offset(1));
+                let val = ValueRef::from_raw((*blob).offset(1));
                 if val.marked() {
                     val.unset_mark_bit();
                     blob = *blob as *mut *mut usize;
@@ -133,7 +133,7 @@ impl Collector {
 #[cfg(test)]
 mod tests {
     use super::Collector;
-    use value::ValueRef;
+    use value::{ValueRef, ValueRefT};
 
     use std::mem::{size_of, transmute};
     use std::slice;
@@ -185,12 +185,12 @@ mod tests {
             let tuple_t = gc.alloc_rec(0);
             let type_t = gc.alloc_rec(0);
 
-            a.set_typeref(int_t);
-            b.set_typeref(int_t);
-            tup.set_typeref(tuple_t);
-            int_t.set_typeref(type_t);
-            tuple_t.set_typeref(type_t);
-            type_t.set_typeref(type_t);
+            a.set_type(int_t);
+            b.set_type(int_t);
+            tup.set_type(tuple_t);
+            int_t.set_type(type_t);
+            tuple_t.set_type(type_t);
+            type_t.set_type(type_t);
 
             *a.as_mut_ptr().offset(2) = 3;
             *b.as_mut_ptr().offset(2) = 5;
@@ -206,9 +206,9 @@ mod tests {
             println!("# Blobspace");
             let mut blob = gc.blobspace;
             while !blob.is_null() {
-                let val = ValueRef::from(blob.offset(1));
+                let val = ValueRef::from_raw(blob.offset(1));
                 let size = val.field_count();
-                let typ = val.typeref();
+                let typ = val.get_type();
                 let data = slice::from_raw_parts(blob.offset(3) as *const u8, size);
 
                 print!("  {:p} -> blob<{}, {:p}>[",
@@ -225,9 +225,9 @@ mod tests {
             let mut rec = gc.fromspace.as_ptr();
             let end = rec.offset(gc.fromspace.len() as isize);
             while rec < end {
-                let val = ValueRef::from(rec as *mut usize);
+                let val = ValueRef::from_raw(rec as *mut usize);
                 let size = val.field_count();
-                let typ = val.typeref();
+                let typ = val.get_type();
                 let data = slice::from_raw_parts(rec.offset(2), size);
 
                 print!("  {:p} -> rec<{}, {:p}>[", rec, size, typ.as_ptr());
