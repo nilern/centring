@@ -3,10 +3,10 @@
 extern crate alloc;
 extern crate rustyline;
 
-mod gc;
-mod ops;
-mod interpreter;
-mod read;
+pub mod gc;
+pub mod ops;
+pub mod interpreter;
+pub mod read;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;

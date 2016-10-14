@@ -76,7 +76,13 @@ impl ValueRef {
         self.set_typeref(fwd);
     }
 
-    pub fn mark(self, ctx: &mut GCState) -> ValueRef {
+    /// Mark the value that this `ValueRef` points to. Return a new `ValueRef`
+    /// that points to the new location of the value.
+    ///
+    /// # Safety
+    /// This may move the value so calling code should overwrite the value this
+    /// was called on with the returned value.
+    pub unsafe fn mark(self, ctx: &mut GCState) -> ValueRef {
         if self.marked() {
             if self.is_rec() {
                 return self.fwd();
@@ -105,6 +111,11 @@ impl ValueRef {
         }
     }
 
+    /// Get the underlying bits of a bits type instance as a `T`, for example
+    /// an `i64`.
+    ///
+    /// # Safety
+    /// Doesn't check that the underlying value actually has enough bits.
     pub unsafe fn unbox<T: Copy>(self) -> T {
         *(self.data() as *const T)
     }
@@ -227,13 +238,13 @@ mod tests {
         print_heaps(&gc);
 
         println!("\ncollecting...\n");
-        tup.mark(&mut gc);
+        unsafe { tup.mark(&mut gc); }
         gc.collect();
 
         print_heaps(&gc);
 
         println!("\ncollecting...\n");
-        a.mark(&mut gc);
+        unsafe { a.mark(&mut gc); }
         gc.collect();
 
         print_heaps(&gc);
@@ -245,7 +256,7 @@ mod tests {
         let (_, mut a) = alloc(&mut gc);
         for _ in 0..10_000 {
             if gc.rec_poll(10) {
-                a.mark(&mut gc);
+                unsafe { a.mark(&mut gc); }
                 gc.collect();
             }
             a = alloc(&mut gc).1;
