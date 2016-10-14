@@ -57,12 +57,12 @@ impl ValueRef {
     }
 
     #[inline(always)]
-    fn typeref(self) -> ValueRef {
+    pub fn typeref(self) -> ValueRef {
         unsafe { ValueRef(*self.as_ptr().offset(1) as *mut usize) }
     }
 
     #[inline(always)]
-    fn set_typeref(self, tref: ValueRef) {
+    pub fn set_typeref(self, tref: ValueRef) {
         unsafe { *self.as_mut_ptr().offset(1) = tref.0 as usize; }
     }
 
@@ -76,7 +76,7 @@ impl ValueRef {
         self.set_typeref(fwd);
     }
 
-    fn mark(self, ctx: &mut GCState) -> ValueRef {
+    pub fn mark(self, ctx: &mut GCState) -> ValueRef {
         if self.marked() {
             if self.is_rec() {
                 return self.fwd();
@@ -85,6 +85,8 @@ impl ValueRef {
             }
         } else {
             if self.is_rec() {
+                // we have to do the copy first so that only the fromspace
+                // version becomes a broken heart:
                 let res = unsafe {
                     ctx.move_rec_slice( // move data
                         slice::from_raw_parts(self.as_ptr(),
@@ -94,8 +96,10 @@ impl ValueRef {
                 self.set_mark_bit();
                 return res;
             } else {
-                self.set_typeref(self.typeref().mark(ctx));
+                // on the other hand here we need to set the bit first to avoid
+                // infinite recursive loops:
                 self.set_mark_bit();
+                self.set_typeref(self.typeref().mark(ctx));
                 return self;
             }
         }
