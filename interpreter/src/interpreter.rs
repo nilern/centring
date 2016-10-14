@@ -1,4 +1,5 @@
-use gc::{ValueRef, Collector};
+use gc::Collector;
+use value::ValueRef;
 use ops::CheckedAdd;
 
 use std::rc::{Rc, Weak};

@@ -7,6 +7,7 @@ pub mod gc;
 pub mod ops;
 pub mod interpreter;
 pub mod read;
+pub mod value;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;

@@ -1,125 +1,11 @@
+use value::ValueRef;
+
 use std::slice;
 use std::mem::{size_of, align_of, transmute, swap};
 use std::ptr;
 use alloc::heap;
 
 // TODO: also consider blobs when polling and triggering collections
-
-#[derive(Clone, Copy)]
-pub struct ValueRef(*mut usize);
-
-impl ValueRef {
-    #[inline(always)]
-    unsafe fn new(ptr: *mut usize, size: usize, is_rec: bool, marked: bool)
-        -> ValueRef {
-        *ptr = size << 2 | (is_rec as usize) << 1 | marked as usize;
-        ValueRef(ptr)
-    }
-
-    #[inline(always)]
-    fn as_ptr(self) -> *const usize {
-        self.0 as *const usize
-    }
-
-    #[inline(always)]
-    fn as_mut_ptr(self) -> *mut usize {
-        self.0
-    }
-
-    #[inline(always)]
-    fn data(self) -> *mut usize {
-        unsafe { self.0.offset(2) }
-    }
-
-    #[inline(always)]
-    fn marked(self) -> bool {
-        unsafe { *self.as_ptr() & 1 == 1 }
-    }
-
-    #[inline(always)]
-    fn set_mark_bit(self) {
-        unsafe { *self.as_mut_ptr() = *self.as_ptr() | 1; }
-    }
-
-    #[inline(always)]
-    fn unset_mark_bit(self) {
-        unsafe { *self.as_mut_ptr() = *self.as_ptr() & !1; }
-    }
-
-    #[inline(always)]
-    fn is_rec(self) -> bool {
-        unsafe { *self.as_ptr() >> 1 & 1 == 1 }
-    }
-
-    #[inline(always)]
-    fn field_count(self) -> usize {
-        unsafe { *self.as_ptr() >> 2 }
-    }
-
-    #[inline(always)]
-    pub fn typeref(self) -> ValueRef {
-        unsafe { ValueRef(*self.as_ptr().offset(1) as *mut usize) }
-    }
-
-    #[inline(always)]
-    pub fn set_typeref(self, tref: ValueRef) {
-        unsafe { *self.as_mut_ptr().offset(1) = tref.0 as usize; }
-    }
-
-    #[inline(always)]
-    fn fwd(self) -> ValueRef {
-        self.typeref()
-    }
-
-    #[inline(always)]
-    fn set_fwd(self, fwd: ValueRef) {
-        self.set_typeref(fwd);
-    }
-
-    /// Mark the value that this `ValueRef` points to. Return a new `ValueRef`
-    /// that points to the new location of the value.
-    ///
-    /// # Safety
-    /// This may move the value so calling code should overwrite the value this
-    /// was called on with the returned value.
-    pub unsafe fn mark(self, ctx: &mut Collector) -> ValueRef {
-        if self.marked() {
-            if self.is_rec() {
-                return self.fwd();
-            } else {
-                return self;
-            }
-        } else {
-            if self.is_rec() {
-                // we have to do the copy first so that only the fromspace
-                // version becomes a broken heart:
-                let res = unsafe {
-                    ctx.move_rec_slice( // move data
-                        slice::from_raw_parts(self.as_ptr(),
-                        2 + self.field_count()))
-                };
-                self.set_fwd(res);
-                self.set_mark_bit();
-                return res;
-            } else {
-                // on the other hand here we need to set the bit first to avoid
-                // infinite recursive loops:
-                self.set_mark_bit();
-                self.set_typeref(self.typeref().mark(ctx));
-                return self;
-            }
-        }
-    }
-
-    /// Get the underlying bits of a bits type instance as a `T`, for example
-    /// an `i64`.
-    ///
-    /// # Safety
-    /// Doesn't check that the underlying value actually has enough bits.
-    pub unsafe fn unbox<T: Copy>(self) -> T {
-        *(self.data() as *const T)
-    }
-}
 
 pub struct Collector {
     fromspace: Vec<usize>,
@@ -175,11 +61,11 @@ impl Collector {
         ValueRef::new(dest, field_count, true, false)
     }
 
-    fn move_rec_slice(&mut self, src: &[usize]) -> ValueRef {
+    pub fn move_rec_slice(&mut self, src: &[usize]) -> ValueRef {
         unsafe {
             let dest = self.tospace.as_mut_ptr().offset(self.tospace.len() as isize);
             self.tospace.extend_from_slice(src);
-            ValueRef(dest)
+            ValueRef::from(dest)
         }
     }
 
@@ -204,12 +90,12 @@ impl Collector {
     pub unsafe fn collect(&mut self) {
         let mut scan = self.tospace.as_mut_ptr();
         while scan < self.tospace.as_mut_ptr().offset(self.tospace.len() as isize) {
-            let size = ValueRef(scan).field_count();
+            let size = ValueRef::from(scan).field_count();
             scan = scan.offset(1);
-            *scan = transmute(ValueRef(*scan as *mut usize).mark(self));
+            *scan = transmute(ValueRef::from(*scan as *mut usize).mark(self));
             scan = scan.offset(1);
             for _ in 0..size {
-                *scan = transmute(ValueRef(*scan as *mut usize).mark(self));
+                *scan = transmute(ValueRef::from(*scan as *mut usize).mark(self));
                 scan = scan.offset(1);
             }
         }
@@ -226,7 +112,7 @@ impl Collector {
         unsafe {
             let mut blob = &mut self.blobspace as *mut *mut usize;
             while !(*blob).is_null() {
-                let val = ValueRef((*blob).offset(1));
+                let val = ValueRef::from((*blob).offset(1));
                 if val.marked() {
                     val.unset_mark_bit();
                     blob = *blob as *mut *mut usize;
@@ -246,7 +132,9 @@ impl Collector {
 
 #[cfg(test)]
 mod tests {
-    use super::{Collector, ValueRef};
+    use super::Collector;
+    use value::ValueRef;
+
     use std::mem::{size_of, transmute};
     use std::slice;
 
@@ -318,7 +206,7 @@ mod tests {
             println!("# Blobspace");
             let mut blob = gc.blobspace;
             while !blob.is_null() {
-                let val = ValueRef(blob.offset(1));
+                let val = ValueRef::from(blob.offset(1));
                 let size = val.field_count();
                 let typ = val.typeref();
                 let data = slice::from_raw_parts(blob.offset(3) as *const u8, size);
@@ -337,7 +225,7 @@ mod tests {
             let mut rec = gc.fromspace.as_ptr();
             let end = rec.offset(gc.fromspace.len() as isize);
             while rec < end {
-                let val = ValueRef(rec as *mut usize);
+                let val = ValueRef::from(rec as *mut usize);
                 let size = val.field_count();
                 let typ = val.typeref();
                 let data = slice::from_raw_parts(rec.offset(2), size);
