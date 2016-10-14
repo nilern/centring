@@ -55,7 +55,7 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::Interpreter;
-    use value::ValueRefT;
+    use value::{ValueRefT, Unbox, BitsRef};
 
     #[test]
     fn collect() {
@@ -64,7 +64,8 @@ mod tests {
             let a = itp.alloc::<i64>(5);
             a.get().set_type(a.get());
             itp.collect();
-            assert_eq!(a.get().unbox::<i64>(), 5);
+            assert_eq!(BitsRef::from_raw(a.get().as_mut_ptr()).unbox::<i64>(),
+                       5);
         }
     }
 }
