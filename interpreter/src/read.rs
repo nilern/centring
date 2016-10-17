@@ -90,6 +90,8 @@ mod tests {
     #[test]
     fn read_int() {
         let mut st = ParseState::new(String::from("235"));
-        println!("{:?}", int(&mut st));
+        let res = int(&mut st);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), 235);
     }
 }

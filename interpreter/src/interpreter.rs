@@ -1,5 +1,5 @@
 use gc::Collector;
-use value::ValueRef;
+use value::{ValueRef, Any, CtrValue};
 use ops::CheckedAdd;
 
 use std::rc::{Rc, Weak};
@@ -24,10 +24,7 @@ impl Interpreter {
         }
     }
 
-    /// Allocate a bits type. Return a handle and do the bookkeeping necessary
-    /// to treat the handle as a GC root if non-weak copies of it are live when
-    /// GC is initiated.
-    pub fn alloc<T: Clone>(&mut self, v: T) -> ValueHandle {
+    pub fn alloc<T: CtrValue>(&mut self, v: T) -> ValueHandle {
         let res = unsafe { Rc::new(Cell::new(self.gc.alloc(v))) };
         self.stack_roots.push(Rc::downgrade(&res));
         res
@@ -55,16 +52,23 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::Interpreter;
-    use value::{ValueRefT, Unbox, BitsRef};
+    use value::{Any, Bits, ValueRef, Unbox};
+
+    use std::mem::size_of;
+    use std::ptr;
 
     #[test]
     fn collect() {
         unsafe {
             let mut itp = Interpreter::new();
-            let a = itp.alloc::<i64>(5);
-            a.get().set_type(a.get());
+            let a = itp.alloc(Bits::<i64> {
+                header: size_of::<i64>() << 2,
+                typ: ValueRef::from_raw(ptr::null::<Any>() as *mut Any),
+                data: 5
+            });
+            a.get().typ = a.get();
             itp.collect();
-            assert_eq!(BitsRef::from_raw(a.get().as_mut_ptr()).unbox::<i64>(),
+            assert_eq!((*(a.get().as_ptr() as *const Bits<i64>)).unbox(),
                        5);
         }
     }
