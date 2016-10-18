@@ -3,7 +3,6 @@ use value::Any;
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
-use std::slice;
 use std::ops::{Deref, DerefMut};
 
 pub type ValuePtr = *mut Any;
@@ -53,6 +52,12 @@ impl Deref for Root {
     }
 }
 
+impl DerefMut for Root {
+    fn deref_mut(&mut self) -> &mut Any {
+        unsafe { &mut **self.0.borrow_mut() }
+    }
+}
+
 impl WeakRoot {
     /// Try to upgrade this to a `Root`. If the result is `Some(_)`, there were
     /// other roots remaining. If it is `None`, there were none (and the
@@ -67,5 +72,19 @@ impl<'a> ValueHandle<'a> {
     /// Get the raw pointer to the Value.
     pub fn ptr(&self) -> ValuePtr {
         *self.0.borrow()
+    }
+}
+
+impl<'a> Deref for ValueHandle<'a> {
+    type Target = Any;
+
+    fn deref(&self) -> &Any {
+        unsafe { &**self.0.borrow() }
+    }
+}
+
+impl<'a> DerefMut for ValueHandle<'a> {
+    fn deref_mut(&mut self) -> &mut Any {
+        unsafe { &mut **self.0.borrow_mut() }
     }
 }

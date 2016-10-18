@@ -3,8 +3,9 @@ use refs::ValuePtr;
 
 use std::ptr;
 use std::mem::{size_of, align_of, transmute, swap};
-use alloc::heap;
 use std::slice;
+
+use alloc::heap;
 
 // TODO: also consider blobs when polling and triggering collections
 
@@ -145,7 +146,7 @@ impl Collector {
         unsafe {
             let mut blob: *mut *mut usize = transmute(&mut self.blobspace);
             while !(*blob).is_null() {
-                let mut val = (*blob).offset(1) as ValuePtr;
+                let val = (*blob).offset(1) as ValuePtr;
                 if (*val).marked() {
                     (*val).unset_mark_bit();
                     blob = *blob as *mut *mut usize;
