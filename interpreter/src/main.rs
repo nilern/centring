@@ -9,17 +9,25 @@ pub mod interpreter;
 pub mod read;
 pub mod value;
 
+use interpreter::Interpreter;
+use value::{Unbox, Bits};
+
+use std::cell::Cell;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
 fn main() {
     let mut ed = Editor::<()>::new();
+    let mut itp = Interpreter::new();
     loop {
         let line = ed.readline("ctr> ");
         match line {
             Ok(line) => {
                 let mut st = read::ParseState::new(line);
-                println!("{:?}", read::int(&mut st));
+                unsafe {
+                    println!("{:?}", read::int(&mut itp, &mut st).map(|n|
+                        (*(n.get().as_ptr() as *const Bits<isize>)).unbox()));
+                }
             },
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
                 break;

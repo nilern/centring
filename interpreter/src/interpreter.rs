@@ -61,11 +61,7 @@ mod tests {
     fn collect() {
         unsafe {
             let mut itp = Interpreter::new();
-            let a = itp.alloc(Bits::<i64> {
-                header: size_of::<i64>() << 2,
-                typ: ValueRef::from_raw(ptr::null::<Any>() as *mut Any),
-                data: 5
-            });
+            let a = itp.alloc(Bits::new(5i64));
             a.get().typ = a.get();
             itp.collect();
             assert_eq!((*(a.get().as_ptr() as *const Bits<i64>)).unbox(),

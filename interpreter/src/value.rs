@@ -4,6 +4,8 @@ use std::slice;
 use std::ops::{Deref, DerefMut};
 use std::mem;
 use std::fmt::Debug;
+use std::ptr;
+use std::mem::size_of;
 
 #[repr(C)]
 pub struct Any {
@@ -32,6 +34,12 @@ pub trait Unbox {
 }
 
 impl Any {
+    fn header(alloc_len: usize, pointy: bool, marked: bool) -> usize {
+        alloc_len << 2
+        | (pointy as usize) << 1
+        | marked as usize
+    }
+
     pub fn alloc_len(&self) -> usize {
         self.header >> 2
     }
@@ -128,6 +136,16 @@ impl DerefMut for ValueRef {
     #[inline(always)]
     fn deref_mut(&mut self) -> &mut Any {
         unsafe { &mut *self.0 }
+    }
+}
+
+impl<T> Bits<T> {
+    pub fn new(v: T) -> Bits<T> {
+        Bits::<T> {
+            header: Any::header(size_of::<T>(), false, false),
+            typ: ValueRef::from_raw(ptr::null::<Any>() as *mut Any), // FIXME
+            data: v
+        }
     }
 }
 

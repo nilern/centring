@@ -1,3 +1,5 @@
+use interpreter::{Interpreter, ValueHandle};
+use value::Bits;
 
 pub struct ParseState {
     str: String,
@@ -73,12 +75,13 @@ fn digit(st: &mut ParseState) -> ParseResult<usize> {
         .map(|c| c.to_digit(10).unwrap() as usize)
 }
 
-pub fn int(st: &mut ParseState) -> ParseResult<isize> {
-    let mut res = try!(digit(st)) as isize;
+pub fn int(itp: &mut Interpreter, st: &mut ParseState)
+    -> ParseResult<ValueHandle> {
+    let mut n = try!(digit(st)) as isize;
     while let Ok(d) = digit(st) {
-        res = res*10 + d as isize;
+        n = n*10 + d as isize;
     }
-    Ok(res)
+    Ok(itp.alloc(Bits::new(n)))
 }
 
 /// # Tests
@@ -86,12 +89,19 @@ pub fn int(st: &mut ParseState) -> ParseResult<isize> {
 #[cfg(test)]
 mod tests {
     use super::{ParseState, int};
+    use interpreter::Interpreter;
+    use value::{Bits, Unbox};
 
     #[test]
     fn read_int() {
+        let mut itp = Interpreter::new();
         let mut st = ParseState::new(String::from("235"));
-        let res = int(&mut st);
+        let res = int(&mut itp, &mut st);
         assert!(res.is_ok());
-        assert_eq!(res.unwrap(), 235);
+        unsafe {
+            assert_eq!((*(res.unwrap().get().as_ptr() as *const Bits<isize>))
+                           .unbox(),
+                       235);
+        }
     }
 }
