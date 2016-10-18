@@ -21,6 +21,7 @@ pub struct Bits<T: Copy> {
     pub data: T
 }
 
+/// The good ol' cons cell.
 #[repr(C)]
 pub struct ListPair {
     pub header: usize,
@@ -29,6 +30,7 @@ pub struct ListPair {
     pub tail: ValuePtr
 }
 
+/// Plain old `'()`
 #[repr(C)]
 pub struct ListEmpty {
     header: usize,
