@@ -98,10 +98,10 @@ mod tests {
         let mut st = ParseState::new(String::from("235"));
         let res = int(&mut itp, &mut st);
         assert!(res.is_ok());
+        let pptr = res.unwrap();
+        let ptr = pptr.borrow().as_ptr() as *const Bits<isize>;
         unsafe {
-            assert_eq!((*(res.unwrap().get().as_ptr() as *const Bits<isize>))
-                           .unbox(),
-                       235);
+            assert_eq!((*ptr).unbox(), 235);
         }
     }
 }

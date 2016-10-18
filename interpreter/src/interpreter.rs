@@ -3,10 +3,10 @@ use value::{ValueRef, Any, CtrValue};
 use ops::CheckedAdd;
 
 use std::rc::{Rc, Weak};
-use std::cell::Cell;
+use std::cell::RefCell;
 
-pub type ValueHandle = Rc<Cell<ValueRef>>;
-pub type WeakValueHandle = Weak<Cell<ValueRef>>;
+pub type ValueHandle = Rc<RefCell<ValueRef>>;
+pub type WeakValueHandle = Weak<RefCell<ValueRef>>;
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
@@ -25,7 +25,7 @@ impl Interpreter {
     }
 
     pub fn alloc<T: CtrValue>(&mut self, v: T) -> ValueHandle {
-        let res = unsafe { Rc::new(Cell::new(self.gc.alloc(v))) };
+        let res = unsafe { Rc::new(RefCell::new(self.gc.alloc(v))) };
         self.stack_roots.push(Rc::downgrade(&res));
         res
     }
@@ -36,7 +36,8 @@ impl Interpreter {
             if let Some(handle) = whandle.upgrade() {
                 // Rust still has a live ValueHandle so this is a GC root and
                 // needs to be marked and retained:
-                handle.set(handle.get().mark(gc));
+                let vref = handle.borrow().mark(gc);
+                *handle.borrow_mut() = vref;
                 true
             } else {
                 // The WeakValueHandle has lapsed so Rust no longer has live
@@ -62,9 +63,10 @@ mod tests {
         unsafe {
             let mut itp = Interpreter::new();
             let a = itp.alloc(Bits::new(5i64));
-            a.get().typ = a.get();
+            let ptr = *a.borrow();
+            (*a.borrow_mut()).typ = ptr;
             itp.collect();
-            assert_eq!((*(a.get().as_ptr() as *const Bits<i64>)).unbox(),
+            assert_eq!((*(a.borrow().as_ptr() as *const Bits<i64>)).unbox(),
                        5);
         }
     }
