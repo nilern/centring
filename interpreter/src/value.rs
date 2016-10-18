@@ -1,4 +1,4 @@
-use refs::ValueRef;
+use refs::{ValuePtr, ValueHandle};
 
 use std::mem;
 use std::ptr;
@@ -9,7 +9,7 @@ use std::mem::size_of;
 #[repr(C)]
 pub struct Any {
     pub header: usize,
-    pub typ: ValueRef
+    pub typ: ValuePtr
 }
 
 /// Wraps some data that has no inner structure, for example `Int64` wraps
@@ -17,16 +17,22 @@ pub struct Any {
 #[repr(C)]
 pub struct Bits<T: Copy> {
     pub header: usize,
-    pub typ: ValueRef,
+    pub typ: ValuePtr,
     pub data: T
 }
 
 #[repr(C)]
 pub struct ListPair {
     pub header: usize,
-    pub typ: ValueRef,
-    pub head: ValueRef,
-    pub tail: ValueRef
+    pub typ: ValuePtr,
+    pub head: ValuePtr,
+    pub tail: ValuePtr
+}
+
+#[repr(C)]
+pub struct ListEmpty {
+    header: usize,
+    typ: ValuePtr
 }
 
 pub trait CtrValue {
@@ -82,12 +88,12 @@ impl Any {
     }
 
     /// Get the type reference of this Value.
-    pub fn get_type(&self) -> ValueRef {
+    pub fn get_type(&self) -> ValuePtr {
         self.typ
     }
 
     /// Set the type reference of this Value.
-    pub fn set_type(&mut self, t: ValueRef) {
+    pub fn set_type(&mut self, t: ValuePtr) {
         self.typ = t
     }
 }
@@ -102,8 +108,8 @@ impl<T: Copy> Bits<T> {
     /// Construct a new `Bits<T>`.
     pub fn new(v: T) -> Bits<T> {
         Bits::<T> {
-            header: unsafe {Any::header(size_of::<T>(), false) },
-            typ: ValueRef::from_raw(ptr::null::<Any>() as *mut Any), // FIXME
+            header: unsafe { Any::header(size_of::<T>(), false) },
+            typ: ptr::null::<Any>() as *mut Any, // FIXME
             data: v
         }
     }
@@ -123,7 +129,33 @@ impl<T: Copy> Unbox for Bits<T> {
     }
 }
 
+impl ListPair {
+    pub fn new(head: ValueHandle, tail: ValueHandle) -> ListPair {
+        ListPair {
+            header: unsafe { Any::header(2, true) },
+            typ: ptr::null::<Any>() as *mut Any, // FIXME
+            head: head.ptr(),
+            tail: tail.ptr()
+        }
+    }
+}
+
 impl CtrValue for ListPair {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
+    }
+}
+
+impl ListEmpty {
+    pub fn new() -> ListEmpty {
+        ListEmpty {
+            header: unsafe { Any::header(0, true) },
+            typ: ptr::null::<Any>() as *mut Any // FIXME
+        }
+    }
+}
+
+impl CtrValue for ListEmpty {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
     }

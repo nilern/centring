@@ -6,28 +6,40 @@ use std::cell::RefCell;
 use std::slice;
 use std::ops::{Deref, DerefMut};
 
-#[derive(Clone, Copy)]
-pub struct ValueRef(*mut Any);
+pub type ValuePtr = *mut Any;
 
-pub struct Root(Rc<RefCell<ValueRef>>);
-pub struct WeakRoot(Weak<RefCell<ValueRef>>);
-pub struct ValueHandle<'a>(&'a RefCell<ValueRef>);
+pub struct Root(Rc<RefCell<ValuePtr>>);
+pub struct WeakRoot(Weak<RefCell<ValuePtr>>);
+pub struct ValueHandle<'a>(&'a RefCell<ValuePtr>);
 
 impl Root {
-    pub fn new(v: ValueRef) -> Root {
+    pub fn new(v: ValuePtr) -> Root {
         Root(Rc::new(RefCell::new(v)))
     }
 
     pub fn downgrade(this: &Root) -> WeakRoot {
         WeakRoot(Rc::downgrade(&this.0))
     }
+
+    pub fn ptr(&self) -> ValuePtr {
+        *self.0.deref().borrow()
+    }
+
+    fn set_ptr(&mut self, ptr: ValuePtr) {
+        *self.0.deref().borrow_mut() = ptr;
+    }
+
+    pub fn mark(&mut self, gc: &mut Collector) {
+        let vref = unsafe { gc.mark(self.ptr()) };
+        self.set_ptr(vref);
+    }
 }
 
 impl Deref for Root {
-    type Target = RefCell<ValueRef>;
+    type Target = Any;
 
-    fn deref(&self) -> &RefCell<ValueRef> {
-        self.0.deref()
+    fn deref(&self) -> &Any {
+        unsafe { &**self.0.borrow() }
     }
 }
 
@@ -37,64 +49,8 @@ impl WeakRoot {
     }
 }
 
-impl ValueRef {
-    pub fn from_raw(ptr: *mut Any) -> ValueRef {
-        ValueRef(ptr)
-    }
-
-    pub fn as_ptr(self) -> *const Any {
-        self.0 as *const Any
-    }
-
-    pub fn as_mut_ptr(self) -> *mut Any {
-        self.0
-    }
-
-    /// Mark the value that this `ValueRef` points to. Return a new `ValueRef`
-    /// that points to the new location of the value.
-    ///
-    /// # Safety
-    /// This may move the value so calling code should overwrite the value this
-    /// was called on with the returned value.
-    pub unsafe fn mark(mut self, gc: &mut Collector) -> ValueRef {
-        if self.marked() {
-            if self.pointy() {
-                return self.typ // get forward pointer
-            } else {
-                return self;
-            }
-        } else {
-            if self.pointy() {
-                // we have to do the copy first so that only the fromspace
-                // version becomes a broken heart:
-                let res =
-                    gc.move_rec_slice( // move data
-                        slice::from_raw_parts(self.as_mut_ptr() as *mut ValueRef,
-                            2 + self.alloc_len()));
-                self.typ = res; // set forward pointer
-                self.set_mark_bit();
-                return res;
-            } else {
-                // on the other hand here we need to set the bit first to avoid
-                // infinite recursive loops:
-                self.set_mark_bit();
-                self.typ = self.typ.mark(gc);
-                return self;
-            }
-        }
-    }
-}
-
-impl Deref for ValueRef {
-    type Target = Any;
-
-    fn deref(&self) -> &Any {
-        unsafe { &*self.0 }
-    }
-}
-
-impl DerefMut for ValueRef {
-    fn deref_mut(&mut self) -> &mut Any {
-        unsafe { &mut *self.0 }
+impl<'a> ValueHandle<'a> {
+    pub fn ptr(&self) -> ValuePtr {
+        *self.0.borrow()
     }
 }

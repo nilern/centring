@@ -1,16 +1,17 @@
 use value::{Any, CtrValue};
-use refs::ValueRef;
+use refs::ValuePtr;
 
 use std::ptr;
 use std::mem::{size_of, align_of, transmute, swap};
 use alloc::heap;
+use std::slice;
 
 // TODO: also consider blobs when polling and triggering collections
 
 /// A garbage collector (holds the memory areas and other GC state).
 pub struct Collector {
-    fromspace: Vec<ValueRef>,
-    tospace: Vec<ValueRef>,
+    fromspace: Vec<ValuePtr>,
+    tospace: Vec<ValuePtr>,
     blobspace: *mut Blob
 }
 
@@ -37,7 +38,7 @@ impl Collector {
         self.fromspace.capacity() - self.fromspace.len() >= word_count
     }
 
-    unsafe fn alloc_pointy<T: CtrValue>(&mut self, v: T) -> ValueRef {
+    unsafe fn alloc_pointy<T: CtrValue>(&mut self, v: T) -> ValuePtr {
         let len = self.fromspace.len();
         let alloc_len = v.as_any().alloc_len();
         let size = 2 + alloc_len;
@@ -45,10 +46,10 @@ impl Collector {
         let dest = self.fromspace.as_mut_ptr().offset(len as isize) as *mut T;
 
         *dest = v;
-        ValueRef::from_raw(dest as *mut Any)
+        dest as *mut Any
     }
 
-    unsafe fn alloc_flat<T: CtrValue>(&mut self, v: T) -> ValueRef {
+    unsafe fn alloc_flat<T: CtrValue>(&mut self, v: T) -> ValuePtr {
         let data_size = v.as_any().alloc_len();
         let block: *mut Blob = transmute(
             heap::allocate(size_of::<Blob>() + data_size,
@@ -58,12 +59,12 @@ impl Collector {
 
         let dest = (block as *mut usize).offset(1) as *mut T;
         *dest = v;
-        ValueRef::from_raw(dest as *mut Any)
+        dest as *mut Any
     }
 
-    /// Move a Centring value into the GC heap and return a ValueRef to its new
+    /// Move a Centring value into the GC heap and return a ValuePtr to its new
     /// position. Comparable to `Box::new()` and `Rc::new()`.
-    pub unsafe fn alloc<T: CtrValue>(&mut self, v: T) -> ValueRef {
+    pub unsafe fn alloc<T: CtrValue>(&mut self, v: T) -> ValuePtr {
         if v.as_any().pointy() {
             self.alloc_pointy(v)
         } else {
@@ -71,19 +72,47 @@ impl Collector {
         }
     }
 
-    pub fn move_rec_slice(&mut self, src: &[ValueRef]) -> ValueRef {
+    pub fn move_rec_slice(&mut self, src: &[ValuePtr]) -> ValuePtr {
         unsafe {
             let dest = self.tospace
                 .as_mut_ptr().offset(self.tospace.len() as isize) as *mut Any;
             self.tospace.extend_from_slice(src);
-            ValueRef::from_raw(dest)
+            dest
+        }
+    }
+
+    pub unsafe fn mark(&mut self, ptr: ValuePtr) -> ValuePtr {
+        if (*ptr).marked() {
+            if (*ptr).pointy() {
+                (*ptr).get_type() // get forward pointer
+            } else {
+                ptr
+            }
+        } else {
+            if (*ptr).pointy() {
+                // we have to do the copy first so that only the fromspace
+                // version becomes a broken heart:
+                let res =
+                    self.move_rec_slice( // move data
+                        slice::from_raw_parts(ptr as *mut ValuePtr,
+                            2 + (*ptr).alloc_len()));
+                (*ptr).set_type(res); // set forward pointer
+                (*ptr).set_mark_bit();
+                res
+            } else {
+                // on the other hand here we need to set the bit first to avoid
+                // infinite recursive loops:
+                (*ptr).set_mark_bit();
+                (*ptr).typ = self.mark((*ptr).typ);
+                ptr
+            }
         }
     }
 
     /// Collect garbage. Assumes that all roots have already been `mark()`:ed.
     ///
     /// # Safety
-    /// You must mark all roots and let go of all raw ValueRef:s before calling
+    /// You must mark all roots and let go of all raw ValuePtr:s before calling
     /// this. Otherwise you will get segfaults or at the very least pointers to
     /// garbage data.
     pub unsafe fn collect(&mut self) {
@@ -93,11 +122,11 @@ impl Collector {
                           .offset(self.tospace.len() as isize) {
             let len = (*(scan as *mut Any)).alloc_len();
             scan = scan.offset(1);
-            *scan = transmute(ValueRef::from_raw(*scan as *mut Any).mark(self));
+            *scan = transmute(self.mark(*scan as ValuePtr));
             scan = scan.offset(1);
 
             for _ in 0..len {
-                *scan = transmute(ValueRef::from_raw(*scan as *mut Any).mark(self));
+                *scan = transmute(self.mark(*scan as ValuePtr));
                 scan = scan.offset(1);
             }
 
@@ -116,15 +145,15 @@ impl Collector {
         unsafe {
             let mut blob: *mut *mut usize = transmute(&mut self.blobspace);
             while !(*blob).is_null() {
-                let mut val = ValueRef::from_raw((*blob).offset(1) as *mut Any);
-                if val.marked() {
-                    val.unset_mark_bit();
+                let mut val = (*blob).offset(1) as ValuePtr;
+                if (*val).marked() {
+                    (*val).unset_mark_bit();
                     blob = *blob as *mut *mut usize;
                 } else {
                     let unreached = *blob;
                     *blob = *unreached as *mut usize;
                     heap::deallocate(unreached as *mut u8,
-                                     3 * size_of::<usize>() + val.alloc_len(),
+                                     size_of::<Blob>() + (*val).alloc_len(),
                                      align_of::<usize>());
                 }
             }
@@ -138,7 +167,7 @@ impl Collector {
 mod tests {
     use super::Collector;
     use value::{Any, Bits, ListPair};
-    use refs::ValueRef;
+    use refs::ValuePtr;
 
     use std::mem::transmute;
     use std::slice;
@@ -155,13 +184,13 @@ mod tests {
             print_heaps(&gc);
 
             println!("\ncollecting...\n");
-            tup.mark(&mut gc);
+            gc.mark(tup);
             gc.collect();
 
             print_heaps(&gc);
 
             println!("\ncollecting...\n");
-            a.mark(&mut gc);
+            gc.mark(a);
             gc.collect();
 
             print_heaps(&gc);
@@ -175,7 +204,7 @@ mod tests {
             let (_, mut a) = alloc(&mut gc);
             for _ in 0..10_000 {
                 if gc.rec_poll(10) {
-                    a.mark(&mut gc);
+                    gc.mark(a);
                     gc.collect();
                 }
                 a = alloc(&mut gc).1;
@@ -183,22 +212,22 @@ mod tests {
         }
     }
 
-    fn alloc(gc: &mut Collector) -> (ValueRef, ValueRef) {
+    fn alloc(gc: &mut Collector) -> (ValuePtr, ValuePtr) {
         unsafe {
             let mut a = gc.alloc(Bits::new(3isize));
             let mut b = gc.alloc(Bits::new(5isize));
             let mut tup = gc.alloc(ListPair {
                 header: Any::header(2, true),
-                typ: ValueRef::from_raw(ptr::null::<Any>() as *mut Any),
+                typ: ptr::null::<Any>() as ValuePtr,
                 head: a,
                 tail: b
             });
 
             // HACK:
             let ptr = *a.borrow();
-            (*a.borrow_mut()).typ = ptr;
-            (*b.borrow_mut()).typ = ptr;
-            (*tup.borrow_mut()).typ = ptr;
+            (**a.borrow_mut()).typ = ptr;
+            (**b.borrow_mut()).typ = ptr;
+            (**tup.borrow_mut()).typ = ptr;
 
             return (tup, b)
         }
@@ -212,11 +241,11 @@ mod tests {
                 let val = &(*blob).data;
                 let size = val.alloc_len();
                 let typ = val.get_type();
-                let datap = transmute::<&Any, *mut Any>(val).offset(1);
+                let datap = transmute::<&Any, ValuePtr>(val).offset(1);
                 let data = slice::from_raw_parts(datap as *const u8, size);
 
                 print!("  {:p} -> blob<{}, {:p}>[",
-                       val, size, typ.as_ptr());
+                       val, size, typ);
                 for n in data {
                     print!(" {}", n);
                 }
@@ -229,14 +258,14 @@ mod tests {
             let mut rec = gc.fromspace.as_ptr();
             let end = rec.offset(gc.fromspace.len() as isize);
             while rec < end {
-                let val = ValueRef::from_raw(rec as *mut Any);
+                let val = &*(rec as ValuePtr);
                 let size = val.alloc_len();
                 let typ = val.get_type();
                 let data = slice::from_raw_parts(rec.offset(2), size);
 
-                print!("  {:p} -> rec<{}, {:p}>[", rec, size, typ.as_ptr());
+                print!("  {:p} -> rec<{}, {:p}>[", rec, size, typ);
                 for v in data {
-                    print!(" {:p}", v.as_ptr());
+                    print!(" {:p}", v);
                 }
                 println!("]");
 

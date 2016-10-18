@@ -1,5 +1,5 @@
 use interpreter::Interpreter;
-use value::Bits;
+use value::{Bits, ListPair, ListEmpty};
 use refs::Root;
 
 pub struct ParseState {
@@ -76,8 +76,7 @@ fn digit(st: &mut ParseState) -> ParseResult<usize> {
         .map(|c| c.to_digit(10).unwrap() as usize)
 }
 
-pub fn int(itp: &mut Interpreter, st: &mut ParseState)
-    -> ParseResult<Root> {
+fn int(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
     let mut n = try!(digit(st)) as isize;
     while let Ok(d) = digit(st) {
         n = n*10 + d as isize;
@@ -85,11 +84,24 @@ pub fn int(itp: &mut Interpreter, st: &mut ParseState)
     Ok(itp.alloc(Bits::new(n)))
 }
 
+// fn list(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
+//     if let Some(')') = st.peek() {
+//         Ok(itp.alloc(ListEmpty::new()))
+//     } else {
+//         let v = try!(read(itp, st));
+//         list(itp, st).map(|l| itp.alloc(ListPair::new(v.borrow(), l.borrow())))
+//     }
+// }
+
+pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
+    int(itp, st)
+}
+
 /// # Tests
 
 #[cfg(test)]
 mod tests {
-    use super::{ParseState, int};
+    use super::{ParseState, read};
     use interpreter::Interpreter;
     use value::{Bits, Unbox};
 
@@ -97,10 +109,9 @@ mod tests {
     fn read_int() {
         let mut itp = Interpreter::new();
         let mut st = ParseState::new(String::from("235"));
-        let res = int(&mut itp, &mut st);
+        let res = read(&mut itp, &mut st);
         assert!(res.is_ok());
-        let pptr = res.unwrap();
-        let ptr = pptr.borrow().as_ptr() as *const Bits<isize>;
+        let ptr = res.unwrap().ptr() as *const Bits<isize>;
         unsafe {
             assert_eq!((*ptr).unbox(), 235);
         }

@@ -25,8 +25,8 @@ fn main() {
             Ok(line) => {
                 let mut st = read::ParseState::new(line);
                 unsafe {
-                    println!("{:?}", read::int(&mut itp, &mut st).map(|n|
-                        (*(n.borrow().as_ptr() as *const Bits<isize>)).unbox()));
+                    println!("{:?}", read::read(&mut itp, &mut st).map(|n|
+                        (*(n.ptr() as *const Bits<isize>)).unbox()));
                 }
             },
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {

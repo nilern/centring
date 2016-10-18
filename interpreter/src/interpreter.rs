@@ -27,11 +27,10 @@ impl Interpreter {
     unsafe fn collect(&mut self) {
         let gc = &mut self.gc;
         self.stack_roots.retain(|whandle|
-            if let Some(handle) = whandle.upgrade() {
+            if let Some(mut handle) = whandle.upgrade() {
                 // Rust still has a live Root so this is a GC root and
                 // needs to be marked and retained:
-                let vref = handle.borrow().mark(gc);
-                *handle.borrow_mut() = vref;
+                handle.mark(gc);
                 true
             } else {
                 // The WeakRoot has lapsed so Rust no longer has live
@@ -54,10 +53,10 @@ mod tests {
         unsafe {
             let mut itp = Interpreter::new();
             let a = itp.alloc(Bits::new(5i64));
-            let ptr = *a.borrow();
-            (*a.borrow_mut()).typ = ptr;
+            let ptr = a.ptr();
+            (*a.ptr()).typ = ptr;
             itp.collect();
-            assert_eq!((*(a.borrow().as_ptr() as *const Bits<i64>)).unbox(),
+            assert_eq!((*(a.ptr() as *const Bits<i64>)).unbox(),
                        5);
         }
     }
