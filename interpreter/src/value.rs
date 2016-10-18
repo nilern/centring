@@ -17,6 +17,14 @@ pub struct Bits<T> {
     pub data: T
 }
 
+#[repr(C)]
+pub struct ListPair {
+    pub header: usize,
+    pub typ: ValueRef,
+    pub head: ValueRef,
+    pub tail: ValueRef
+}
+
 pub trait CtrValue {
     fn as_any(&self) -> &Any;
 }
@@ -28,7 +36,7 @@ pub trait Unbox {
 }
 
 impl Any {
-    fn header(alloc_len: usize, pointy: bool, marked: bool) -> usize {
+    pub unsafe fn header(alloc_len: usize, pointy: bool, marked: bool) -> usize {
         alloc_len << 2
         | (pointy as usize) << 1
         | marked as usize
@@ -57,6 +65,14 @@ impl Any {
     pub fn unset_mark_bit(&mut self) {
         self.header = self.header & !1;
     }
+
+    pub fn get_type(&self) -> ValueRef {
+        self.typ
+    }
+
+    pub fn set_type(&mut self, t: ValueRef) {
+        self.typ = t
+    }
 }
 
 impl CtrValue for Any {
@@ -68,7 +84,7 @@ impl CtrValue for Any {
 impl<T> Bits<T> {
     pub fn new(v: T) -> Bits<T> {
         Bits::<T> {
-            header: Any::header(size_of::<T>(), false, false),
+            header: unsafe {Any::header(size_of::<T>(), false, false) },
             typ: ValueRef::from_raw(ptr::null::<Any>() as *mut Any), // FIXME
             data: v
         }
@@ -86,5 +102,11 @@ impl<T: Copy> Unbox for Bits<T> {
 
     fn unbox(&self) -> T {
         self.data
+    }
+}
+
+impl CtrValue for ListPair {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
     }
 }

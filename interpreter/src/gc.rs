@@ -37,8 +37,8 @@ impl Collector {
 
     unsafe fn alloc_pointy<T: CtrValue>(&mut self, v: T) -> ValueRef {
         let len = self.fromspace.len();
-        let field_count = v.as_any().alloc_len();
-        let size = 2 + field_count;
+        let alloc_len = v.as_any().alloc_len();
+        let size = 2 + alloc_len;
         self.fromspace.set_len(len + size);
         let dest = self.fromspace.as_mut_ptr().offset(len as isize) as *mut T;
 
@@ -128,116 +128,116 @@ impl Collector {
     }
 }
 
-// /// # Tests
-//
-// #[cfg(test)]
-// mod tests {
-//     use super::Collector;
-//     use value::{ValueRef, ValueRefT};
-//
-//     use std::mem::{size_of, transmute};
-//     use std::slice;
-//
-//     #[test]
-//     fn it_works() {
-//         unsafe {
-//             let mut gc = Collector::new(1024);
-//
-//             let (tup, a) = alloc(&mut gc);
-//
-//             print_heaps(&gc);
-//
-//             println!("\ncollecting...\n");
-//             tup.mark(&mut gc);
-//             gc.collect();
-//
-//             print_heaps(&gc);
-//
-//             println!("\ncollecting...\n");
-//             a.mark(&mut gc);
-//             gc.collect();
-//
-//             print_heaps(&gc);
-//         }
-//     }
-//
-//     #[test]
-//     fn stress() {
-//         unsafe {
-//             let mut gc = Collector::new(1024);
-//             let (_, mut a) = alloc(&mut gc);
-//             for _ in 0..10_000 {
-//                 if gc.rec_poll(10) {
-//                     unsafe { a.mark(&mut gc); }
-//                     gc.collect();
-//                 }
-//                 a = alloc(&mut gc).1;
-//             }
-//         }
-//     }
-//
-//     fn alloc(gc: &mut Collector) -> (ValueRef, ValueRef) {
-//         unsafe {
-//             let a = gc.alloc_blob(size_of::<usize>());
-//             let b = gc.alloc_blob(size_of::<usize>());
-//             let tup = gc.alloc_rec(2);
-//             let int_t = gc.alloc_rec(0);
-//             let tuple_t = gc.alloc_rec(0);
-//             let type_t = gc.alloc_rec(0);
-//
-//             a.set_type(int_t);
-//             b.set_type(int_t);
-//             tup.set_type(tuple_t);
-//             int_t.set_type(type_t);
-//             tuple_t.set_type(type_t);
-//             type_t.set_type(type_t);
-//
-//             *a.as_mut_ptr().offset(2) = 3;
-//             *b.as_mut_ptr().offset(2) = 5;
-//             *tup.as_mut_ptr().offset(2) = transmute(a);
-//             *tup.as_mut_ptr().offset(3) = transmute(b);
-//
-//             return (tup, a);
-//         }
-//     }
-//
-//     fn print_heaps(gc: &Collector) {
-//         unsafe {
-//             println!("# Blobspace");
-//             let mut blob = gc.blobspace;
-//             while !blob.is_null() {
-//                 let val = ValueRef::from_raw(blob.offset(1));
-//                 let size = val.field_count();
-//                 let typ = val.get_type();
-//                 let data = slice::from_raw_parts(blob.offset(3) as *const u8, size);
-//
-//                 print!("  {:p} -> blob<{}, {:p}>[",
-//                        val.as_ptr(), size, typ.as_ptr());
-//                 for n in data {
-//                     print!(" {}", n);
-//                 }
-//                 println!("]");
-//
-//                 blob = *blob as *mut usize;
-//             }
-//
-//             println!("# Fromspace");
-//             let mut rec = gc.fromspace.as_ptr();
-//             let end = rec.offset(gc.fromspace.len() as isize);
-//             while rec < end {
-//                 let val = ValueRef::from_raw(rec as *mut usize);
-//                 let size = val.field_count();
-//                 let typ = val.get_type();
-//                 let data = slice::from_raw_parts(rec.offset(2), size);
-//
-//                 print!("  {:p} -> rec<{}, {:p}>[", rec, size, typ.as_ptr());
-//                 for v in data {
-//                     print!(" {:p}", v as *const usize);
-//                 }
-//                 println!("]");
-//
-//                 rec = rec.offset(2 + size as isize);
-//             }
-//         }
-//     }
-// }
+/// # Tests
+
+#[cfg(test)]
+mod tests {
+    use super::Collector;
+    use value::{Any, Bits, ListPair};
+    use refs::ValueRef;
+
+    use std::mem::transmute;
+    use std::slice;
+    use std::borrow::{Borrow, BorrowMut};
+    use std::ptr;
+
+    #[test]
+    fn it_works() {
+        unsafe {
+            let mut gc = Collector::new(1024);
+
+            let (tup, a) = alloc(&mut gc);
+
+            print_heaps(&gc);
+
+            println!("\ncollecting...\n");
+            tup.mark(&mut gc);
+            gc.collect();
+
+            print_heaps(&gc);
+
+            println!("\ncollecting...\n");
+            a.mark(&mut gc);
+            gc.collect();
+
+            print_heaps(&gc);
+        }
+    }
+
+    #[test]
+    fn stress() {
+        unsafe {
+            let mut gc = Collector::new(1024);
+            let (_, mut a) = alloc(&mut gc);
+            for _ in 0..10_000 {
+                if gc.rec_poll(10) {
+                    a.mark(&mut gc);
+                    gc.collect();
+                }
+                a = alloc(&mut gc).1;
+            }
+        }
+    }
+
+    fn alloc(gc: &mut Collector) -> (ValueRef, ValueRef) {
+        unsafe {
+            let mut a = gc.alloc(Bits::new(3isize));
+            let mut b = gc.alloc(Bits::new(5isize));
+            let mut tup = gc.alloc(ListPair {
+                header: Any::header(2, true, false),
+                typ: ValueRef::from_raw(ptr::null::<Any>() as *mut Any),
+                head: a,
+                tail: b
+            });
+
+            // HACK:
+            let ptr = *a.borrow();
+            (*a.borrow_mut()).typ = ptr;
+            (*b.borrow_mut()).typ = ptr;
+            (*tup.borrow_mut()).typ = ptr;
+
+            return (tup, b)
+        }
+    }
+
+    fn print_heaps(gc: &Collector) {
+        unsafe {
+            println!("# Blobspace");
+            let mut blob = gc.blobspace;
+            while !blob.is_null() {
+                let val = &(*blob).data;
+                let size = val.alloc_len();
+                let typ = val.get_type();
+                let datap = transmute::<&Any, *mut Any>(val).offset(1);
+                let data = slice::from_raw_parts(datap as *const u8, size);
+
+                print!("  {:p} -> blob<{}, {:p}>[",
+                       val, size, typ.as_ptr());
+                for n in data {
+                    print!(" {}", n);
+                }
+                println!("]");
+
+                blob = (*blob).next;
+            }
+
+            println!("# Fromspace");
+            let mut rec = gc.fromspace.as_ptr();
+            let end = rec.offset(gc.fromspace.len() as isize);
+            while rec < end {
+                let val = ValueRef::from_raw(rec as *mut Any);
+                let size = val.alloc_len();
+                let typ = val.get_type();
+                let data = slice::from_raw_parts(rec.offset(2), size);
+
+                print!("  {:p} -> rec<{}, {:p}>[", rec, size, typ.as_ptr());
+                for v in data {
+                    print!(" {:p}", v.as_ptr());
+                }
+                println!("]");
+
+                rec = rec.offset(2 + size as isize);
+            }
+        }
+    }
+}
