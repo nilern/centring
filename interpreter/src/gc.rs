@@ -7,6 +7,7 @@ use alloc::heap;
 
 // TODO: also consider blobs when polling and triggering collections
 
+/// A garbage collector (holds the memory areas and other GC state).
 pub struct Collector {
     fromspace: Vec<ValueRef>,
     tospace: Vec<ValueRef>,
@@ -20,7 +21,7 @@ struct Blob {
 }
 
 impl Collector {
-    /// Make a new garbage collector to allocate memory and collect garbage with.
+    /// Create a new `Collector`.
     #[inline(always)]
     pub fn new(heapsize: usize) -> Collector {
         Collector {
@@ -29,6 +30,7 @@ impl Collector {
             blobspace: ptr::null::<Blob>() as *mut Blob
         }
     }
+
 
     #[inline(always)]
     pub fn rec_poll(&self, word_count: usize) -> bool {
@@ -59,6 +61,8 @@ impl Collector {
         ValueRef::from_raw(dest as *mut Any)
     }
 
+    /// Move a Centring value into the GC heap and return a ValueRef to its new
+    /// position. Comparable to `Box::new()` and `Rc::new()`.
     pub unsafe fn alloc<T: CtrValue>(&mut self, v: T) -> ValueRef {
         if v.as_any().pointy() {
             self.alloc_pointy(v)
@@ -184,7 +188,7 @@ mod tests {
             let mut a = gc.alloc(Bits::new(3isize));
             let mut b = gc.alloc(Bits::new(5isize));
             let mut tup = gc.alloc(ListPair {
-                header: Any::header(2, true, false),
+                header: Any::header(2, true),
                 typ: ValueRef::from_raw(ptr::null::<Any>() as *mut Any),
                 head: a,
                 tail: b

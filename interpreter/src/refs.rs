@@ -38,17 +38,14 @@ impl WeakRoot {
 }
 
 impl ValueRef {
-    #[inline(always)]
     pub fn from_raw(ptr: *mut Any) -> ValueRef {
         ValueRef(ptr)
     }
 
-    #[inline(always)]
     pub fn as_ptr(self) -> *const Any {
         self.0 as *const Any
     }
 
-    #[inline(always)]
     pub fn as_mut_ptr(self) -> *mut Any {
         self.0
     }
@@ -91,14 +88,12 @@ impl ValueRef {
 impl Deref for ValueRef {
     type Target = Any;
 
-    #[inline(always)]
     fn deref(&self) -> &Any {
         unsafe { &*self.0 }
     }
 }
 
 impl DerefMut for ValueRef {
-    #[inline(always)]
     fn deref_mut(&mut self) -> &mut Any {
         unsafe { &mut *self.0 }
     }
