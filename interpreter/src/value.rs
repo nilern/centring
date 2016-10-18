@@ -1,9 +1,6 @@
-use gc::Collector;
+use refs::ValueRef;
 
-use std::slice;
-use std::ops::{Deref, DerefMut};
 use std::mem;
-use std::fmt::Debug;
 use std::ptr;
 use std::mem::size_of;
 
@@ -19,9 +16,6 @@ pub struct Bits<T> {
     pub typ: ValueRef,
     pub data: T
 }
-
-#[derive(Clone, Copy)]
-pub struct ValueRef(*mut Any);
 
 pub trait CtrValue {
     fn as_any(&self) -> &Any;
@@ -68,74 +62,6 @@ impl Any {
 impl CtrValue for Any {
     fn as_any(&self) -> &Any {
         self
-    }
-}
-
-impl ValueRef {
-    #[inline(always)]
-    pub fn from_raw(ptr: *mut Any) -> ValueRef {
-        ValueRef(ptr)
-    }
-
-    #[inline(always)]
-    pub fn as_ptr(self) -> *const Any {
-        self.0 as *const Any
-    }
-
-    #[inline(always)]
-    pub fn as_mut_ptr(self) -> *mut Any {
-        self.0
-    }
-
-    /// Mark the value that this `ValueRef` points to. Return a new `ValueRef`
-    /// that points to the new location of the value.
-    ///
-    /// # Safety
-    /// This may move the value so calling code should overwrite the value this
-    /// was called on with the returned value.
-    pub unsafe fn mark(mut self, gc: &mut Collector) -> ValueRef {
-        if self.marked() {
-            if self.pointy() {
-                return self.typ // get forward pointer
-            } else {
-                return self;
-            }
-        } else {
-            if self.pointy() {
-                // we have to do the copy first so that only the fromspace
-                // version becomes a broken heart:
-                let res = unsafe {
-                    gc.move_rec_slice( // move data
-                        slice::from_raw_parts(self.as_mut_ptr() as *mut ValueRef,
-                            2 + self.alloc_len()))
-                };
-                self.typ = res; // set forward pointer
-                self.set_mark_bit();
-                return res;
-            } else {
-                // on the other hand here we need to set the bit first to avoid
-                // infinite recursive loops:
-                self.set_mark_bit();
-                self.typ = self.typ.mark(gc);
-                return self;
-            }
-        }
-    }
-}
-
-impl Deref for ValueRef {
-    type Target = Any;
-
-    #[inline(always)]
-    fn deref(&self) -> &Any {
-        unsafe { &*self.0 }
-    }
-}
-
-impl DerefMut for ValueRef {
-    #[inline(always)]
-    fn deref_mut(&mut self) -> &mut Any {
-        unsafe { &mut *self.0 }
     }
 }
 

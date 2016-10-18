@@ -1,5 +1,6 @@
-use interpreter::{Interpreter, ValueHandle};
+use interpreter::Interpreter;
 use value::Bits;
+use refs::Root;
 
 pub struct ParseState {
     str: String,
@@ -76,7 +77,7 @@ fn digit(st: &mut ParseState) -> ParseResult<usize> {
 }
 
 pub fn int(itp: &mut Interpreter, st: &mut ParseState)
-    -> ParseResult<ValueHandle> {
+    -> ParseResult<Root> {
     let mut n = try!(digit(st)) as isize;
     while let Ok(d) = digit(st) {
         n = n*10 + d as isize;

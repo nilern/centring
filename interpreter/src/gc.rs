@@ -1,4 +1,5 @@
-use value::{ValueRef, Any, CtrValue, Bits, Unbox};
+use value::{Any, CtrValue};
+use refs::ValueRef;
 
 use std::ptr;
 use std::mem::{size_of, align_of, transmute, swap};

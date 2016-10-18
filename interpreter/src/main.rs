@@ -8,11 +8,11 @@ pub mod ops;
 pub mod interpreter;
 pub mod read;
 pub mod value;
+pub mod refs;
 
 use interpreter::Interpreter;
 use value::{Unbox, Bits};
 
-use std::cell::Cell;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
