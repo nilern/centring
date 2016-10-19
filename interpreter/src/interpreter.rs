@@ -1,6 +1,6 @@
 use gc::Collector;
 use value::CtrValue;
-use refs::{Root, WeakRoot};
+use refs::{Root, WeakRoot, ValueHandle};
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
@@ -20,6 +20,16 @@ impl Interpreter {
 
     pub fn alloc<T: CtrValue>(&mut self, v: T) -> Root {
         let res = unsafe { Root::new(self.gc.alloc(v)) };
+        self.stack_roots.push(Root::downgrade(&res));
+        res
+    }
+
+    pub fn alloc_rec(&mut self, typ: ValueHandle, fields: &[ValueHandle])
+        -> Root {
+        let raw_fields = fields.iter().map(|vh| vh.ptr());
+        let res = unsafe {
+            Root::new(self.gc.alloc_rec(fields.len(), typ.ptr(), raw_fields))
+        };
         self.stack_roots.push(Root::downgrade(&res));
         res
     }

@@ -44,7 +44,24 @@ impl Collector {
         let dest = self.fromspace.as_mut_ptr().offset(len as isize) as *mut T;
 
         *dest = v;
-        dest as *mut Any
+        dest as ValuePtr
+    }
+
+    pub unsafe fn alloc_rec<I>(&mut self, alloc_len: usize, typ: ValuePtr, fields: I)
+        -> ValuePtr where I: Iterator<Item=ValuePtr> {
+        let len = self.fromspace.len();
+        let size = size_of::<Any>() + alloc_len;
+        self.fromspace.set_len(len + size);
+        let mut dest = self.fromspace.as_mut_ptr().offset(len as isize) as *mut ValuePtr;
+
+        *dest = Any::header(alloc_len, true) as ValuePtr;
+        dest = dest.offset(1);
+        *dest = typ;
+        for field in fields {
+            dest = dest.offset(1);
+            *dest = field;
+        }
+        dest as ValuePtr
     }
 
     unsafe fn alloc_flat<T: CtrValue>(&mut self, v: T) -> ValuePtr {

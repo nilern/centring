@@ -10,6 +10,7 @@ pub mod read;
 pub mod value;
 pub mod refs;
 pub mod write;
+pub mod primops;
 
 use interpreter::Interpreter;
 use write::ContextValue;
