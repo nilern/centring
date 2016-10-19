@@ -1,4 +1,5 @@
-use refs::{ValuePtr, ValueHandle};
+use refs::ValuePtr;
+use interpreter::Interpreter;
 
 use std::mem;
 use std::ptr;
@@ -16,16 +17,16 @@ pub struct Any {
 /// an i64.
 #[repr(C)]
 pub struct Bits<T: Copy> {
-    pub header: usize,
-    pub typ: ValuePtr,
+    header: usize,
+    typ: ValuePtr,
     pub data: T
 }
 
 /// The good ol' cons cell.
 #[repr(C)]
 pub struct ListPair {
-    pub header: usize,
-    pub typ: ValuePtr,
+    header: usize,
+    typ: ValuePtr,
     pub head: ValuePtr,
     pub tail: ValuePtr
 }
@@ -42,9 +43,9 @@ pub trait CtrValue {
     fn as_any(&self) -> &Any;
 }
 
-// FIXME: this should probably take type pointers into account
+// FIXME: impls should take type pointers into account
 pub trait Downcast<SubType> {
-    fn downcast(&self) -> Option<&SubType>;
+    fn downcast(&self, itp: &Interpreter) -> Option<&SubType>;
 }
 
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
@@ -111,36 +112,6 @@ impl CtrValue for Any {
     }
 }
 
-impl<T: Copy> Downcast<Bits<T>> for Any {
-    fn downcast(&self) -> Option<&Bits<T>> {
-        if !self.pointy() && self.alloc_len() == size_of::<T>() {
-            Some(unsafe { mem::transmute(self) })
-        } else {
-            None
-        }
-    }
-}
-
-impl Downcast<ListPair> for Any {
-    fn downcast(&self) -> Option<&ListPair> {
-        if self.pointy() && self.alloc_len() == 2 {
-            Some(unsafe { mem::transmute(self) })
-        } else {
-            None
-        }
-    }
-}
-
-impl Downcast<ListEmpty> for Any {
-    fn downcast(&self) -> Option<&ListEmpty> {
-        if self.pointy() && self.alloc_len() == 0 {
-            Some(unsafe { mem::transmute(self) })
-        } else {
-            None
-        }
-    }
-}
-
 impl<T: Copy> Bits<T> {
     /// Construct a new `Bits<T>`.
     pub fn new(v: T) -> Bits<T> {
@@ -167,12 +138,12 @@ impl<T: Copy> Unbox for Bits<T> {
 }
 
 impl ListPair {
-    pub fn new(head: ValueHandle, tail: ValueHandle) -> ListPair {
+    pub fn new(itp: &Interpreter, head: ValuePtr, tail: ValuePtr) -> ListPair {
         ListPair {
             header: unsafe { Any::header(2, true) },
             typ: ptr::null::<Any>() as *mut Any, // FIXME
-            head: head.ptr(),
-            tail: tail.ptr()
+            head: head,
+            tail: tail
         }
     }
 }
@@ -184,7 +155,7 @@ impl CtrValue for ListPair {
 }
 
 impl ListEmpty {
-    pub fn new() -> ListEmpty {
+    pub fn new(itp: &Interpreter) -> ListEmpty {
         ListEmpty {
             header: unsafe { Any::header(0, true) },
             typ: ptr::null::<Any>() as *mut Any // FIXME
@@ -195,5 +166,35 @@ impl ListEmpty {
 impl CtrValue for ListEmpty {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
+    }
+}
+
+impl<T: Copy> Downcast<Bits<T>> for Any {
+    fn downcast(&self, itp: &Interpreter) -> Option<&Bits<T>> {
+        if !self.pointy() && self.alloc_len() == size_of::<T>() {
+            Some(unsafe { mem::transmute(self) })
+        } else {
+            None
+        }
+    }
+}
+
+impl Downcast<ListPair> for Any {
+    fn downcast(&self, itp: &Interpreter) -> Option<&ListPair> {
+        if self.pointy() && self.alloc_len() == 2 {
+            Some(unsafe { mem::transmute(self) })
+        } else {
+            None
+        }
+    }
+}
+
+impl Downcast<ListEmpty> for Any {
+    fn downcast(&self, itp: &Interpreter) -> Option<&ListEmpty> {
+        if self.pointy() && self.alloc_len() == 0 {
+            Some(unsafe { mem::transmute(self) })
+        } else {
+            None
+        }
     }
 }

@@ -104,11 +104,15 @@ fn int(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
 fn list(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
     if let Some(')') = st.peek() {
         try!(st.pop());
-        Ok(itp.alloc(ListEmpty::new()))
+        let nil = ListEmpty::new(itp);
+        Ok(itp.alloc(nil))
     } else {
         let v = try!(read(itp, st));
         list(itp, st)
-            .map(|l| itp.alloc(ListPair::new(v.borrow(), l.borrow())))
+            .map(|l| {
+                let pair = ListPair::new(itp, v.ptr(), l.ptr());
+                itp.alloc(pair)
+            })
     }
 }
 
@@ -140,11 +144,11 @@ mod tests {
         let res = read(&mut itp, &mut st);
         assert!(res.is_ok());
         unsafe {
-            let opp: Option<&ListPair> = (*res.unwrap().ptr()).downcast();
+            let opp: Option<&ListPair> = (*res.unwrap().ptr()).downcast(&mut itp);
             assert!(opp.is_some());
             let pp = opp.unwrap();
-            let n: Option<&Bits<isize>> = (*(*pp).head).downcast();
-            let tail: Option<&ListEmpty> = (*(*pp).tail).downcast();
+            let n: Option<&Bits<isize>> = (*(*pp).head).downcast(&mut itp);
+            let tail: Option<&ListEmpty> = (*(*pp).tail).downcast(&mut itp);
             assert!(n.is_some());
             assert!(tail.is_some());
             assert_eq!(n.unwrap().unbox(), 235);

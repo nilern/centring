@@ -183,18 +183,19 @@ mod tests {
     use super::Collector;
     use value::{Any, Bits, ListPair};
     use refs::ValuePtr;
+    use interpreter::Interpreter;
 
     use std::mem::transmute;
     use std::slice;
     use std::borrow::{Borrow, BorrowMut};
-    use std::ptr;
 
     #[test]
     fn it_works() {
+        let itp = Interpreter::new();
         unsafe {
             let mut gc = Collector::new(1024);
 
-            let (tup, a) = alloc(&mut gc);
+            let (tup, a) = alloc(&itp, &mut gc);
 
             print_heaps(&gc);
 
@@ -214,29 +215,25 @@ mod tests {
 
     #[test]
     fn stress() {
+        let itp = Interpreter::new();
         unsafe {
             let mut gc = Collector::new(1024);
-            let (_, mut a) = alloc(&mut gc);
+            let (_, mut a) = alloc(&itp, &mut gc);
             for _ in 0..10_000 {
                 if gc.rec_poll(10) {
                     gc.mark(a);
                     gc.collect();
                 }
-                a = alloc(&mut gc).1;
+                a = alloc(&itp, &mut gc).1;
             }
         }
     }
 
-    fn alloc(gc: &mut Collector) -> (ValuePtr, ValuePtr) {
+    fn alloc(itp: &Interpreter, gc: &mut Collector) -> (ValuePtr, ValuePtr) {
         unsafe {
             let mut a = gc.alloc(Bits::new(3isize));
             let mut b = gc.alloc(Bits::new(5isize));
-            let mut tup = gc.alloc(ListPair {
-                header: Any::header(2, true),
-                typ: ptr::null::<Any>() as ValuePtr,
-                head: a,
-                tail: b
-            });
+            let mut tup = gc.alloc(ListPair::new(itp, a, b));
 
             // HACK:
             let ptr = *a.borrow();

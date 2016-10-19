@@ -31,7 +31,7 @@ impl<'a> Display for ContextValue<'a> {
                 _ => unimplemented!()
             }
         } else {
-            let obv: Option<&Bits<isize>> = v.downcast();
+            let obv: Option<&Bits<isize>> = v.downcast(&self.itp);
             if let Some(bv) = obv {
                 write!(fmt, "{}", bv.data)
             } else {
@@ -48,7 +48,7 @@ fn write_list(fmt: &mut Formatter, ls: &ContextValue, start: bool)
         match v.alloc_len() {
             0 => write!(fmt, ")"),
             2 => {
-                let olv: Option<&ListPair> = v.downcast();
+                let olv: Option<&ListPair> = v.downcast(&ls.itp);
                 if let Some(lv) = olv {
                     let head = Root::new(lv.head);
                     let tail = Root::new(lv.tail);
