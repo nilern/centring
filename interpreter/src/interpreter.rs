@@ -24,7 +24,7 @@ impl Interpreter {
         res
     }
 
-    unsafe fn collect(&mut self) {
+    pub unsafe fn collect(&mut self) {
         let gc = &mut self.gc;
         self.stack_roots.retain(|whandle|
             if let Some(mut handle) = whandle.upgrade() {

@@ -42,6 +42,7 @@ pub trait CtrValue {
     fn as_any(&self) -> &Any;
 }
 
+// FIXME: this should probably take type pointers into account
 pub trait Downcast<SubType> {
     fn downcast(&self) -> Option<&SubType>;
 }
@@ -123,6 +124,16 @@ impl<T: Copy> Downcast<Bits<T>> for Any {
 impl Downcast<ListPair> for Any {
     fn downcast(&self) -> Option<&ListPair> {
         if self.pointy() && self.alloc_len() == 2 {
+            Some(unsafe { mem::transmute(self) })
+        } else {
+            None
+        }
+    }
+}
+
+impl Downcast<ListEmpty> for Any {
+    fn downcast(&self) -> Option<&ListEmpty> {
+        if self.pointy() && self.alloc_len() == 0 {
             Some(unsafe { mem::transmute(self) })
         } else {
             None

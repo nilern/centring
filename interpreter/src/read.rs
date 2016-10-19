@@ -131,17 +131,23 @@ pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
 mod tests {
     use super::{ParseState, read};
     use interpreter::Interpreter;
-    use value::{Bits, Unbox};
+    use value::{Bits, ListPair, ListEmpty, Downcast, Unbox};
 
     #[test]
-    fn read_int() {
+    fn int_list() {
         let mut itp = Interpreter::new();
-        let mut st = ParseState::new(String::from("235"));
+        let mut st = ParseState::new(String::from("(235)"));
         let res = read(&mut itp, &mut st);
         assert!(res.is_ok());
-        let ptr = res.unwrap().ptr() as *const Bits<isize>;
         unsafe {
-            assert_eq!((*ptr).unbox(), 235);
+            let opp: Option<&ListPair> = (*res.unwrap().ptr()).downcast();
+            assert!(opp.is_some());
+            let pp = opp.unwrap();
+            let n: Option<&Bits<isize>> = (*(*pp).head).downcast();
+            let tail: Option<&ListEmpty> = (*(*pp).tail).downcast();
+            assert!(n.is_some());
+            assert!(tail.is_some());
+            assert_eq!(n.unwrap().unbox(), 235);
         }
     }
 }
