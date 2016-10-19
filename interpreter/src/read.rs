@@ -72,10 +72,8 @@ fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
     }
 }
 
-fn ws(st: &mut ParseState) -> ParseResult<()> {
-    try!(sat(char::is_whitespace, st));
+fn ws_many(st: &mut ParseState) {
     while let Ok(_) = sat(char::is_whitespace, st) { }
-    Ok(())
 }
 
 fn digit(st: &mut ParseState) -> ParseResult<usize> {
@@ -103,7 +101,7 @@ fn list(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
 }
 
 pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
-    let _ = ws(st);
+    ws_many(st);
     let res = match st.peek() {
         Some('(') => {
             let _ = st.pop();
@@ -111,7 +109,7 @@ pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
         },
         _ => int(itp, st)
     };
-    let _ = ws(st);
+    ws_many(st);
     res
 }
 
