@@ -3,15 +3,16 @@
 extern crate alloc;
 extern crate rustyline;
 
-pub mod gc;
 pub mod ops;
 pub mod interpreter;
+pub mod gc;
 pub mod read;
 pub mod value;
 pub mod refs;
+pub mod write;
 
 use interpreter::Interpreter;
-use value::{Unbox, Bits};
+use write::ContextValue;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -24,9 +25,11 @@ fn main() {
         match line {
             Ok(line) => {
                 let mut st = read::ParseState::new(line);
-                unsafe {
-                    println!("{:?}", read::read(&mut itp, &mut st).map(|n|
-                        (*(n.ptr() as *const Bits<isize>)).unbox()));
+                match read::read(&mut itp, &mut st) {
+                    Ok(v) =>
+                        println!("{}", ContextValue::new(v.borrow(), &itp)),
+                    Err(_) =>
+                        println!("ReadError!")
                 }
             },
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {

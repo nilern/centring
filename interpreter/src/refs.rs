@@ -31,6 +31,11 @@ impl Root {
         WeakRoot(Rc::downgrade(&this.0))
     }
 
+    /// Create a corresponding `ValueHandle`.
+    pub fn borrow(&self) -> ValueHandle {
+        ValueHandle(&*self.0)
+    }
+
     /// Get the raw pointer to the Value.
     pub fn ptr(&self) -> ValuePtr {
         *self.0.deref().borrow()
@@ -68,7 +73,6 @@ impl WeakRoot {
 }
 
 impl<'a> ValueHandle<'a> {
-
     /// Get the raw pointer to the Value.
     pub fn ptr(&self) -> ValuePtr {
         *self.0.borrow()

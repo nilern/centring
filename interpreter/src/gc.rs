@@ -24,7 +24,6 @@ struct Blob {
 
 impl Collector {
     /// Create a new `Collector`.
-    #[inline(always)]
     pub fn new(heapsize: usize) -> Collector {
         Collector {
             fromspace: Vec::with_capacity(heapsize),
@@ -33,8 +32,6 @@ impl Collector {
         }
     }
 
-
-    #[inline(always)]
     pub fn rec_poll(&self, word_count: usize) -> bool {
         self.fromspace.capacity() - self.fromspace.len() >= word_count
     }
@@ -73,7 +70,7 @@ impl Collector {
         }
     }
 
-    pub fn move_rec_slice(&mut self, src: &[ValuePtr]) -> ValuePtr {
+    fn move_rec_slice(&mut self, src: &[ValuePtr]) -> ValuePtr {
         unsafe {
             let dest = self.tospace
                 .as_mut_ptr().offset(self.tospace.len() as isize) as *mut Any;

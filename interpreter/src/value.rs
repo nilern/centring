@@ -42,6 +42,10 @@ pub trait CtrValue {
     fn as_any(&self) -> &Any;
 }
 
+pub trait Downcast<SubType> {
+    fn downcast(&self) -> Option<&SubType>;
+}
+
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
 pub trait Unbox {
     type Prim: Copy;
@@ -103,6 +107,26 @@ impl Any {
 impl CtrValue for Any {
     fn as_any(&self) -> &Any {
         self
+    }
+}
+
+impl<T: Copy> Downcast<Bits<T>> for Any {
+    fn downcast(&self) -> Option<&Bits<T>> {
+        if !self.pointy() && self.alloc_len() == size_of::<T>() {
+            Some(unsafe { mem::transmute(self) })
+        } else {
+            None
+        }
+    }
+}
+
+impl Downcast<ListPair> for Any {
+    fn downcast(&self) -> Option<&ListPair> {
+        if self.pointy() && self.alloc_len() == 2 {
+            Some(unsafe { mem::transmute(self) })
+        } else {
+            None
+        }
     }
 }
 

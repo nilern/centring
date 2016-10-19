@@ -61,6 +61,7 @@ fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
             if f(c) {
                 Ok(c)
             } else {
+                st.seek(oldpos);
                 Err(ParseError::Unsatisfied)
             }
         },
@@ -69,6 +70,12 @@ fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
             err
         }
     }
+}
+
+fn ws(st: &mut ParseState) -> ParseResult<()> {
+    try!(sat(char::is_whitespace, st));
+    while let Ok(_) = sat(char::is_whitespace, st) { }
+    Ok(())
 }
 
 fn digit(st: &mut ParseState) -> ParseResult<usize> {
@@ -84,17 +91,28 @@ fn int(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
     Ok(itp.alloc(Bits::new(n)))
 }
 
-// fn list(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
-//     if let Some(')') = st.peek() {
-//         Ok(itp.alloc(ListEmpty::new()))
-//     } else {
-//         let v = try!(read(itp, st));
-//         list(itp, st).map(|l| itp.alloc(ListPair::new(v.borrow(), l.borrow())))
-//     }
-// }
+fn list(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
+    if let Some(')') = st.peek() {
+        try!(st.pop());
+        Ok(itp.alloc(ListEmpty::new()))
+    } else {
+        let v = try!(read(itp, st));
+        list(itp, st)
+            .map(|l| itp.alloc(ListPair::new(v.borrow(), l.borrow())))
+    }
+}
 
 pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
-    int(itp, st)
+    let _ = ws(st);
+    let res = match st.peek() {
+        Some('(') => {
+            let _ = st.pop();
+            list(itp, st)
+        },
+        _ => int(itp, st)
+    };
+    let _ = ws(st);
+    res
 }
 
 /// # Tests
