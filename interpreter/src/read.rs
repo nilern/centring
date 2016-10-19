@@ -4,7 +4,9 @@ use refs::Root;
 
 pub struct ParseState {
     str: String,
-    pos: usize
+    pos: usize,
+    line: usize,
+    col: usize
 }
 
 #[derive(Debug)]
@@ -20,18 +22,22 @@ impl ParseState {
     pub fn new(str: String) -> ParseState {
         ParseState {
             str: str,
-            pos: 0
+            pos: 0,
+            line: 1,
+            col: 1
         }
     }
 
-    /// Return the position (byte index) the `ParseState` is at.
-    pub fn tell(&self) -> usize {
-        self.pos
+    /// Return the coordinates the `ParseState` is at.
+    pub fn tell(&self) -> (usize, usize, usize) {
+        (self.pos, self.line, self.col)
     }
 
-    /// Set the position (byte index) of the `ParseState` to `pos`.
-    pub fn seek(&mut self, pos: usize) {
+    /// Set the coordinates) of the `ParseState`.
+    pub fn seek(&mut self, (pos, line, col): (usize, usize, usize)) {
         self.pos = pos;
+        self.line = line;
+        self.col = col;
     }
 
     /// Return the character that the `ParseState` is at. Returns `None` if
@@ -49,6 +55,12 @@ impl ParseState {
             let mut iter = self.str[self.pos..].char_indices();
             let res = iter.next().unwrap().1;
             self.pos += iter.next().unwrap_or((1, ' ')).0;
+            if '\n' == res { // TODO: '\r'
+                self.col = 1;   // at the start...
+                self.line += 1; // ...of the next line
+            } else {
+                self.col += 1;
+            }
             Ok(res)
         }
     }
