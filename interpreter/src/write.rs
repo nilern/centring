@@ -24,24 +24,9 @@ impl<'a> Display for ContextValue<'a> {
         let ref v = self.val;
         if v.pointy() {
             match v.alloc_len() {
-                0 => write!(fmt, "()"),
-                2 => {
-                    let olv: Option<&ListPair> = v.downcast();
-                    if let Some(lv) = olv {
-                        let head = Root::new(lv.head);
-                        let tail = Root::new(lv.tail);
-                        write!(fmt, "({} . {})",
-                               ContextValue {
-                                   val: head.borrow(),
-                                   itp: self.itp
-                               },
-                               ContextValue {
-                                   val: tail.borrow(),
-                                   itp: self.itp
-                               })
-                   } else {
-                       unimplemented!()
-                   }
+                0 | 2 => {
+                    try!(write!(fmt, "("));
+                    write_list(fmt, self, true)
                 },
                 _ => unimplemented!()
             }
@@ -53,5 +38,33 @@ impl<'a> Display for ContextValue<'a> {
                 unimplemented!()
             }
         }
+    }
+}
+
+fn write_list(fmt: &mut Formatter, ls: &ContextValue, start: bool)
+    -> Result<(), fmt::Error> {
+    let ref v = ls.val;
+    if v.pointy() {
+        match v.alloc_len() {
+            0 => write!(fmt, ")"),
+            2 => {
+                let olv: Option<&ListPair> = v.downcast();
+                if let Some(lv) = olv {
+                    let head = Root::new(lv.head);
+                    let tail = Root::new(lv.tail);
+                    if !start {
+                        try!(write!(fmt, " "));
+                    }
+                    try!(ContextValue::new(head.borrow(), ls.itp).fmt(fmt));
+                    write_list(fmt, &ContextValue::new(tail.borrow(), ls.itp),
+                               false)
+               } else {
+                   panic!()
+               }
+            },
+            _ => panic!()
+        }
+    } else {
+        panic!()
     }
 }
