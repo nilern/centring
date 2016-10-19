@@ -1,6 +1,16 @@
-use interpreter::Interpreter;
-use refs::{Root, ValueHandle};
+use interpreter::{Interpreter, CtrResult};
+use interpreter::CtrError::Argc;
+use refs::ValueHandle;
 
-fn rec(itp: &mut Interpreter, typ: ValueHandle, fields: &[ValueHandle]) -> Root {
-    itp.alloc_rec(typ, fields)
+use std::cmp::Ordering::Greater;
+
+fn rec(itp: &mut Interpreter, args: &[ValueHandle]) -> CtrResult {
+    if args.len() > 0 {
+        Ok(itp.alloc_rec(args[0].clone(), &args[1..]))
+    } else {
+        Err(Argc {
+            expected: (Greater, 0),
+            received: args.len()
+        })
+    }
 }

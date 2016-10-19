@@ -18,6 +18,7 @@ pub struct Root(Rc<RefCell<ValuePtr>>);
 pub struct WeakRoot(Weak<RefCell<ValuePtr>>);
 
 /// Like `Root`, but a non-owned reference.
+#[derive(Clone)]
 pub struct ValueHandle<'a>(&'a RefCell<ValuePtr>);
 
 impl Root {

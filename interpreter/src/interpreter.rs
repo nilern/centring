@@ -2,12 +2,23 @@ use gc::Collector;
 use value::CtrValue;
 use refs::{Root, WeakRoot, ValueHandle};
 
+use std::cmp::Ordering;
+
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
 pub struct Interpreter {
     gc: Collector,
     stack_roots: Vec<WeakRoot>
 }
+
+pub enum CtrError {
+    Argc {
+        expected: (Ordering, usize),
+        received: usize
+    }
+}
+
+pub type CtrResult = Result<Root, CtrError>;
 
 impl Interpreter {
     /// Make a new `Interpreter` to execute Centring with.
