@@ -1,14 +1,19 @@
 use gc::Collector;
-use value::CtrValue;
-use refs::{Root, WeakRoot, ValueHandle};
+use value::Any;
+use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
+use std::ptr;
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
 pub struct Interpreter {
     gc: Collector,
-    stack_roots: Vec<WeakRoot>
+    stack_roots: Vec<WeakRoot>,
+    type_t: Root,
+    pair_t: Root,
+    nil_t: Root,
+    int_t: Root
 }
 
 pub enum CtrError {
@@ -23,23 +28,56 @@ pub type CtrResult = Result<Root, CtrError>;
 impl Interpreter {
     /// Make a new `Interpreter` to execute Centring with.
     pub fn new() -> Interpreter {
-        Interpreter {
+        // FIXME: make this sensible
+        let mut itp = Interpreter {
             gc: Collector::new(1024),
-            stack_roots: vec![]
-        }
-    }
+            stack_roots: vec![],
+            type_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            pair_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            nil_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) }
+        };
 
-    pub fn alloc<T: CtrValue>(&mut self, v: T) -> Root {
-        let res = unsafe { Root::new(self.gc.alloc(v)) };
-        self.stack_roots.push(Root::downgrade(&res));
-        res
+        let type_t = itp.alloc_nil();
+        itp.type_t = type_t.clone();
+        itp.pair_t = itp.alloc_nil();
+        itp.nil_t = itp.alloc_nil();
+        itp.int_t = itp.alloc_nil();
+
+        itp.type_t.set_type(type_t.ptr());
+        itp.pair_t.set_type(type_t.ptr());
+        itp.nil_t.set_type(type_t.ptr());
+        itp.int_t.set_type(type_t.ptr());
+
+        itp
     }
 
     pub fn alloc_rec(&mut self, typ: ValueHandle, fields: &[ValueHandle])
         -> Root {
-        let raw_fields = fields.iter().map(|vh| vh.ptr());
         let res = unsafe {
+            let raw_fields = fields.iter().map(|vh| vh.ptr());
             Root::new(self.gc.alloc_rec(fields.len(), typ.ptr(), raw_fields))
+        };
+        self.stack_roots.push(Root::downgrade(&res));
+        res
+    }
+
+    pub fn alloc_pair(&mut self, head: ValueHandle, tail: ValueHandle) -> Root {
+        let typ = self.pair_t.clone();
+        let fields = [head, tail];
+        self.alloc_rec(typ.borrow(), &fields)
+    }
+
+    pub fn alloc_nil(&mut self) -> Root {
+        let typ = self.nil_t.clone();
+        let fields = [];
+        self.alloc_rec(typ.borrow(), &fields)
+    }
+
+    pub fn alloc_int(&mut self, v: isize) -> Root {
+        let typ = self.int_t.clone();
+        let res = unsafe {
+            Root::new(self.gc.alloc_bits(typ.ptr(), v))
         };
         self.stack_roots.push(Root::downgrade(&res));
         res
@@ -47,6 +85,8 @@ impl Interpreter {
 
     pub unsafe fn collect(&mut self) {
         let gc = &mut self.gc;
+        // The following also takes care of Root members of self since they
+        // were created by self.alloc*.
         self.stack_roots.retain(|whandle|
             if let Some(mut handle) = whandle.upgrade() {
                 // Rust still has a live Root so this is a GC root and
@@ -71,14 +111,13 @@ mod tests {
 
     #[test]
     fn collect() {
+        let mut itp = Interpreter::new();
+        let a = itp.alloc_int(3);
+        let b = itp.alloc_int(5);
+        let tup = itp.alloc_pair(a.borrow(), b.borrow());
         unsafe {
-            let mut itp = Interpreter::new();
-            let a = itp.alloc(Bits::new(5i64));
-            let ptr = a.ptr();
-            (*a.ptr()).typ = ptr;
             itp.collect();
-            assert_eq!((*(a.ptr() as *const Bits<i64>)).unbox(),
-                       5);
+            assert_eq!((*(a.ptr() as *const Bits<i64>)).unbox(), 3);
         }
     }
 }

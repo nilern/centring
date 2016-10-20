@@ -50,8 +50,8 @@ fn write_list(fmt: &mut Formatter, ls: &ContextValue, start: bool)
             2 => {
                 let olv: Option<&ListPair> = v.downcast(&ls.itp);
                 if let Some(lv) = olv {
-                    let head = Root::new(lv.head);
-                    let tail = Root::new(lv.tail);
+                    let head = unsafe { Root::new(lv.head) };
+                    let tail = unsafe { Root::new(lv.tail) };
                     if !start {
                         try!(write!(fmt, " "));
                     }

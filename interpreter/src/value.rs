@@ -2,7 +2,6 @@ use refs::ValuePtr;
 use interpreter::Interpreter;
 
 use std::mem;
-use std::ptr;
 use std::mem::size_of;
 
 /// The layout of every Centring Value on the GC heap starts with the fields
@@ -65,8 +64,7 @@ impl Any {
     /// Everything will go bad if you give incorrect inputs to this and
     /// actually use the header on a GC-managed Value.
     pub unsafe fn header(alloc_len: usize, pointy: bool) -> usize {
-        alloc_len << 2
-        | (pointy as usize) << 1
+        alloc_len << 2 | (pointy as usize) << 1
     }
 
     /// Get the size of the payload in words if `self.pointy()` and in bytes
@@ -112,17 +110,6 @@ impl CtrValue for Any {
     }
 }
 
-impl<T: Copy> Bits<T> {
-    /// Construct a new `Bits<T>`.
-    pub fn new(v: T) -> Bits<T> {
-        Bits::<T> {
-            header: unsafe { Any::header(size_of::<T>(), false) },
-            typ: ptr::null::<Any>() as *mut Any, // FIXME
-            data: v
-        }
-    }
-}
-
 impl<T: Copy> CtrValue for Bits<T> {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
@@ -137,29 +124,9 @@ impl<T: Copy> Unbox for Bits<T> {
     }
 }
 
-impl ListPair {
-    pub fn new(itp: &Interpreter, head: ValuePtr, tail: ValuePtr) -> ListPair {
-        ListPair {
-            header: unsafe { Any::header(2, true) },
-            typ: ptr::null::<Any>() as *mut Any, // FIXME
-            head: head,
-            tail: tail
-        }
-    }
-}
-
 impl CtrValue for ListPair {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
-    }
-}
-
-impl ListEmpty {
-    pub fn new(itp: &Interpreter) -> ListEmpty {
-        ListEmpty {
-            header: unsafe { Any::header(0, true) },
-            typ: ptr::null::<Any>() as *mut Any // FIXME
-        }
     }
 }
 

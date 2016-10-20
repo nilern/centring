@@ -1,5 +1,4 @@
 use interpreter::Interpreter;
-use value::{Bits, ListPair, ListEmpty};
 use refs::Root;
 
 pub struct ParseState {
@@ -131,20 +130,20 @@ fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
     while let Ok(d) = digit(st) {
         n = n*10 + d as isize;
     }
-    Ok(Some(itp.alloc(Bits::new(n))))
+    Ok(Some(itp.alloc_int(n)))
 }
 
 fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
     if let Some(')') = st.peek() {
         let _ = st.pop();
-        let nil = ListEmpty::new(itp);
-        Ok(Some(itp.alloc(nil)))
+        Ok(Some(itp.alloc_nil()))
     } else {
         match expr(itp, st) {
             Ok(Some(head)) => match list(itp, st) {
                 Ok(Some(tail)) => {
-                    let ls = ListPair::new(itp, head.ptr(), tail.ptr());
-                    Ok(Some(itp.alloc(ls)))
+                    let ls = itp.alloc_pair(head.borrow(), tail.borrow());
+                    //let ls = ListPair::new(itp, head.ptr(), tail.ptr());
+                    Ok(Some(ls))
                 },
                 Ok(None) => Err(st.place_error(NonTerminating(')'))),
                 err @ Err(_) => err
@@ -194,7 +193,7 @@ pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
 mod tests {
     use super::{ParseState, read};
     use interpreter::Interpreter;
-    use value::{Bits, ListPair, ListEmpty, Downcast, Unbox};
+    use value::{Bits, ListPair, Downcast, Unbox};
 
     #[test]
     fn int_list() {

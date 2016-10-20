@@ -23,7 +23,7 @@ pub struct ValueHandle<'a>(&'a RefCell<ValuePtr>);
 
 impl Root {
     /// Create a new `Root`.
-    pub fn new(v: ValuePtr) -> Root {
+    pub unsafe fn new(v: ValuePtr) -> Root {
         Root(Rc::new(RefCell::new(v)))
     }
 
@@ -61,6 +61,12 @@ impl Deref for Root {
 impl DerefMut for Root {
     fn deref_mut(&mut self) -> &mut Any {
         unsafe { &mut **self.0.borrow_mut() }
+    }
+}
+
+impl Clone for Root {
+    fn clone(&self) -> Root {
+        Root(self.0.clone())
     }
 }
 
