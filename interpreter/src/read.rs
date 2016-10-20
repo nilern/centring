@@ -12,7 +12,8 @@ pub struct ParseState {
 #[derive(Debug)]
 pub enum ParseError {
     EOF,
-    Unsatisfied
+    Unsatisfied,
+    Extraneous
 }
 
 pub type ParseResult<T> = Result<T, ParseError>;
@@ -28,27 +29,27 @@ impl ParseState {
         }
     }
 
-    /// Return the coordinates the `ParseState` is at.
-    pub fn tell(&self) -> (usize, usize, usize) {
+    // Return the coordinates the `ParseState` is at.
+    fn tell(&self) -> (usize, usize, usize) {
         (self.pos, self.line, self.col)
     }
 
-    /// Set the coordinates) of the `ParseState`.
-    pub fn seek(&mut self, (pos, line, col): (usize, usize, usize)) {
+    // Set the coordinates) of the `ParseState`.
+    fn seek(&mut self, (pos, line, col): (usize, usize, usize)) {
         self.pos = pos;
         self.line = line;
         self.col = col;
     }
 
-    /// Return the character that the `ParseState` is at. Returns `None` if
-    /// it is past the end of the parsee.
-    pub fn peek(&self) -> Option<char> {
+    // Return the character that the `ParseState` is at. Returns `None` if
+    // it is past the end of the parsee.
+    fn peek(&self) -> Option<char> {
         self.str[self.pos..].chars().next()
     }
 
-    /// Return the character that the `ParseState` is at. Returns
-    /// `Err(ParseError::EOF)` if it is past the end of the parsee.
-    pub fn pop(&mut self) -> ParseResult<char> {
+    // Return the character that the `ParseState` is at. Returns
+    // `Err(ParseError::EOF)` if it is past the end of the parsee.
+    fn pop(&mut self) -> ParseResult<char> {
         if self.pos >= self.str.len() {
             Err(ParseError::EOF)
         } else {
@@ -84,8 +85,22 @@ fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
     }
 }
 
+fn ws_one(st: &mut ParseState) -> ParseResult<()> {
+    sat(char::is_whitespace, st)
+    .map(|_| ())
+    .or_else(|_| {
+        if let Some(';') = st.peek() {
+            let _ = st.pop();
+            while let Ok(_) = sat(|c| {c != '\n' && c != '\r'}, st) { }
+            Ok(())
+        } else {
+            Err(ParseError::Unsatisfied)
+        }
+    })
+}
+
 fn ws_many(st: &mut ParseState) {
-    while let Ok(_) = sat(char::is_whitespace, st) { }
+    while let Ok(_) = ws_one(st) { }
 }
 
 fn digit(st: &mut ParseState) -> ParseResult<usize> {
@@ -107,16 +122,16 @@ fn list(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
         let nil = ListEmpty::new(itp);
         Ok(itp.alloc(nil))
     } else {
-        let v = try!(read(itp, st));
+        let v = try!(expr(itp, st));
         list(itp, st)
-            .map(|l| {
-                let pair = ListPair::new(itp, v.ptr(), l.ptr());
-                itp.alloc(pair)
-            })
+        .map(|l| {
+            let pair = ListPair::new(itp, v.ptr(), l.ptr());
+            itp.alloc(pair)
+        })
     }
 }
 
-pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
+fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
     ws_many(st);
     let res = match st.peek() {
         Some('(') => {
@@ -127,6 +142,15 @@ pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
     };
     ws_many(st);
     res
+}
+
+pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
+    let res = expr(itp, st);
+    if let Err(ParseError::EOF) = st.pop() {
+        res
+    } else {
+        Err(ParseError::Extraneous)
+    }
 }
 
 /// # Tests
