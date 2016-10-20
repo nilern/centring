@@ -10,13 +10,34 @@ pub struct ParseState {
 }
 
 #[derive(Debug)]
-pub enum ParseError {
+pub enum ParseErrorCode {
+    /// End of input reached prematurely.
     EOF,
+    /// A character failed to satisfy some condition.
     Unsatisfied,
-    Extraneous
+    /// Got too many input expressions.
+    Extraneous,
+    /// Was expecting a terminating character (such as ')').
+    NonTerminating(char)
+}
+
+use self::ParseErrorCode::*;
+
+#[derive(Debug)]
+pub struct ParseError {
+    /// Description of the error.
+    code: ParseErrorCode,
+    /// The character index where the error occurred.
+    pos: usize,
+    /// The line number where the error occurred.
+    line: usize,
+    /// The column where the error occurred.
+    col: usize
 }
 
 pub type ParseResult<T> = Result<T, ParseError>;
+
+pub type ReadResult = ParseResult<Option<Root>>;
 
 impl ParseState {
     /// Create a new `ParseState` for parsing `str`.
@@ -51,7 +72,7 @@ impl ParseState {
     // `Err(ParseError::EOF)` if it is past the end of the parsee.
     fn pop(&mut self) -> ParseResult<char> {
         if self.pos >= self.str.len() {
-            Err(ParseError::EOF)
+            Err(self.place_error(EOF))
         } else {
             let mut iter = self.str[self.pos..].char_indices();
             let res = iter.next().unwrap().1;
@@ -65,6 +86,16 @@ impl ParseState {
             Ok(res)
         }
     }
+
+    // Add the current position information to a `ParseErrorCode`.
+    fn place_error(&self, code: ParseErrorCode) -> ParseError {
+        ParseError {
+            code: code,
+            pos: self.pos,
+            line: self.line,
+            col: self.col
+        }
+    }
 }
 
 fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
@@ -74,8 +105,9 @@ fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
             if f(c) {
                 Ok(c)
             } else {
+                let err = st.place_error(Unsatisfied);
                 st.seek(oldpos);
-                Err(ParseError::Unsatisfied)
+                Err(err)
             }
         },
         err @ Err(_) => {
@@ -85,22 +117,8 @@ fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
     }
 }
 
-fn ws_one(st: &mut ParseState) -> ParseResult<()> {
-    sat(char::is_whitespace, st)
-    .map(|_| ())
-    .or_else(|_| {
-        if let Some(';') = st.peek() {
-            let _ = st.pop();
-            while let Ok(_) = sat(|c| {c != '\n' && c != '\r'}, st) { }
-            Ok(())
-        } else {
-            Err(ParseError::Unsatisfied)
-        }
-    })
-}
-
-fn ws_many(st: &mut ParseState) {
-    while let Ok(_) = ws_one(st) { }
+fn comment(st: &mut ParseState) {
+    while let Ok(_) = sat(|c| c != '\n' && c != '\r', st) { }
 }
 
 fn digit(st: &mut ParseState) -> ParseResult<usize> {
@@ -108,48 +126,65 @@ fn digit(st: &mut ParseState) -> ParseResult<usize> {
         .map(|c| c.to_digit(10).unwrap() as usize)
 }
 
-fn int(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
+fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
     let mut n = try!(digit(st)) as isize;
     while let Ok(d) = digit(st) {
         n = n*10 + d as isize;
     }
-    Ok(itp.alloc(Bits::new(n)))
+    Ok(Some(itp.alloc(Bits::new(n))))
 }
 
-fn list(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
+fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
     if let Some(')') = st.peek() {
-        try!(st.pop());
+        let _ = st.pop();
         let nil = ListEmpty::new(itp);
-        Ok(itp.alloc(nil))
+        Ok(Some(itp.alloc(nil)))
     } else {
-        let v = try!(expr(itp, st));
-        list(itp, st)
-        .map(|l| {
-            let pair = ListPair::new(itp, v.ptr(), l.ptr());
-            itp.alloc(pair)
-        })
+        match expr(itp, st) {
+            Ok(Some(head)) => match list(itp, st) {
+                Ok(Some(tail)) => {
+                    let ls = ListPair::new(itp, head.ptr(), tail.ptr());
+                    Ok(Some(itp.alloc(ls)))
+                },
+                Ok(None) => Err(st.place_error(NonTerminating(')'))),
+                err @ Err(_) => err
+            },
+            Ok(None) => Err(st.place_error(NonTerminating(')'))),
+            err @ Err(_) => err
+        }
     }
 }
 
-fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
-    ws_many(st);
-    let res = match st.peek() {
-        Some('(') => {
-            let _ = st.pop();
-            list(itp, st)
-        },
-        _ => int(itp, st)
-    };
-    ws_many(st);
-    res
+fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
+    loop {
+        match st.peek() {
+            Some('(') => {
+                let _ = st.pop();
+                return list(itp, st)
+            },
+            Some(';') => {
+                let _ = st.pop();
+                comment(st);
+            },
+            Some(c) if c.is_whitespace() => {
+                let _ = st.pop();
+            },
+            Some(_) => return int(itp, st),
+            None => return Ok(None)
+        };
+    }
 }
 
-pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ParseResult<Root> {
+/// Read an entire input string. If it contains a single expression (possibly
+/// surrounded by whitespace and comments), return `Ok(Some(_))`, if it just
+/// contains whitespace and comments return `Ok(None)`, else return
+/// a `ParseError`.
+pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
     let res = expr(itp, st);
-    if let Err(ParseError::EOF) = st.pop() {
+    if let Ok(None) = expr(itp, st) {
         res
     } else {
-        Err(ParseError::Extraneous)
+        Err(st.place_error(Extraneous))
     }
 }
 
@@ -166,15 +201,10 @@ mod tests {
         let mut itp = Interpreter::new();
         let mut st = ParseState::new(String::from("(235)"));
         let res = read(&mut itp, &mut st);
-        assert!(res.is_ok());
         unsafe {
-            let opp: Option<&ListPair> = (*res.unwrap().ptr()).downcast(&mut itp);
-            assert!(opp.is_some());
+            let opp: Option<&ListPair> = (*res.unwrap().unwrap().ptr()).downcast(&mut itp);
             let pp = opp.unwrap();
             let n: Option<&Bits<isize>> = (*(*pp).head).downcast(&mut itp);
-            let tail: Option<&ListEmpty> = (*(*pp).tail).downcast(&mut itp);
-            assert!(n.is_some());
-            assert!(tail.is_some());
             assert_eq!(n.unwrap().unbox(), 235);
         }
     }

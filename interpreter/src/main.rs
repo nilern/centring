@@ -27,10 +27,10 @@ fn main() {
             Ok(line) => {
                 let mut st = read::ParseState::new(line);
                 match read::read(&mut itp, &mut st) {
-                    Ok(v) =>
+                    Ok(Some(v)) =>
                         println!("{}", ContextValue::new(v.borrow(), &itp)),
-                    Err(_) =>
-                        println!("ReadError!")
+                    Ok(None) => { }
+                    Err(e) => println!("ReadError: {:?}", e)
                 }
             },
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
