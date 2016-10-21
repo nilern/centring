@@ -1,9 +1,11 @@
 use gc::Collector;
-use value::{CtrValue, Any, Int, ListPair, ListEmpty, Type, Const};
+use value::{CtrValue, Any, Bits, Int, ListPair, ListEmpty, Type, Const};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
 use std::ptr;
+use std::mem;
+use std::slice;
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
@@ -57,13 +59,36 @@ impl Interpreter {
     }
 
     pub fn alloc_rec<'a, T: CtrValue,>(&mut self, typ: ValueHandle<Type>,
-        fields: &[ValueHandle<Any>]) -> Root<T> {
-        let res = unsafe {
-            let raw_fields = fields.iter().map(|vh| vh.ptr());
-            Root::new(self.gc.alloc_rec(fields.len(), typ.ptr(), raw_fields))
-        };
+                                       fields: &[ValueHandle<Any>])
+                                       -> Root<T> {
+        if !self.gc.rec_poll(fields.len()) {
+            self.mark_roots();
+            unsafe { self.gc.collect(); }
+        }
+        let res = unsafe { Root::new(self.gc.alloc_rec(typ, fields)) };
         self.stack_roots.push(Root::downgrade(&res));
         res
+    }
+
+    pub fn alloc_bytes<T: CtrValue>(&mut self, typ: ValueHandle<Type>,
+                                    data: &[u8])
+                                    -> Root<T> {
+        if !self.gc.bytes_poll(data.len()) {
+            self.mark_roots();
+            unsafe { self.gc.collect(); }
+        }
+        let res = unsafe { Root::new(self.gc.alloc_bytes(typ, data)) };
+        self.stack_roots.push(Root::downgrade(&res));
+        res
+    }
+
+    pub fn alloc_bits<T: Copy>(&mut self, typ: ValueHandle<Type>, data: T)
+                               -> Root<Bits<T>> {
+        let data_bytes = unsafe { slice::from_raw_parts(
+            mem::transmute::<&T, *mut u8>(&data),
+            mem::size_of::<T>()
+        )};
+        self.alloc_bytes(typ, data_bytes)
     }
 
     pub fn alloc_pair(&mut self, head: ValueHandle<Any>, tail: ValueHandle<Any>)
@@ -80,18 +105,14 @@ impl Interpreter {
     }
 
     pub fn alloc_type(&mut self) -> Root<Type> {
-        let typ = self.nil_t.clone();
+        let typ = self.type_t.clone();
         let fields = [];
         self.alloc_rec(typ.borrow(), &fields)
     }
 
     pub fn alloc_int(&mut self, v: isize) -> Root<Int> {
         let typ = self.int_t.clone();
-        let res = unsafe {
-            Root::new(self.gc.alloc_bits(typ.ptr(), v))
-        };
-        self.stack_roots.push(Root::downgrade(&res));
-        res
+        self.alloc_bits(typ.borrow(), v)
     }
 
     pub fn alloc_const(&mut self, v: ValueHandle<Any>) -> Root<Const> {
@@ -100,7 +121,7 @@ impl Interpreter {
         self.alloc_rec(typ.borrow(), &fields)
     }
 
-    pub unsafe fn collect(&mut self) {
+    fn mark_roots (&mut self) {
         let gc = &mut self.gc;
         // The following also takes care of Root members of self since they
         // were created by self.alloc*.
@@ -115,7 +136,6 @@ impl Interpreter {
                 // Root:s to this and we can throw this away:
                 false
             });
-        gc.collect();
     }
 }
 
@@ -133,8 +153,9 @@ mod tests {
         let b = itp.alloc_int(5);
         let tup = itp.alloc_pair(a.borrow().as_any_ref(),
                                  b.borrow().as_any_ref());
+        itp.mark_roots();
         unsafe {
-            itp.collect();
+            itp.gc.collect();
             assert_eq!((*(a.ptr() as *const Bits<i64>)).unbox(), 3);
         }
     }

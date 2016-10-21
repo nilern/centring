@@ -1,5 +1,5 @@
-use value::Any;
-use refs::ValuePtr;
+use value::{Any, Type};
+use refs::{ValuePtr, ValueHandle};
 
 use std::ptr;
 use std::mem::{size_of, align_of, transmute, swap};
@@ -7,13 +7,14 @@ use std::slice;
 
 use alloc::heap;
 
-// TODO: also consider blobs when polling and triggering collections
-
 /// A garbage collector (holds the memory areas and other GC state).
 pub struct Collector {
     fromspace: Vec<ValuePtr>,
     tospace: Vec<ValuePtr>,
-    blobspace: *mut Blob
+    free_rec: ValuePtr,
+
+    blobspace: *mut Blob,
+    blob_bytes_allocated: usize
 }
 
 #[repr(C)]
@@ -22,53 +23,84 @@ struct Blob {
     data: Any
 }
 
+const BYTE_INTERVAL: usize = 1048_576; // 1 MiB
+
 impl Collector {
     /// Create a new `Collector`.
     pub fn new(heapsize: usize) -> Collector {
+        let fromspace = Vec::with_capacity(heapsize);
+        let free_rec = fromspace.as_ptr() as ValuePtr;
         Collector {
-            fromspace: Vec::with_capacity(heapsize),
+            fromspace: fromspace,
             tospace: Vec::with_capacity(heapsize),
-            blobspace: ptr::null::<Blob>() as *mut Blob
+            free_rec: free_rec,
+            blobspace: ptr::null::<Blob>() as *mut Blob,
+            blob_bytes_allocated: 0
         }
     }
 
-    pub fn rec_poll(&self, word_count: usize) -> bool {
-        self.fromspace.capacity() - self.fromspace.len() >= word_count
+    /// Can we allocate a record with `field_count` fields or do we need to run
+    /// a garbage collection first?
+    pub fn rec_poll(&self, field_count: usize) -> bool {
+        self.fromspace.capacity() - self.fromspace.len()
+        >= size_of::<Any>()/size_of::<ValuePtr>() + field_count
     }
 
-    pub unsafe fn alloc_rec<I>(&mut self, alloc_len: usize, typ: ValuePtr, fields: I)
-        -> ValuePtr where I: Iterator<Item=ValuePtr> {
+    /// Can we allocate a blob with `byte_count` bytes of data or do we need to
+    /// run a garbage collection first?
+    pub fn bytes_poll(&self, byte_count: usize) -> bool {
+        self.blob_bytes_allocated + byte_count <= BYTE_INTERVAL
+    }
+
+    /// Construct a record with a type of `typ` and field values of `fields`.
+    ///
+    /// # Safety
+    /// You must first use `bytes_poll` and if that is false, you need to mark
+    /// the GC roots and call `collect` to free/allocate more space in
+    /// the GC heap.
+    pub unsafe fn alloc_rec(&mut self, typ: ValueHandle<Type>,
+                            fields: &[ValueHandle<Any>])
+                            -> ValuePtr {
         let len = self.fromspace.len();
-        let size = size_of::<Any>()/size_of::<ValuePtr>() + alloc_len;
-        self.fromspace.set_len(len + size);
-        let mut dest = self.fromspace.as_mut_ptr().offset(len as isize) as *mut ValuePtr;
-        let start = dest;
+        self.fromspace.set_len(len + size_of::<Any>()/size_of::<ValuePtr>()
+                                   + fields.len());
 
-        *dest = Any::header(alloc_len, true) as ValuePtr;
-        dest = dest.offset(1);
-        *dest = typ;
-        for field in fields {
-            dest = dest.offset(1);
-            *dest = field;
+        let res = self.free_rec;
+        (*res).header = Any::header(fields.len(), true);
+        (*res).typ = typ.ptr();
+
+        let mut field = res.offset(1) as *mut ValuePtr;
+        for i in 0..fields.len() {
+            *field = fields[i].ptr();
+            field = field.offset(1);
         }
-        start as ValuePtr
+        self.free_rec = field as ValuePtr;
+        res
     }
 
-    pub unsafe fn alloc_bits<T: Clone>(&mut self, typ: ValuePtr, v: T) -> ValuePtr {
-        let data_size = size_of::<T>();
-        let block: *mut Blob = transmute(
-            heap::allocate(size_of::<Blob>() + data_size,
+    /// Construct a flat value with a type of `typ` and `data` as the payload.
+    ///
+    /// # Safety
+    /// You must first use `rec_poll` and if that is false, you need to mark
+    /// the GC roots and call `collect` to free/allocate more space in
+    /// the GC heap.
+    pub unsafe fn alloc_bytes(&mut self, typ: ValueHandle<Type>, data: &[u8])
+                              -> ValuePtr {
+        let blob: *mut Blob = transmute(
+            heap::allocate(size_of::<Blob>() + data.len(),
                            align_of::<Blob>()));
-        (*block).next = self.blobspace;
-        self.blobspace = block;
+        (*blob).next = self.blobspace;
+        self.blobspace = blob;
+        self.blob_bytes_allocated += data.len();
 
-        let mut dest = (block as *mut ValuePtr).offset(1);
-        let start = dest as ValuePtr;
-        *dest = Any::header(data_size, false) as ValuePtr;
-        dest = dest.offset(1);
-        *dest = typ;
-        *(dest.offset(1) as *mut T) = v;
-        start
+        let res = transmute::<&Any, ValuePtr>(&(*blob).data);
+        (*res).header = Any::header(data.len(), false);
+        (*res).typ = typ.ptr();
+
+        let data_dest = slice::from_raw_parts_mut(res.offset(1) as *mut u8,
+                                                  data.len());
+        data_dest.copy_from_slice(data);
+        res
     }
 
     fn move_rec_slice(&mut self, src: &[ValuePtr]) -> ValuePtr {
@@ -80,6 +112,10 @@ impl Collector {
         }
     }
 
+    /// Mark/move a Value. Return a pointer to its new location.
+    ///
+    /// # Safety
+    /// `ptr` must actually point into the GC heap.
     pub unsafe fn mark(&mut self, ptr: ValuePtr) -> ValuePtr {
         if (*ptr).marked() {
             if (*ptr).pointy() {
@@ -138,6 +174,7 @@ impl Collector {
             self.fromspace.reserve(size_of::<usize>());
             self.tospace.reserve(size_of::<usize>());
         }
+        self.blob_bytes_allocated = 0;
     }
 
     fn sweep(&mut self) {
