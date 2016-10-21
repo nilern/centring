@@ -1,5 +1,5 @@
 use gc::Collector;
-use value::{CtrValue, Any, Int, ListPair, ListEmpty};
+use value::{CtrValue, Any, Int, ListPair, ListEmpty, Const};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
@@ -13,7 +13,8 @@ pub struct Interpreter {
     type_t: Root<ListEmpty>,
     pair_t: Root<ListEmpty>,
     nil_t: Root<ListEmpty>,
-    int_t: Root<ListEmpty>
+    int_t: Root<ListEmpty>,
+    const_t: Root<ListEmpty>
 }
 
 pub enum CtrError {
@@ -35,7 +36,8 @@ impl Interpreter {
             type_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             pair_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             nil_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
-            int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) }
+            int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) }
         };
 
         let type_t = itp.alloc_nil();
@@ -43,11 +45,13 @@ impl Interpreter {
         itp.pair_t = itp.alloc_nil();
         itp.nil_t = itp.alloc_nil();
         itp.int_t = itp.alloc_nil();
+        itp.const_t = itp.alloc_nil();
 
         itp.type_t.clone().as_any_ref().set_type(type_t.ptr());
         itp.pair_t.clone().as_any_ref().set_type(type_t.ptr());
         itp.nil_t.clone().as_any_ref().set_type(type_t.ptr());
         itp.int_t.clone().as_any_ref().set_type(type_t.ptr());
+        itp.const_t.clone().as_any_ref().set_type(type_t.ptr());
 
         itp
     }
@@ -82,6 +86,12 @@ impl Interpreter {
         };
         self.stack_roots.push(Root::downgrade(&res));
         res
+    }
+
+    pub fn alloc_const(&mut self, v: ValueHandle<Any>) -> Root<Const> {
+        let typ = self.const_t.clone();
+        let fields = [v];
+        self.alloc_rec(typ.borrow(), &fields)
     }
 
     pub unsafe fn collect(&mut self) {

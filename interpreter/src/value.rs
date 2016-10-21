@@ -2,7 +2,6 @@ use refs::ValuePtr;
 use interpreter::Interpreter;
 
 use std::mem;
-use std::mem::size_of;
 
 /// The layout of every Centring Value on the GC heap starts with the fields
 /// of this struct.
@@ -39,6 +38,11 @@ pub struct ListEmpty {
     typ: ValuePtr
 }
 
+#[repr(C)]
+pub struct Const {
+    pub val: ValuePtr
+}
+
 pub trait CtrValue {
     /// Return a reference to the Any part of a Value.
     fn as_any(&self) -> &Any;
@@ -46,7 +50,7 @@ pub trait CtrValue {
 
 // FIXME: impls should take type pointers into account
 pub trait Downcast<SubType> {
-    fn downcast(&self, itp: &Interpreter) -> Option<&SubType>;
+    fn downcast(&self, itp: &Interpreter) -> Option<SubType>;
 }
 
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
@@ -138,32 +142,8 @@ impl CtrValue for ListEmpty {
     }
 }
 
-impl<T: Copy> Downcast<Bits<T>> for Any {
-    fn downcast(&self, itp: &Interpreter) -> Option<&Bits<T>> {
-        if !self.pointy() && self.alloc_len() == size_of::<T>() {
-            Some(unsafe { mem::transmute(self) })
-        } else {
-            None
-        }
-    }
-}
-
-impl Downcast<ListPair> for Any {
-    fn downcast(&self, itp: &Interpreter) -> Option<&ListPair> {
-        if self.pointy() && self.alloc_len() == 2 {
-            Some(unsafe { mem::transmute(self) })
-        } else {
-            None
-        }
-    }
-}
-
-impl Downcast<ListEmpty> for Any {
-    fn downcast(&self, itp: &Interpreter) -> Option<&ListEmpty> {
-        if self.pointy() && self.alloc_len() == 0 {
-            Some(unsafe { mem::transmute(self) })
-        } else {
-            None
-        }
+impl CtrValue for Const {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
     }
 }

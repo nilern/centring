@@ -194,7 +194,8 @@ pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
 mod tests {
     use super::{ParseState, read};
     use interpreter::Interpreter;
-    use value::{Bits, ListPair, Downcast, Unbox};
+    use value::{Downcast, ListPair, Unbox, Any, Int};
+    use refs::Root;
 
     #[test]
     fn int_list() {
@@ -202,9 +203,11 @@ mod tests {
         let mut st = ParseState::new(String::from("(235)"));
         let res = read(&mut itp, &mut st);
         unsafe {
-            let opp: Option<&ListPair> = (*res.unwrap().unwrap().ptr()).downcast(&mut itp);
+            let opp: Option<Root<ListPair>> =
+                (res.unwrap().unwrap()).downcast(&itp);
             let pp = opp.unwrap();
-            let n: Option<&Bits<isize>> = (*(*pp).head).downcast(&mut itp);
+            let nr: Root<Any> = Root::new((*pp).head);
+            let n: Option<Root<Int>> = nr.downcast(&itp);
             assert_eq!(n.unwrap().unbox(), 235);
         }
     }

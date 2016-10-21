@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use refs::{Root, ValueHandle};
-use value::{CtrValue, Any, Bits, ListPair, Downcast};
+use value::{CtrValue, Any, Int, ListPair, Downcast};
 
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -31,7 +31,7 @@ impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
                 _ => unimplemented!()
             }
         } else {
-            let obv: Option<&Bits<isize>> = v.downcast(&self.itp);
+            let obv: Option<ValueHandle<Int>> = v.downcast(&self.itp);
             if let Some(bv) = obv {
                 write!(fmt, "{}", bv.data)
             } else {
@@ -48,7 +48,7 @@ fn write_list<T: CtrValue>(fmt: &mut Formatter, ls: &ContextValue<T>, start: boo
         match v.alloc_len() {
             0 => write!(fmt, ")"),
             2 => {
-                let olv: Option<&ListPair> = v.downcast(&ls.itp);
+                let olv: Option<ValueHandle<ListPair>> = v.downcast(&ls.itp);
                 if let Some(lv) = olv {
                     let head: Root<Any> = unsafe { Root::new(lv.head) };
                     let tail: Root<Any> = unsafe { Root::new(lv.tail) };

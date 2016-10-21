@@ -11,6 +11,7 @@ pub mod value;
 pub mod refs;
 pub mod write;
 pub mod primops;
+pub mod analyze;
 
 use interpreter::Interpreter;
 use write::ContextValue;

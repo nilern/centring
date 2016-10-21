@@ -1,10 +1,12 @@
+use interpreter::Interpreter;
 use gc::Collector;
-use value::{CtrValue, Any};
+use value::{CtrValue, Downcast, Any, Int, ListPair};
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
+use std::mem::size_of;
 
 pub type ValuePtr = *mut Any;
 
@@ -54,6 +56,32 @@ impl<T: CtrValue> Root<T> {
     }
 }
 
+impl<T: CtrValue> Clone for Root<T> {
+    fn clone(&self) -> Root<T> {
+        Root(self.0.clone(), self.1.clone())
+    }
+}
+
+impl Downcast<Root<Int>> for Root<Any> {
+    fn downcast(&self, itp: &Interpreter) -> Option<Root<Int>> {
+        if !self.pointy() && self.alloc_len() == size_of::<isize>() { // FIXME
+            Some(Root(self.0.clone(), Default::default()))
+        } else {
+            None
+        }
+    }
+}
+
+impl Downcast<Root<ListPair>> for Root<Any> {
+    fn downcast(&self, itp: &Interpreter) -> Option<Root<ListPair>> {
+        if self.pointy() && self.alloc_len() == 2 { // FIXME
+            Some(Root(self.0.clone(), Default::default()))
+        } else {
+            None
+        }
+    }
+}
+
 impl<T: CtrValue> Deref for Root<T> {
     type Target = T;
 
@@ -65,12 +93,6 @@ impl<T: CtrValue> Deref for Root<T> {
 impl<T: CtrValue> DerefMut for Root<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *(*self.0.borrow_mut() as *mut T) }
-    }
-}
-
-impl<T: CtrValue> Clone for Root<T> {
-    fn clone(&self) -> Root<T> {
-        Root(self.0.clone(), self.1.clone())
     }
 }
 
@@ -97,6 +119,26 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
 impl<'a, T: CtrValue> Clone for ValueHandle<'a, T> {
     fn clone(&self) -> ValueHandle<'a, T> {
         ValueHandle(self.0, self.1)
+    }
+}
+
+impl<'a> Downcast<ValueHandle<'a, Int>> for ValueHandle<'a, Any> {
+    fn downcast(&self, itp: &Interpreter) -> Option<ValueHandle<'a, Int>> {
+        if !self.pointy() && self.alloc_len() == size_of::<isize>() { // FIXME
+            Some(ValueHandle(self.0, Default::default()))
+        } else {
+            None
+        }
+    }
+}
+
+impl<'a> Downcast<ValueHandle<'a, ListPair>> for ValueHandle<'a, Any> {
+    fn downcast(&self, itp: &Interpreter) -> Option<ValueHandle<'a, ListPair>> {
+        if self.pointy() && self.alloc_len() == 2 { // FIXME
+            Some(ValueHandle(self.0, Default::default()))
+        } else {
+            None
+        }
     }
 }
 
