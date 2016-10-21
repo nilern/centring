@@ -16,7 +16,6 @@ pub struct Root<T: CtrValue>(Rc<RefCell<ValuePtr>>, PhantomData<T>);
 
 /// Like `Root`, but weak (as in `std::(a)rc::Weak`). Used by the `Interpeter`
 /// to track live roots on the Rust stack.
-#[derive(Clone)]
 pub struct WeakRoot(Weak<RefCell<ValuePtr>>);
 
 /// Like `Root`, but a non-owned reference.
@@ -56,16 +55,16 @@ impl<T: CtrValue> Root<T> {
 }
 
 impl<T: CtrValue> Deref for Root<T> {
-    type Target = Any;
+    type Target = T;
 
-    fn deref(&self) -> &Any {
-        unsafe { &**self.0.borrow() }
+    fn deref(&self) -> &T {
+        unsafe { &*(*self.0.borrow() as *mut T) }
     }
 }
 
 impl<T: CtrValue> DerefMut for Root<T> {
-    fn deref_mut(&mut self) -> &mut Any {
-        unsafe { &mut **self.0.borrow_mut() }
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe { &mut *(*self.0.borrow_mut() as *mut T) }
     }
 }
 
@@ -102,15 +101,15 @@ impl<'a, T: CtrValue> Clone for ValueHandle<'a, T> {
 }
 
 impl<'a, T: CtrValue> Deref for ValueHandle<'a, T> {
-    type Target = Any;
+    type Target = T;
 
-    fn deref(&self) -> &Any {
-        unsafe { &**self.0.borrow() }
+    fn deref(&self) -> &T {
+        unsafe { &*(*self.0.borrow() as *mut T) }
     }
 }
 
 impl<'a, T: CtrValue> DerefMut for ValueHandle<'a, T> {
-    fn deref_mut(&mut self) -> &mut Any {
-        unsafe { &mut **self.0.borrow_mut() }
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe { &mut *(*self.0.borrow_mut() as *mut T) }
     }
 }

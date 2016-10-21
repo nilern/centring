@@ -21,7 +21,7 @@ impl<'a, T: CtrValue> ContextValue<'a, T> {
 
 impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
     fn fmt(&self, fmt: &mut Formatter) -> Result<(), fmt::Error> {
-        let ref v = self.val;
+        let ref v = self.val.as_any_ref();
         if v.pointy() {
             match v.alloc_len() {
                 0 | 2 => {
@@ -43,7 +43,7 @@ impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
 
 fn write_list<T: CtrValue>(fmt: &mut Formatter, ls: &ContextValue<T>, start: bool)
     -> Result<(), fmt::Error> {
-    let ref v = ls.val;
+    let ref v = ls.val.as_any_ref();
     if v.pointy() {
         match v.alloc_len() {
             0 => write!(fmt, ")"),
