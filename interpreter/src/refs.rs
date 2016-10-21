@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use gc::Collector;
-use value::{CtrValue, Downcast, Any, Int, ListPair, ListEmpty};
+use value::{CtrValue, Downcast, Any, Int, ListPair, Type};
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -123,7 +123,7 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
     }
 
     /// Dynamic typecheck (`:`).
-    pub fn instanceof(self, typ: ValueHandle<ListEmpty>) -> bool {
+    pub fn instanceof(self, typ: ValueHandle<Type>) -> bool {
         self.as_any_ref().get_type().borrow().identical(typ)
     }
 }

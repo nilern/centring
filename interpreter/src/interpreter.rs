@@ -1,5 +1,5 @@
 use gc::Collector;
-use value::{CtrValue, Any, Int, ListPair, ListEmpty, Const};
+use value::{CtrValue, Any, Int, ListPair, ListEmpty, Type, Const};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
@@ -10,11 +10,11 @@ use std::ptr;
 pub struct Interpreter {
     gc: Collector,
     stack_roots: Vec<WeakRoot>,
-    pub type_t: Root<ListEmpty>,
-    pub pair_t: Root<ListEmpty>,
-    pub nil_t: Root<ListEmpty>,
-    pub int_t: Root<ListEmpty>,
-    pub const_t: Root<ListEmpty>
+    pub type_t: Root<Type>,
+    pub pair_t: Root<Type>,
+    pub nil_t: Root<Type>,
+    pub int_t: Root<Type>,
+    pub const_t: Root<Type>
 }
 
 pub enum CtrError {
@@ -40,12 +40,12 @@ impl Interpreter {
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) }
         };
 
-        let type_t = itp.alloc_nil();
+        let type_t = itp.alloc_type();
         itp.type_t = type_t.clone();
-        itp.pair_t = itp.alloc_nil();
-        itp.nil_t = itp.alloc_nil();
-        itp.int_t = itp.alloc_nil();
-        itp.const_t = itp.alloc_nil();
+        itp.pair_t = itp.alloc_type();
+        itp.nil_t = itp.alloc_type();
+        itp.int_t = itp.alloc_type();
+        itp.const_t = itp.alloc_type();
 
         itp.type_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.pair_t.clone().as_any_ref().set_type(type_t.borrow());
@@ -56,7 +56,7 @@ impl Interpreter {
         itp
     }
 
-    pub fn alloc_rec<'a, T: CtrValue,>(&mut self, typ: ValueHandle<ListEmpty>,
+    pub fn alloc_rec<'a, T: CtrValue,>(&mut self, typ: ValueHandle<Type>,
         fields: &[ValueHandle<Any>]) -> Root<T> {
         let res = unsafe {
             let raw_fields = fields.iter().map(|vh| vh.ptr());
@@ -74,6 +74,12 @@ impl Interpreter {
     }
 
     pub fn alloc_nil(&mut self) -> Root<ListEmpty> {
+        let typ = self.nil_t.clone();
+        let fields = [];
+        self.alloc_rec(typ.borrow(), &fields)
+    }
+
+    pub fn alloc_type(&mut self) -> Root<Type> {
         let typ = self.nil_t.clone();
         let fields = [];
         self.alloc_rec(typ.borrow(), &fields)

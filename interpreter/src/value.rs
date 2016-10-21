@@ -25,7 +25,7 @@ pub trait Unbox {
 
 pub trait TypePtr {
     /// Get a reference to the corresponding runtime type.
-    fn typ(itp: &Interpreter) -> ValueHandle<ListEmpty>;
+    fn typ(itp: &Interpreter) -> ValueHandle<Type>;
 }
 
 /// The layout of every Centring Value on the GC heap starts with the fields
@@ -60,6 +60,13 @@ pub struct ListPair {
 /// Plain old `'()`
 #[repr(C)]
 pub struct ListEmpty {
+    header: usize,
+    typ: ValuePtr
+}
+
+/// A type.
+#[repr(C)]
+pub struct Type {
     header: usize,
     typ: ValuePtr
 }
@@ -111,12 +118,12 @@ impl Any {
     }
 
     /// Get the type reference of this Value.
-    pub fn get_type(&self) -> Root<ListEmpty> {
+    pub fn get_type(&self) -> Root<Type> {
         unsafe { Root::new(self.typ) }
     }
 
     /// Set the type reference of this Value.
-    pub fn set_type(&mut self, t: ValueHandle<ListEmpty>) {
+    pub fn set_type(&mut self, t: ValueHandle<Type>) {
         self.typ = t.ptr()
     }
 }
@@ -134,7 +141,7 @@ impl<T: Copy> CtrValue for Bits<T> {
 }
 
 impl TypePtr for Int {
-    fn typ(itp: &Interpreter) -> ValueHandle<ListEmpty> {
+    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
         itp.int_t.borrow()
     }
 }
@@ -154,6 +161,12 @@ impl CtrValue for ListPair {
 }
 
 impl CtrValue for ListEmpty {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
+    }
+}
+
+impl CtrValue for Type {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
     }
