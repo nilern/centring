@@ -10,11 +10,11 @@ use std::ptr;
 pub struct Interpreter {
     gc: Collector,
     stack_roots: Vec<WeakRoot>,
-    type_t: Root<ListEmpty>,
-    pair_t: Root<ListEmpty>,
-    nil_t: Root<ListEmpty>,
-    int_t: Root<ListEmpty>,
-    const_t: Root<ListEmpty>
+    pub type_t: Root<ListEmpty>,
+    pub pair_t: Root<ListEmpty>,
+    pub nil_t: Root<ListEmpty>,
+    pub int_t: Root<ListEmpty>,
+    pub const_t: Root<ListEmpty>
 }
 
 pub enum CtrError {

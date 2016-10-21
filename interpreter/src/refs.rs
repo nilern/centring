@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use gc::Collector;
-use value::{CtrValue, Downcast, Any, Int, ListPair};
+use value::{CtrValue, Downcast, Any, Int, ListPair, ListEmpty};
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -106,13 +106,22 @@ impl WeakRoot {
 }
 
 impl<'a, T: CtrValue> ValueHandle<'a, T> {
-    pub fn as_any_ref(&self) -> ValueHandle<Any> {
+    pub fn as_any_ref(self) -> ValueHandle<'a, Any> {
         ValueHandle(self.0, Default::default())
     }
 
     /// Get the raw pointer to the Value.
-    pub fn ptr(&self) -> ValuePtr {
+    pub fn ptr(self) -> ValuePtr {
         *self.0.borrow()
+    }
+
+    pub fn identical<U: CtrValue>(self, other: ValueHandle<U>) -> bool {
+        *self.0.borrow() == *other.0.borrow()
+    }
+
+    pub fn instanceof(self, typ: ValueHandle<ListEmpty>) -> bool {
+        let t: Root<Any> = unsafe { Root::new(self.as_any_ref().get_type()) };
+        t.borrow().identical(typ)
     }
 }
 
@@ -121,6 +130,8 @@ impl<'a, T: CtrValue> Clone for ValueHandle<'a, T> {
         ValueHandle(self.0, self.1)
     }
 }
+
+impl<'a, T: CtrValue> Copy for ValueHandle<'a, T> { }
 
 impl<'a> Downcast<ValueHandle<'a, Int>> for ValueHandle<'a, Any> {
     fn downcast(&self, itp: &Interpreter) -> Option<ValueHandle<'a, Int>> {

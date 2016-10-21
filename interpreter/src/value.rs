@@ -1,7 +1,11 @@
-use refs::ValuePtr;
+use refs::{ValuePtr, ValueHandle};
 use interpreter::Interpreter;
 
 use std::mem;
+
+pub trait TypePtr {
+    fn typ(itp: &Interpreter) -> ValueHandle<ListEmpty>;
+}
 
 /// The layout of every Centring Value on the GC heap starts with the fields
 /// of this struct.
@@ -119,6 +123,12 @@ impl CtrValue for Any {
 impl<T: Copy> CtrValue for Bits<T> {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
+    }
+}
+
+impl TypePtr for Int {
+    fn typ(itp: &Interpreter) -> ValueHandle<ListEmpty> {
+        itp.int_t.borrow()
     }
 }
 
