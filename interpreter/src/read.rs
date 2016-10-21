@@ -1,4 +1,5 @@
 use interpreter::Interpreter;
+use value::{Any, Int};
 use refs::Root;
 
 pub struct ParseState {
@@ -36,7 +37,7 @@ pub struct ParseError {
 
 pub type ParseResult<T> = Result<T, ParseError>;
 
-pub type ReadResult = ParseResult<Option<Root>>;
+pub type ReadResult<T> = ParseResult<Option<Root<T>>>;
 
 impl ParseState {
     /// Create a new `ParseState` for parsing `str`.
@@ -125,7 +126,7 @@ fn digit(st: &mut ParseState) -> ParseResult<usize> {
         .map(|c| c.to_digit(10).unwrap() as usize)
 }
 
-fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
+fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Int> {
     let mut n = try!(digit(st)) as isize;
     while let Ok(d) = digit(st) {
         n = n*10 + d as isize;
@@ -133,17 +134,17 @@ fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
     Ok(Some(itp.alloc_int(n)))
 }
 
-fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
+fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
     if let Some(')') = st.peek() {
         let _ = st.pop();
-        Ok(Some(itp.alloc_nil()))
+        Ok(Some(itp.alloc_nil().as_any_ref()))
     } else {
         match expr(itp, st) {
             Ok(Some(head)) => match list(itp, st) {
                 Ok(Some(tail)) => {
                     let ls = itp.alloc_pair(head.borrow(), tail.borrow());
                     //let ls = ListPair::new(itp, head.ptr(), tail.ptr());
-                    Ok(Some(ls))
+                    Ok(Some(ls.as_any_ref()))
                 },
                 Ok(None) => Err(st.place_error(NonTerminating(')'))),
                 err @ Err(_) => err
@@ -154,7 +155,7 @@ fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
     }
 }
 
-fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
+fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
     loop {
         match st.peek() {
             Some('(') => {
@@ -168,7 +169,7 @@ fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
             Some(c) if c.is_whitespace() => {
                 let _ = st.pop();
             },
-            Some(_) => return int(itp, st),
+            Some(_) => return int(itp, st).map(|ov| ov.map(Root::as_any_ref)),
             None => return Ok(None)
         };
     }
@@ -178,7 +179,7 @@ fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
 /// surrounded by whitespace and comments), return `Ok(Some(_))`, if it just
 /// contains whitespace and comments return `Ok(None)`, else return
 /// a `ParseError`.
-pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult {
+pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
     let res = expr(itp, st);
     if let Ok(None) = expr(itp, st) {
         res

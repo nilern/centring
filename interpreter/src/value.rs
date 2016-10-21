@@ -21,6 +21,8 @@ pub struct Bits<T: Copy> {
     pub data: T
 }
 
+pub type Int = Bits<isize>;
+
 /// The good ol' cons cell.
 #[repr(C)]
 pub struct ListPair {

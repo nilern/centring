@@ -1,5 +1,5 @@
 use gc::Collector;
-use value::Any;
+use value::{CtrValue, Any, Int, ListPair, ListEmpty};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
@@ -10,10 +10,10 @@ use std::ptr;
 pub struct Interpreter {
     gc: Collector,
     stack_roots: Vec<WeakRoot>,
-    type_t: Root,
-    pair_t: Root,
-    nil_t: Root,
-    int_t: Root
+    type_t: Root<ListEmpty>,
+    pair_t: Root<ListEmpty>,
+    nil_t: Root<ListEmpty>,
+    int_t: Root<ListEmpty>
 }
 
 pub enum CtrError {
@@ -23,7 +23,7 @@ pub enum CtrError {
     }
 }
 
-pub type CtrResult = Result<Root, CtrError>;
+pub type CtrResult<T> = Result<Root<T>, CtrError>;
 
 impl Interpreter {
     /// Make a new `Interpreter` to execute Centring with.
@@ -52,8 +52,8 @@ impl Interpreter {
         itp
     }
 
-    pub fn alloc_rec(&mut self, typ: ValueHandle, fields: &[ValueHandle])
-        -> Root {
+    pub fn alloc_rec<'a, T: CtrValue,>(&mut self, typ: ValueHandle<ListEmpty>,
+        fields: &[ValueHandle<Any>]) -> Root<T> {
         let res = unsafe {
             let raw_fields = fields.iter().map(|vh| vh.ptr());
             Root::new(self.gc.alloc_rec(fields.len(), typ.ptr(), raw_fields))
@@ -62,19 +62,20 @@ impl Interpreter {
         res
     }
 
-    pub fn alloc_pair(&mut self, head: ValueHandle, tail: ValueHandle) -> Root {
+    pub fn alloc_pair(&mut self, head: ValueHandle<Any>, tail: ValueHandle<Any>)
+        -> Root<ListPair> {
         let typ = self.pair_t.clone();
         let fields = [head, tail];
         self.alloc_rec(typ.borrow(), &fields)
     }
 
-    pub fn alloc_nil(&mut self) -> Root {
+    pub fn alloc_nil(&mut self) -> Root<ListEmpty> {
         let typ = self.nil_t.clone();
         let fields = [];
         self.alloc_rec(typ.borrow(), &fields)
     }
 
-    pub fn alloc_int(&mut self, v: isize) -> Root {
+    pub fn alloc_int(&mut self, v: isize) -> Root<Int> {
         let typ = self.int_t.clone();
         let res = unsafe {
             Root::new(self.gc.alloc_bits(typ.ptr(), v))
@@ -88,7 +89,7 @@ impl Interpreter {
         // The following also takes care of Root members of self since they
         // were created by self.alloc*.
         self.stack_roots.retain(|whandle|
-            if let Some(mut handle) = whandle.upgrade() {
+            if let Some(mut handle) = whandle.upgrade::<Any>() {
                 // Rust still has a live Root so this is a GC root and
                 // needs to be marked and retained:
                 handle.mark(gc);
@@ -114,7 +115,8 @@ mod tests {
         let mut itp = Interpreter::new();
         let a = itp.alloc_int(3);
         let b = itp.alloc_int(5);
-        let tup = itp.alloc_pair(a.borrow(), b.borrow());
+        let tup = itp.alloc_pair(a.borrow().as_any_ref(),
+                                 b.borrow().as_any_ref());
         unsafe {
             itp.collect();
             assert_eq!((*(a.ptr() as *const Bits<i64>)).unbox(), 3);
