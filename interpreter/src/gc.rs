@@ -83,7 +83,7 @@ impl Collector {
     pub unsafe fn mark(&mut self, ptr: ValuePtr) -> ValuePtr {
         if (*ptr).marked() {
             if (*ptr).pointy() {
-                (*ptr).get_type() // get forward pointer
+                (*ptr).typ // get forward pointer
             } else {
                 ptr
             }
@@ -95,7 +95,7 @@ impl Collector {
                     self.move_rec_slice( // move data
                         slice::from_raw_parts(ptr as *mut ValuePtr,
                             2 + (*ptr).alloc_len()));
-                (*ptr).set_type(res); // set forward pointer
+                (*ptr).typ = res; // set forward pointer
                 (*ptr).set_mark_bit();
                 res
             } else {

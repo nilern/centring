@@ -1,9 +1,30 @@
-use refs::{ValuePtr, ValueHandle};
+use refs::{ValuePtr, Root, ValueHandle};
 use interpreter::Interpreter;
 
 use std::mem;
 
+pub trait CtrValue {
+    /// Return a reference to the Any part of a Value.
+    fn as_any(&self) -> &Any;
+}
+
+// FIXME: impls should take type pointers into account
+pub trait Downcast<SubType> {
+    /// Try to downcast this Value reference to `SubType`. If this is not
+    /// possible, return `None`.
+    fn downcast(&self, itp: &Interpreter) -> Option<SubType>;
+}
+
+/// A trait for getting the raw data out of 'boxes' like `Int` etc.
+pub trait Unbox {
+    type Prim: Copy;
+
+    /// Get a copy of the wrapped value.
+    fn unbox(&self) -> Self::Prim;
+}
+
 pub trait TypePtr {
+    /// Get a reference to the corresponding runtime type.
     fn typ(itp: &Interpreter) -> ValueHandle<ListEmpty>;
 }
 
@@ -24,6 +45,7 @@ pub struct Bits<T: Copy> {
     pub data: T
 }
 
+/// A 'fixnum'.
 pub type Int = Bits<isize>;
 
 /// The good ol' cons cell.
@@ -42,27 +64,12 @@ pub struct ListEmpty {
     typ: ValuePtr
 }
 
+/// An AST node representing a constant.
 #[repr(C)]
 pub struct Const {
+    header: usize,
+    typ: ValuePtr,
     pub val: ValuePtr
-}
-
-pub trait CtrValue {
-    /// Return a reference to the Any part of a Value.
-    fn as_any(&self) -> &Any;
-}
-
-// FIXME: impls should take type pointers into account
-pub trait Downcast<SubType> {
-    fn downcast(&self, itp: &Interpreter) -> Option<SubType>;
-}
-
-/// A trait for getting the raw data out of 'boxes' like `Int` etc.
-pub trait Unbox {
-    type Prim: Copy;
-
-    /// Get a copy of the wrapped value.
-    fn unbox(&self) -> Self::Prim;
 }
 
 impl Any {
@@ -104,13 +111,13 @@ impl Any {
     }
 
     /// Get the type reference of this Value.
-    pub fn get_type(&self) -> ValuePtr {
-        self.typ
+    pub fn get_type(&self) -> Root<ListEmpty> {
+        unsafe { Root::new(self.typ) }
     }
 
     /// Set the type reference of this Value.
-    pub fn set_type(&mut self, t: ValuePtr) {
-        self.typ = t
+    pub fn set_type(&mut self, t: ValueHandle<ListEmpty>) {
+        self.typ = t.ptr()
     }
 }
 

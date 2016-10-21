@@ -8,6 +8,7 @@ use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 use std::mem::size_of;
 
+/// A pointer to a Value.
 pub type ValuePtr = *mut Any;
 
 /// An owned reference to a cell that holds a `ValuePtr`. This indirection is
@@ -106,6 +107,7 @@ impl WeakRoot {
 }
 
 impl<'a, T: CtrValue> ValueHandle<'a, T> {
+    /// Upcast this to a reference to `Any`.
     pub fn as_any_ref(self) -> ValueHandle<'a, Any> {
         ValueHandle(self.0, Default::default())
     }
@@ -115,13 +117,14 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
         *self.0.borrow()
     }
 
+    /// Is this Value the exact same as another (`%instance?`)?
     pub fn identical<U: CtrValue>(self, other: ValueHandle<U>) -> bool {
-        *self.0.borrow() == *other.0.borrow()
+        self.ptr() == other.ptr()
     }
 
+    /// Dynamic typecheck (`:`).
     pub fn instanceof(self, typ: ValueHandle<ListEmpty>) -> bool {
-        let t: Root<Any> = unsafe { Root::new(self.as_any_ref().get_type()) };
-        t.borrow().identical(typ)
+        self.as_any_ref().get_type().borrow().identical(typ)
     }
 }
 

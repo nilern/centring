@@ -47,11 +47,11 @@ impl Interpreter {
         itp.int_t = itp.alloc_nil();
         itp.const_t = itp.alloc_nil();
 
-        itp.type_t.clone().as_any_ref().set_type(type_t.ptr());
-        itp.pair_t.clone().as_any_ref().set_type(type_t.ptr());
-        itp.nil_t.clone().as_any_ref().set_type(type_t.ptr());
-        itp.int_t.clone().as_any_ref().set_type(type_t.ptr());
-        itp.const_t.clone().as_any_ref().set_type(type_t.ptr());
+        itp.type_t.clone().as_any_ref().set_type(type_t.borrow());
+        itp.pair_t.clone().as_any_ref().set_type(type_t.borrow());
+        itp.nil_t.clone().as_any_ref().set_type(type_t.borrow());
+        itp.int_t.clone().as_any_ref().set_type(type_t.borrow());
+        itp.const_t.clone().as_any_ref().set_type(type_t.borrow());
 
         itp
     }
