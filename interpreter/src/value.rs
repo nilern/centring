@@ -3,6 +3,8 @@ use interpreter::Interpreter;
 
 use std::mem;
 
+/* Traits ********************************************************************/
+
 pub trait CtrValue {
     /// Return a reference to the Any part of a Value.
     fn as_any(&self) -> &Any;
@@ -28,62 +30,14 @@ pub trait ConcreteType: CtrValue {
     fn typ(itp: &Interpreter) -> ValueHandle<Type>;
 }
 
+/* Any ***********************************************************************/
+
 /// The layout of every Centring Value on the GC heap starts with the fields
 /// of this struct.
 #[repr(C)]
 pub struct Any {
     pub header: usize,
     pub typ: ValuePtr
-}
-
-/// Wraps some data that has no inner structure, for example `Int64` wraps
-/// an i64.
-#[repr(C)]
-pub struct Bits<T: Copy> {
-    header: usize,
-    typ: ValuePtr,
-    pub data: T
-}
-
-/// A 'fixnum'.
-pub type Int = Bits<isize>;
-
-/// The good ol' cons cell.
-#[repr(C)]
-pub struct ListPair {
-    header: usize,
-    typ: ValuePtr,
-    pub head: ValuePtr,
-    pub tail: ValuePtr
-}
-
-/// Plain old `'()`
-#[repr(C)]
-pub struct ListEmpty {
-    header: usize,
-    typ: ValuePtr
-}
-
-/// A type.
-#[repr(C)]
-pub struct Type {
-    header: usize,
-    typ: ValuePtr
-}
-
-/// An AST node representing a constant.
-#[repr(C)]
-pub struct Const {
-    header: usize,
-    typ: ValuePtr,
-    pub val: ValuePtr
-}
-
-/// The halt continuation.
-#[repr(C)]
-pub struct Halt {
-    header: usize,
-    typ: ValuePtr
 }
 
 impl Any {
@@ -141,6 +95,20 @@ impl CtrValue for Any {
     }
 }
 
+/* Bits **********************************************************************/
+
+/// Wraps some data that has no inner structure, for example `Int64` wraps
+/// an i64.
+#[repr(C)]
+pub struct Bits<T: Copy> {
+    header: usize,
+    typ: ValuePtr,
+    pub data: T
+}
+
+/// A 'fixnum'.
+pub type Int = Bits<isize>;
+
 impl<T: Copy> CtrValue for Bits<T> {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
@@ -153,9 +121,92 @@ impl ConcreteType for Int {
     }
 }
 
+impl<T: Copy> Unbox for Bits<T> {
+    type Prim = T;
+
+    fn unbox(&self) -> T {
+        self.data
+    }
+}
+
+/* Pair **********************************************************************/
+
+/// The good ol' cons cell.
+#[repr(C)]
+pub struct ListPair {
+    header: usize,
+    typ: ValuePtr,
+    pub head: ValuePtr,
+    pub tail: ValuePtr
+}
+
+impl CtrValue for ListPair {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
+    }
+}
+
 impl ConcreteType for ListPair {
     fn typ(itp: &Interpreter) -> ValueHandle<Type> {
         itp.pair_t.borrow()
+    }
+}
+
+/* Nil ***********************************************************************/
+
+/// Plain old `'()`
+#[repr(C)]
+pub struct ListEmpty {
+    header: usize,
+    typ: ValuePtr
+}
+
+impl CtrValue for ListEmpty {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
+    }
+}
+
+impl ConcreteType for ListEmpty {
+    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
+        itp.nil_t.borrow()
+    }
+}
+
+/* Type **********************************************************************/
+
+/// A type.
+#[repr(C)]
+pub struct Type {
+    header: usize,
+    typ: ValuePtr
+}
+
+impl CtrValue for Type {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
+    }
+}
+
+impl ConcreteType for Type {
+    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
+        itp.type_t.borrow()
+    }
+}
+
+/* Const **********************************************************************/
+
+/// An AST node representing a constant.
+#[repr(C)]
+pub struct Const {
+    header: usize,
+    typ: ValuePtr,
+    pub val: ValuePtr
+}
+
+impl CtrValue for Const {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
     }
 }
 
@@ -165,36 +216,13 @@ impl ConcreteType for Const {
     }
 }
 
-impl<T: Copy> Unbox for Bits<T> {
-    type Prim = T;
+/* Halt **********************************************************************/
 
-    fn unbox(&self) -> T {
-        self.data
-    }
-}
-
-impl CtrValue for ListPair {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
-
-impl CtrValue for ListEmpty {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
-
-impl CtrValue for Type {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
-
-impl CtrValue for Const {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
+/// The halt continuation.
+#[repr(C)]
+pub struct Halt {
+    header: usize,
+    typ: ValuePtr
 }
 
 impl CtrValue for Halt {

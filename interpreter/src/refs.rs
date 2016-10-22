@@ -1,11 +1,13 @@
 use interpreter::Interpreter;
 use gc::Collector;
 use value::{CtrValue, ConcreteType, Downcast, Any, Type};
+use ops::PtrEq;
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
+use std::ptr;
 
 /// A pointer to a Value.
 pub type ValuePtr = *mut Any;
@@ -62,6 +64,12 @@ impl<T: CtrValue> Clone for Root<T> {
     }
 }
 
+impl<T: CtrValue> PtrEq for Root<T> {
+    fn identical(&self, other: &Root<T>) -> bool {
+        ptr::eq(self.ptr(), other.ptr())
+    }
+}
+
 impl<T: ConcreteType> Downcast<Root<T>> for Root<Any> {
     fn downcast(&self, itp: &Interpreter) -> Option<Root<T>> {
         if self.borrow().instanceof(T::typ(itp)) {
@@ -106,14 +114,9 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
         *self.0.borrow()
     }
 
-    /// Is this Value the exact same as another (`%instance?`)?
-    pub fn identical<U: CtrValue>(self, other: ValueHandle<U>) -> bool {
-        self.ptr() == other.ptr()
-    }
-
     /// Dynamic typecheck (`:`).
     pub fn instanceof(self, typ: ValueHandle<Type>) -> bool {
-        self.as_any_ref().get_type().borrow().identical(typ)
+        self.as_any_ref().get_type().borrow().identical(&typ)
     }
 }
 
@@ -124,6 +127,12 @@ impl<'a, T: CtrValue> Clone for ValueHandle<'a, T> {
 }
 
 impl<'a, T: CtrValue> Copy for ValueHandle<'a, T> { }
+
+impl<'a, T: CtrValue> PtrEq for ValueHandle<'a, T> {
+    fn identical(&self, other: &ValueHandle<'a, T>) -> bool {
+        ptr::eq(self.ptr(), other.ptr())
+    }
+}
 
 impl<'a, T: ConcreteType> Downcast<ValueHandle<'a, T>> for ValueHandle<'a, Any> {
     fn downcast(&self, itp: &Interpreter) -> Option<ValueHandle<'a, T>> {

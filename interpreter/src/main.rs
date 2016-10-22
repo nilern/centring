@@ -1,4 +1,4 @@
-#![feature(alloc, heap_api)]
+#![feature(alloc, heap_api, ptr_eq)]
 
 extern crate alloc;
 extern crate rustyline;

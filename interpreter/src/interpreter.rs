@@ -72,7 +72,7 @@ impl Interpreter {
     pub fn interpret(&mut self, ast: ValueHandle<Any>) -> CtrResult<Any> {
         let mut state = InterpreterState::Eval(unsafe { Root::new(ast.ptr()) },
                                                self.alloc_halt().as_any_ref());
-        loop {
+        loop { // Need to use a trampoline/state machine here for manual TCO.
             state = match state {
                 InterpreterState::Eval(ctrl, k) => self.eval(ctrl, k),
                 InterpreterState::Cont(ctrl, k) => self.cont(ctrl, k),
