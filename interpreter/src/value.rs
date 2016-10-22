@@ -1,16 +1,11 @@
 use refs::{ValuePtr, Root, ValueHandle};
 use interpreter::Interpreter;
 
-use std::mem;
-
 // Traits *******************************************************************
 
-pub trait CtrValue {
-    /// Return a reference to the Any part of a Value.
-    fn as_any(&self) -> &Any;
-}
+/// A marker trait for Values (structs that are extensions of `Any`).
+pub trait CtrValue { }
 
-// FIXME: impls should take type pointers into account
 pub trait Downcast<SubType> {
     /// Try to downcast this Value reference to `SubType`. If this is not
     /// possible, return `None`.
@@ -28,6 +23,16 @@ pub trait Unbox: CtrValue {
 pub trait ConcreteType: CtrValue {
     /// Get a reference to the corresponding runtime type.
     fn typ(itp: &Interpreter) -> ValueHandle<Type>;
+}
+
+macro_rules! impl_typ {
+    { $rs_typ: ident, $itp_field: ident } => {
+        impl ConcreteType for $rs_typ {
+            fn typ(itp: &Interpreter) -> ValueHandle<Type> {
+                itp.$itp_field.borrow()
+            }
+        }
+    }
 }
 
 // Any **********************************************************************
@@ -89,11 +94,7 @@ impl Any {
     }
 }
 
-impl CtrValue for Any {
-    fn as_any(&self) -> &Any {
-        self
-    }
-}
+impl CtrValue for Any { }
 
 // Bits *********************************************************************
 
@@ -109,17 +110,9 @@ pub struct Bits<T: Copy> {
 /// A 'fixnum'.
 pub type Int = Bits<isize>;
 
-impl<T: Copy> CtrValue for Bits<T> {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
+impl<T: Copy> CtrValue for Bits<T> { }
 
-impl ConcreteType for Int {
-    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
-        itp.int_t.borrow()
-    }
-}
+impl_typ! { Int, int_t }
 
 impl<T: Copy> Unbox for Bits<T> {
     type Prim = T;
@@ -140,17 +133,9 @@ pub struct ListPair {
     pub tail: ValuePtr,
 }
 
-impl CtrValue for ListPair {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
+impl CtrValue for ListPair { }
 
-impl ConcreteType for ListPair {
-    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
-        itp.pair_t.borrow()
-    }
-}
+impl_typ! { ListPair, pair_t }
 
 // Nil **********************************************************************
 
@@ -161,17 +146,9 @@ pub struct ListEmpty {
     typ: ValuePtr,
 }
 
-impl CtrValue for ListEmpty {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
+impl CtrValue for ListEmpty { }
 
-impl ConcreteType for ListEmpty {
-    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
-        itp.nil_t.borrow()
-    }
-}
+impl_typ! { ListEmpty, nil_t }
 
 // Type *********************************************************************
 
@@ -182,17 +159,9 @@ pub struct Type {
     typ: ValuePtr,
 }
 
-impl CtrValue for Type {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
+impl CtrValue for Type { }
 
-impl ConcreteType for Type {
-    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
-        itp.type_t.borrow()
-    }
-}
+impl_typ! { Type, type_t }
 
 // Const *********************************************************************
 
@@ -204,17 +173,9 @@ pub struct Const {
     pub val: ValuePtr,
 }
 
-impl CtrValue for Const {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
+impl CtrValue for Const { }
 
-impl ConcreteType for Const {
-    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
-        itp.const_t.borrow()
-    }
-}
+impl_typ! { Const, const_t }
 
 // Halt *********************************************************************
 
@@ -225,14 +186,6 @@ pub struct Halt {
     typ: ValuePtr,
 }
 
-impl CtrValue for Halt {
-    fn as_any(&self) -> &Any {
-        unsafe { mem::transmute(self) }
-    }
-}
+impl CtrValue for Halt { }
 
-impl ConcreteType for Halt {
-    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
-        itp.halt_t.borrow()
-    }
-}
+impl_typ! { Halt, halt_t }
