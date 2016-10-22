@@ -15,6 +15,7 @@ pub mod analyze;
 
 use interpreter::Interpreter;
 use write::ContextValue;
+use analyze::{analyze, ast_to_sexpr};
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
@@ -28,8 +29,18 @@ fn main() {
             Ok(line) => {
                 let mut st = read::ParseState::new(line);
                 match read::read(&mut itp, &mut st) {
-                    Ok(Some(v)) =>
-                        println!("{}", ContextValue::new(v.borrow(), &itp)),
+                    Ok(Some(v)) => {
+                        //println!("{}", ContextValue::new(v.borrow(), &itp)),
+                        if let Ok(ast) = analyze(&mut itp, v.borrow()) {
+                            if let Ok(sexp) = ast_to_sexpr(&mut itp, ast.borrow()) {
+                                println!("{}", ContextValue::new(sexp.borrow(), &itp));
+                            } else {
+                                unimplemented!();
+                            }
+                        } else {
+                            unimplemented!();
+                        }
+                    }
                     Ok(None) => { }
                     Err(e) => println!("ReadError: {:?}", e)
                 }

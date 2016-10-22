@@ -16,14 +16,14 @@ pub trait Downcast<SubType> {
 }
 
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
-pub trait Unbox {
+pub trait Unbox: CtrValue {
     type Prim: Copy;
 
     /// Get a copy of the wrapped value.
     fn unbox(&self) -> Self::Prim;
 }
 
-pub trait TypePtr {
+pub trait TypePtr: CtrValue {
     /// Get a reference to the corresponding runtime type.
     fn typ(itp: &Interpreter) -> ValueHandle<Type>;
 }
@@ -143,6 +143,18 @@ impl<T: Copy> CtrValue for Bits<T> {
 impl TypePtr for Int {
     fn typ(itp: &Interpreter) -> ValueHandle<Type> {
         itp.int_t.borrow()
+    }
+}
+
+impl TypePtr for ListPair {
+    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
+        itp.pair_t.borrow()
+    }
+}
+
+impl TypePtr for Const {
+    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
+        itp.const_t.borrow()
     }
 }
 
