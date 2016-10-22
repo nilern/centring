@@ -6,7 +6,7 @@ pub struct ParseState {
     str: String,
     pos: usize,
     line: usize,
-    col: usize
+    col: usize,
 }
 
 #[derive(Debug)]
@@ -18,7 +18,7 @@ pub enum ParseErrorCode {
     /// Got too many input expressions.
     Extraneous,
     /// Was expecting a terminating character (such as ')').
-    NonTerminating(char)
+    NonTerminating(char),
 }
 
 use self::ParseErrorCode::*;
@@ -32,7 +32,7 @@ pub struct ParseError {
     /// The line number where the error occurred.
     line: usize,
     /// The column where the error occurred.
-    col: usize
+    col: usize,
 }
 
 pub type ParseResult<T> = Result<T, ParseError>;
@@ -46,7 +46,7 @@ impl ParseState {
             str: str,
             pos: 0,
             line: 1,
-            col: 1
+            col: 1,
         }
     }
 
@@ -77,7 +77,8 @@ impl ParseState {
             let mut iter = self.str[self.pos..].char_indices();
             let res = iter.next().unwrap().1;
             self.pos += iter.next().unwrap_or((1, ' ')).0;
-            if '\n' == res { // TODO: '\r'
+            if '\n' == res {
+                // TODO: '\r'
                 self.col = 1;   // at the start...
                 self.line += 1; // ...of the next line
             } else {
@@ -93,7 +94,7 @@ impl ParseState {
             code: code,
             pos: self.pos,
             line: self.line,
-            col: self.col
+            col: self.col,
         }
     }
 }
@@ -109,7 +110,7 @@ fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
                 st.seek(oldpos);
                 Err(err)
             }
-        },
+        }
         err @ Err(_) => {
             st.seek(oldpos);
             err
@@ -118,18 +119,18 @@ fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
 }
 
 fn comment(st: &mut ParseState) {
-    while let Ok(_) = sat(|c| c != '\n' && c != '\r', st) { }
+    while let Ok(_) = sat(|c| c != '\n' && c != '\r', st) {
+    }
 }
 
 fn digit(st: &mut ParseState) -> ParseResult<usize> {
-    sat(|c| c.is_digit(10), st)
-        .map(|c| c.to_digit(10).unwrap() as usize)
+    sat(|c| c.is_digit(10), st).map(|c| c.to_digit(10).unwrap() as usize)
 }
 
 fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Int> {
     let mut n = try!(digit(st)) as isize;
     while let Ok(d) = digit(st) {
-        n = n*10 + d as isize;
+        n = n * 10 + d as isize;
     }
     Ok(Some(itp.alloc_int(n)))
 }
@@ -140,17 +141,19 @@ fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
         Ok(Some(itp.alloc_nil().as_any_ref()))
     } else {
         match expr(itp, st) {
-            Ok(Some(head)) => match list(itp, st) {
-                Ok(Some(tail)) => {
-                    let ls = itp.alloc_pair(head.borrow(), tail.borrow());
-                    //let ls = ListPair::new(itp, head.ptr(), tail.ptr());
-                    Ok(Some(ls.as_any_ref()))
-                },
-                Ok(None) => Err(st.place_error(NonTerminating(')'))),
-                err @ Err(_) => err
-            },
+            Ok(Some(head)) => {
+                match list(itp, st) {
+                    Ok(Some(tail)) => {
+                        let ls = itp.alloc_pair(head.borrow(), tail.borrow());
+                        // let ls = ListPair::new(itp, head.ptr(), tail.ptr());
+                        Ok(Some(ls.as_any_ref()))
+                    }
+                    Ok(None) => Err(st.place_error(NonTerminating(')'))),
+                    err @ Err(_) => err,
+                }
+            }
             Ok(None) => Err(st.place_error(NonTerminating(')'))),
-            err @ Err(_) => err
+            err @ Err(_) => err,
         }
     }
 }
@@ -160,17 +163,17 @@ fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
         match st.peek() {
             Some('(') => {
                 let _ = st.pop();
-                return list(itp, st)
-            },
+                return list(itp, st);
+            }
             Some(';') => {
                 let _ = st.pop();
                 comment(st);
-            },
+            }
             Some(c) if c.is_whitespace() => {
                 let _ = st.pop();
-            },
+            }
             Some(_) => return int(itp, st).map(|ov| ov.map(Root::as_any_ref)),
-            None => return Ok(None)
+            None => return Ok(None),
         };
     }
 }
@@ -189,7 +192,6 @@ pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
 }
 
 /// # Tests
-
 #[cfg(test)]
 mod tests {
     use super::{ParseState, read};
@@ -203,8 +205,7 @@ mod tests {
         let mut st = ParseState::new(String::from("(235)"));
         let res = read(&mut itp, &mut st);
         unsafe {
-            let opp: Option<Root<ListPair>> =
-                (res.unwrap().unwrap()).downcast(&itp);
+            let opp: Option<Root<ListPair>> = (res.unwrap().unwrap()).downcast(&itp);
             let pp = opp.unwrap();
             let nr: Root<Any> = Root::new((*pp).head);
             let n: Option<Root<Int>> = nr.downcast(&itp);

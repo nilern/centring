@@ -34,18 +34,15 @@ Usage: ctri [--help | --ana] -e <expr>
 struct Args {
     flag_help: bool,
     flag_ana: bool,
-    arg_expr: Option<String>
+    arg_expr: Option<String>,
 }
 
 impl Args {
-    fn act(&self, itp: &mut Interpreter, sexp: ValueHandle<Any>)
-              -> CtrResult<Any> {
+    fn act(&self, itp: &mut Interpreter, sexp: ValueHandle<Any>) -> CtrResult<Any> {
         if self.flag_ana {
-            analyze(itp, sexp)
-            .and_then(|ast| ast_to_sexpr(itp, ast.borrow()))
+            analyze(itp, sexp).and_then(|ast| ast_to_sexpr(itp, ast.borrow()))
         } else {
-            analyze(itp, sexp)
-            .and_then(|ast| itp.interpret(ast.borrow()))
+            analyze(itp, sexp).and_then(|ast| itp.interpret(ast.borrow()))
         }
     }
 
@@ -59,8 +56,8 @@ impl Args {
                     unimplemented!();
                 }
             }
-            Ok(None) => { }
-            Err(e) => println!("ReadError: {:?}", e)
+            Ok(None) => {}
+            Err(e) => println!("ReadError: {:?}", e),
         }
     }
 
@@ -76,10 +73,11 @@ impl Args {
                 match line {
                     Ok(estr) => {
                         self.act_and_print(&mut itp, estr);
-                    },
-                    Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => {
+                    }
+                    Err(ReadlineError::Interrupted) |
+                    Err(ReadlineError::Eof) => {
                         break;
-                    },
+                    }
                     Err(err) => {
                         println!("Error: {:?}", err);
                         break;

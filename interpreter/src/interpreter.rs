@@ -1,6 +1,6 @@
 use gc::Collector;
-use value::{CtrValue, ConcreteType, Downcast,
-            Any, Bits, Int, ListPair, ListEmpty, Type, Const, Halt};
+use value::{CtrValue, ConcreteType, Downcast, Any, Bits, Int, ListPair, ListEmpty, Type, Const,
+            Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
@@ -18,20 +18,20 @@ pub struct Interpreter {
     pub nil_t: Root<Type>,
     pub int_t: Root<Type>,
     pub const_t: Root<Type>,
-    pub halt_t: Root<Type>
+    pub halt_t: Root<Type>,
 }
 
 enum InterpreterState {
     Eval(Root<Any>, Root<Any>),
     Cont(Root<Any>, Root<Any>),
-    Halt(Root<Any>)
+    Halt(Root<Any>),
 }
 
 pub enum CtrError {
     Argc {
         expected: (Ordering, usize),
-        received: usize
-    }
+        received: usize,
+    },
 }
 
 pub type CtrResult<T> = Result<Root<T>, CtrError>;
@@ -48,7 +48,7 @@ impl Interpreter {
             nil_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
-            halt_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) }
+            halt_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
         };
 
         let type_t = itp.alloc_type();
@@ -72,11 +72,12 @@ impl Interpreter {
     pub fn interpret(&mut self, ast: ValueHandle<Any>) -> CtrResult<Any> {
         let mut state = InterpreterState::Eval(unsafe { Root::new(ast.ptr()) },
                                                self.alloc_halt().as_any_ref());
-        loop { // Need to use a trampoline/state machine here for manual TCO.
+        loop {
+            // Need to use a trampoline/state machine here for manual TCO.
             state = match state {
                 InterpreterState::Eval(ctrl, k) => self.eval(ctrl, k),
                 InterpreterState::Cont(ctrl, k) => self.cont(ctrl, k),
-                InterpreterState::Halt(v) => return Ok(v)
+                InterpreterState::Halt(v) => return Ok(v),
             };
         }
     }
@@ -98,41 +99,41 @@ impl Interpreter {
         }
     }
 
-    pub fn alloc_rec<'a, T: CtrValue,>(&mut self, typ: ValueHandle<Type>,
-                                       fields: &[ValueHandle<Any>])
-                                       -> Root<T> {
+    pub fn alloc_rec<'a, T: CtrValue>(&mut self,
+                                      typ: ValueHandle<Type>,
+                                      fields: &[ValueHandle<Any>])
+                                      -> Root<T> {
         if !self.gc.rec_poll(fields.len()) {
             self.mark_roots();
-            unsafe { self.gc.collect(); }
+            unsafe {
+                self.gc.collect();
+            }
         }
         let res = unsafe { Root::new(self.gc.alloc_rec(typ, fields)) };
         self.stack_roots.push(Root::downgrade(&res));
         res
     }
 
-    pub fn alloc_bytes<T: CtrValue>(&mut self, typ: ValueHandle<Type>,
-                                    data: &[u8])
-                                    -> Root<T> {
+    pub fn alloc_bytes<T: CtrValue>(&mut self, typ: ValueHandle<Type>, data: &[u8]) -> Root<T> {
         if !self.gc.bytes_poll(data.len()) {
             self.mark_roots();
-            unsafe { self.gc.collect(); }
+            unsafe {
+                self.gc.collect();
+            }
         }
         let res = unsafe { Root::new(self.gc.alloc_bytes(typ, data)) };
         self.stack_roots.push(Root::downgrade(&res));
         res
     }
 
-    pub fn alloc_bits<T: Copy>(&mut self, typ: ValueHandle<Type>, data: T)
-                               -> Root<Bits<T>> {
-        let data_bytes = unsafe { slice::from_raw_parts(
-            mem::transmute::<&T, *mut u8>(&data),
-            mem::size_of::<T>()
-        )};
+    pub fn alloc_bits<T: Copy>(&mut self, typ: ValueHandle<Type>, data: T) -> Root<Bits<T>> {
+        let data_bytes = unsafe {
+            slice::from_raw_parts(mem::transmute::<&T, *mut u8>(&data), mem::size_of::<T>())
+        };
         self.alloc_bytes(typ, data_bytes)
     }
 
-    pub fn alloc_pair(&mut self, head: ValueHandle<Any>, tail: ValueHandle<Any>)
-        -> Root<ListPair> {
+    pub fn alloc_pair(&mut self, head: ValueHandle<Any>, tail: ValueHandle<Any>) -> Root<ListPair> {
         let typ = self.pair_t.clone();
         let fields = [head, tail];
         self.alloc_rec(typ.borrow(), &fields)
@@ -167,11 +168,11 @@ impl Interpreter {
         self.alloc_rec(typ.borrow(), &fields)
     }
 
-    fn mark_roots (&mut self) {
+    fn mark_roots(&mut self) {
         let gc = &mut self.gc;
         // The following also takes care of Root members of self since they
         // were created by self.alloc*.
-        self.stack_roots.retain(|whandle|
+        self.stack_roots.retain(|whandle| {
             if let Some(mut handle) = whandle.upgrade::<Any>() {
                 // Rust still has a live Root so this is a GC root and
                 // needs to be marked and retained:
@@ -181,12 +182,12 @@ impl Interpreter {
                 // The WeakRoot has lapsed so Rust no longer has live
                 // Root:s to this and we can throw this away:
                 false
-            });
+            }
+        });
     }
 }
 
 /// # Tests
-
 #[cfg(test)]
 mod tests {
     use super::Interpreter;
@@ -197,8 +198,7 @@ mod tests {
         let mut itp = Interpreter::new();
         let a = itp.alloc_int(3);
         let b = itp.alloc_int(5);
-        let tup = itp.alloc_pair(a.borrow().as_any_ref(),
-                                 b.borrow().as_any_ref());
+        let tup = itp.alloc_pair(a.borrow().as_any_ref(), b.borrow().as_any_ref());
         itp.mark_roots();
         unsafe {
             itp.gc.collect();

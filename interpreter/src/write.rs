@@ -7,14 +7,14 @@ use std::fmt::{Display, Formatter};
 
 pub struct ContextValue<'a, T: CtrValue + 'a> {
     val: ValueHandle<'a, T>,
-    itp: &'a Interpreter
+    itp: &'a Interpreter,
 }
 
 impl<'a, T: CtrValue> ContextValue<'a, T> {
     pub fn new(val: ValueHandle<'a, T>, itp: &'a Interpreter) -> ContextValue<'a, T> {
         ContextValue::<'a, T> {
             val: val,
-            itp: itp
+            itp: itp,
         }
     }
 }
@@ -27,8 +27,8 @@ impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
                 0 | 2 => {
                     try!(write!(fmt, "("));
                     write_list(fmt, self, true)
-                },
-                _ => unimplemented!()
+                }
+                _ => unimplemented!(),
             }
         } else {
             let obv: Option<ValueHandle<Int>> = v.downcast(&self.itp);
@@ -41,8 +41,10 @@ impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
     }
 }
 
-fn write_list<T: CtrValue>(fmt: &mut Formatter, ls: &ContextValue<T>, start: bool)
-    -> Result<(), fmt::Error> {
+fn write_list<T: CtrValue>(fmt: &mut Formatter,
+                           ls: &ContextValue<T>,
+                           start: bool)
+                           -> Result<(), fmt::Error> {
     let ref v = ls.val.as_any_ref();
     if v.pointy() {
         match v.alloc_len() {
@@ -56,13 +58,12 @@ fn write_list<T: CtrValue>(fmt: &mut Formatter, ls: &ContextValue<T>, start: boo
                         try!(write!(fmt, " "));
                     }
                     try!(ContextValue::new(head.borrow(), ls.itp).fmt(fmt));
-                    write_list(fmt, &ContextValue::new(tail.borrow(), ls.itp),
-                               false)
-               } else {
-                   panic!()
-               }
-            },
-            _ => panic!()
+                    write_list(fmt, &ContextValue::new(tail.borrow(), ls.itp), false)
+                } else {
+                    panic!()
+                }
+            }
+            _ => panic!(),
         }
     } else {
         panic!()

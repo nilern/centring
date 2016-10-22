@@ -1,11 +1,13 @@
 use std::ops::Add;
 use std::marker::Sized;
 
-pub trait CheckedAdd: Add<Self, Output=Self> where Self: Sized {
+pub trait CheckedAdd: Add<Self, Output = Self>
+    where Self: Sized
+{
     fn checked_add(self, v: Self) -> Option<Self>;
 }
 
-pub trait PtrEq<Rhs = Self>  {
+pub trait PtrEq<Rhs = Self> {
     fn identical(&self, other: &Rhs) -> bool;
 }
 

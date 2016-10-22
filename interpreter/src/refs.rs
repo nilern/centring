@@ -130,7 +130,7 @@ impl<'a, T: CtrValue> Clone for ValueHandle<'a, T> {
     }
 }
 
-impl<'a, T: CtrValue> Copy for ValueHandle<'a, T> { }
+impl<'a, T: CtrValue> Copy for ValueHandle<'a, T> {}
 
 impl<'a, T: CtrValue> PtrEq for ValueHandle<'a, T> {
     fn identical(&self, other: &ValueHandle<'a, T>) -> bool {

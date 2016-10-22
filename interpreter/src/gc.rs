@@ -14,13 +14,13 @@ pub struct Collector {
     free_rec: ValuePtr,
 
     blobspace: *mut Blob,
-    blob_bytes_allocated: usize
+    blob_bytes_allocated: usize,
 }
 
 #[repr(C)]
 struct Blob {
     next: *mut Blob,
-    data: Any
+    data: Any,
 }
 
 const BYTE_INTERVAL: usize = 1048_576; // 1 MiB
@@ -35,15 +35,15 @@ impl Collector {
             tospace: Vec::with_capacity(heapsize),
             free_rec: free_rec,
             blobspace: ptr::null::<Blob>() as *mut Blob,
-            blob_bytes_allocated: 0
+            blob_bytes_allocated: 0,
         }
     }
 
     /// Can we allocate a record with `field_count` fields or do we need to run
     /// a garbage collection first?
     pub fn rec_poll(&self, field_count: usize) -> bool {
-        self.fromspace.capacity() - self.fromspace.len()
-        >= size_of::<Any>()/size_of::<ValuePtr>() + field_count
+        self.fromspace.capacity() - self.fromspace.len() >=
+        size_of::<Any>() / size_of::<ValuePtr>() + field_count
     }
 
     /// Can we allocate a blob with `byte_count` bytes of data or do we need to
@@ -58,12 +58,12 @@ impl Collector {
     /// You must first use `bytes_poll` and if that is false, you need to mark
     /// the GC roots and call `collect` to free/allocate more space in
     /// the GC heap.
-    pub unsafe fn alloc_rec(&mut self, typ: ValueHandle<Type>,
+    pub unsafe fn alloc_rec(&mut self,
+                            typ: ValueHandle<Type>,
                             fields: &[ValueHandle<Any>])
                             -> ValuePtr {
         let len = self.fromspace.len();
-        self.fromspace.set_len(len + size_of::<Any>()/size_of::<ValuePtr>()
-                                   + fields.len());
+        self.fromspace.set_len(len + size_of::<Any>() / size_of::<ValuePtr>() + fields.len());
 
         let res = self.free_rec;
         (*res).header = Any::header(fields.len(), true);
@@ -84,11 +84,9 @@ impl Collector {
     /// You must first use `rec_poll` and if that is false, you need to mark
     /// the GC roots and call `collect` to free/allocate more space in
     /// the GC heap.
-    pub unsafe fn alloc_bytes(&mut self, typ: ValueHandle<Type>, data: &[u8])
-                              -> ValuePtr {
-        let blob: *mut Blob = transmute(
-            heap::allocate(size_of::<Blob>() + data.len(),
-                           align_of::<Blob>()));
+    pub unsafe fn alloc_bytes(&mut self, typ: ValueHandle<Type>, data: &[u8]) -> ValuePtr {
+        let blob: *mut Blob = transmute(heap::allocate(size_of::<Blob>() + data.len(),
+                                                       align_of::<Blob>()));
         (*blob).next = self.blobspace;
         self.blobspace = blob;
         self.blob_bytes_allocated += data.len();
@@ -97,8 +95,7 @@ impl Collector {
         (*res).header = Any::header(data.len(), false);
         (*res).typ = typ.ptr();
 
-        let data_dest = slice::from_raw_parts_mut(res.offset(1) as *mut u8,
-                                                  data.len());
+        let data_dest = slice::from_raw_parts_mut(res.offset(1) as *mut u8, data.len());
         data_dest.copy_from_slice(data);
         res
     }
@@ -106,7 +103,8 @@ impl Collector {
     fn move_rec_slice(&mut self, src: &[ValuePtr]) -> ValuePtr {
         unsafe {
             let dest = self.tospace
-                .as_mut_ptr().offset(self.tospace.len() as isize) as *mut Any;
+                .as_mut_ptr()
+                .offset(self.tospace.len() as isize) as *mut Any;
             self.tospace.extend_from_slice(src);
             dest
         }
@@ -127,10 +125,9 @@ impl Collector {
             if (*ptr).pointy() {
                 // we have to do the copy first so that only the fromspace
                 // version becomes a broken heart:
-                let res =
-                    self.move_rec_slice( // move data
-                        slice::from_raw_parts(ptr as *mut ValuePtr,
-                            2 + (*ptr).alloc_len()));
+                let res = self.move_rec_slice(// move data
+                                              slice::from_raw_parts(ptr as *mut ValuePtr,
+                                                                    2 + (*ptr).alloc_len()));
                 (*ptr).typ = res; // set forward pointer
                 (*ptr).set_mark_bit();
                 res
@@ -153,8 +150,7 @@ impl Collector {
     pub unsafe fn collect(&mut self) {
         let mut scan: *mut usize = self.tospace.as_mut_ptr() as *mut usize;
         let mut free: *mut usize = scan.offset(self.tospace.len() as isize);
-        while scan < (self.tospace.as_mut_ptr() as *mut usize)
-                          .offset(self.tospace.len() as isize) {
+        while scan < (self.tospace.as_mut_ptr() as *mut usize).offset(self.tospace.len() as isize) {
             let len = (*(scan as *mut Any)).alloc_len();
             scan = scan.offset(1);
             *scan = transmute(self.mark(*scan as ValuePtr));
@@ -170,7 +166,7 @@ impl Collector {
         self.sweep();
         swap(&mut self.fromspace, &mut self.tospace);
         self.tospace.clear();
-        if self.fromspace.len() > 8*self.fromspace.capacity()/10 {
+        if self.fromspace.len() > 8 * self.fromspace.capacity() / 10 {
             self.fromspace.reserve(size_of::<usize>());
             self.tospace.reserve(size_of::<usize>());
         }

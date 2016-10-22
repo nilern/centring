@@ -3,7 +3,7 @@ use interpreter::Interpreter;
 
 use std::mem;
 
-/* Traits ********************************************************************/
+// Traits *******************************************************************
 
 pub trait CtrValue {
     /// Return a reference to the Any part of a Value.
@@ -30,14 +30,14 @@ pub trait ConcreteType: CtrValue {
     fn typ(itp: &Interpreter) -> ValueHandle<Type>;
 }
 
-/* Any ***********************************************************************/
+// Any **********************************************************************
 
 /// The layout of every Centring Value on the GC heap starts with the fields
 /// of this struct.
 #[repr(C)]
 pub struct Any {
     pub header: usize,
-    pub typ: ValuePtr
+    pub typ: ValuePtr,
 }
 
 impl Any {
@@ -95,7 +95,7 @@ impl CtrValue for Any {
     }
 }
 
-/* Bits **********************************************************************/
+// Bits *********************************************************************
 
 /// Wraps some data that has no inner structure, for example `Int64` wraps
 /// an i64.
@@ -103,7 +103,7 @@ impl CtrValue for Any {
 pub struct Bits<T: Copy> {
     header: usize,
     typ: ValuePtr,
-    pub data: T
+    pub data: T,
 }
 
 /// A 'fixnum'.
@@ -129,7 +129,7 @@ impl<T: Copy> Unbox for Bits<T> {
     }
 }
 
-/* Pair **********************************************************************/
+// Pair *********************************************************************
 
 /// The good ol' cons cell.
 #[repr(C)]
@@ -137,7 +137,7 @@ pub struct ListPair {
     header: usize,
     typ: ValuePtr,
     pub head: ValuePtr,
-    pub tail: ValuePtr
+    pub tail: ValuePtr,
 }
 
 impl CtrValue for ListPair {
@@ -152,13 +152,13 @@ impl ConcreteType for ListPair {
     }
 }
 
-/* Nil ***********************************************************************/
+// Nil **********************************************************************
 
 /// Plain old `'()`
 #[repr(C)]
 pub struct ListEmpty {
     header: usize,
-    typ: ValuePtr
+    typ: ValuePtr,
 }
 
 impl CtrValue for ListEmpty {
@@ -173,13 +173,13 @@ impl ConcreteType for ListEmpty {
     }
 }
 
-/* Type **********************************************************************/
+// Type *********************************************************************
 
 /// A type.
 #[repr(C)]
 pub struct Type {
     header: usize,
-    typ: ValuePtr
+    typ: ValuePtr,
 }
 
 impl CtrValue for Type {
@@ -194,14 +194,14 @@ impl ConcreteType for Type {
     }
 }
 
-/* Const **********************************************************************/
+// Const *********************************************************************
 
 /// An AST node representing a constant.
 #[repr(C)]
 pub struct Const {
     header: usize,
     typ: ValuePtr,
-    pub val: ValuePtr
+    pub val: ValuePtr,
 }
 
 impl CtrValue for Const {
@@ -216,13 +216,13 @@ impl ConcreteType for Const {
     }
 }
 
-/* Halt **********************************************************************/
+// Halt *********************************************************************
 
 /// The halt continuation.
 #[repr(C)]
 pub struct Halt {
     header: usize,
-    typ: ValuePtr
+    typ: ValuePtr,
 }
 
 impl CtrValue for Halt {
