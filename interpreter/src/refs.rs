@@ -109,6 +109,10 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
         ValueHandle(self.0, Default::default())
     }
 
+    pub fn root(&self) -> Root<T> {
+        unsafe { Root::new(self.ptr()) }
+    }
+
     /// Get the raw pointer to the Value.
     pub fn ptr(self) -> ValuePtr {
         *self.0.borrow()
