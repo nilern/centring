@@ -1,5 +1,6 @@
 use gc::Collector;
-use value::{CtrValue, Any, Bits, Int, ListPair, ListEmpty, Type, Const};
+use value::{CtrValue, ConcreteType, Downcast,
+            Any, Bits, Int, ListPair, ListEmpty, Type, Const, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
@@ -16,7 +17,14 @@ pub struct Interpreter {
     pub pair_t: Root<Type>,
     pub nil_t: Root<Type>,
     pub int_t: Root<Type>,
-    pub const_t: Root<Type>
+    pub const_t: Root<Type>,
+    pub halt_t: Root<Type>
+}
+
+enum InterpreterState {
+    Eval(Root<Any>, Root<Any>),
+    Cont(Root<Any>, Root<Any>),
+    Halt(Root<Any>)
 }
 
 pub enum CtrError {
@@ -39,7 +47,8 @@ impl Interpreter {
             pair_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             nil_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
-            const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) }
+            const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            halt_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) }
         };
 
         let type_t = itp.alloc_type();
@@ -48,14 +57,45 @@ impl Interpreter {
         itp.nil_t = itp.alloc_type();
         itp.int_t = itp.alloc_type();
         itp.const_t = itp.alloc_type();
+        itp.halt_t = itp.alloc_type();
 
         itp.type_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.pair_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.nil_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.int_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.const_t.clone().as_any_ref().set_type(type_t.borrow());
+        itp.halt_t.clone().as_any_ref().set_type(type_t.borrow());
 
         itp
+    }
+
+    pub fn interpret(&mut self, ast: ValueHandle<Any>) -> CtrResult<Any> {
+        let mut state = InterpreterState::Eval(unsafe { Root::new(ast.ptr()) },
+                                               self.alloc_halt().as_any_ref());
+        loop {
+            state = match state {
+                InterpreterState::Eval(ctrl, k) => self.eval(ctrl, k),
+                InterpreterState::Cont(ctrl, k) => self.cont(ctrl, k),
+                InterpreterState::Halt(v) => return Ok(v)
+            };
+        }
+    }
+
+    fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> InterpreterState {
+        let oc: Option<Root<Const>> = ctrl.downcast(self);
+        if let Some(c) = oc {
+            InterpreterState::Cont(unsafe { Root::new(c.val) }, k)
+        } else {
+            unimplemented!()
+        }
+    }
+
+    fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> InterpreterState {
+        if k.borrow().instanceof(Halt::typ(self)) {
+            InterpreterState::Halt(v)
+        } else {
+            unimplemented!()
+        }
     }
 
     pub fn alloc_rec<'a, T: CtrValue,>(&mut self, typ: ValueHandle<Type>,
@@ -118,6 +158,12 @@ impl Interpreter {
     pub fn alloc_const(&mut self, v: ValueHandle<Any>) -> Root<Const> {
         let typ = self.const_t.clone();
         let fields = [v];
+        self.alloc_rec(typ.borrow(), &fields)
+    }
+
+    pub fn alloc_halt(&mut self) -> Root<Halt> {
+        let typ = self.halt_t.clone();
+        let fields = [];
         self.alloc_rec(typ.borrow(), &fields)
     }
 

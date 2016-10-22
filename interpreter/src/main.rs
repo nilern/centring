@@ -30,13 +30,10 @@ fn main() {
                 let mut st = read::ParseState::new(line);
                 match read::read(&mut itp, &mut st) {
                     Ok(Some(v)) => {
-                        //println!("{}", ContextValue::new(v.borrow(), &itp)),
-                        if let Ok(ast) = analyze(&mut itp, v.borrow()) {
-                            if let Ok(sexp) = ast_to_sexpr(&mut itp, ast.borrow()) {
-                                println!("{}", ContextValue::new(sexp.borrow(), &itp));
-                            } else {
-                                unimplemented!();
-                            }
+                        if let Ok(sexp) = analyze(&mut itp, v.borrow())
+                                              .and_then(|ast|
+                                                  ast_to_sexpr(&mut itp, ast.borrow())) {
+                            println!("{}", ContextValue::new(sexp.borrow(), &itp));
                         } else {
                             unimplemented!();
                         }

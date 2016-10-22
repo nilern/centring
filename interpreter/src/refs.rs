@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use gc::Collector;
-use value::{CtrValue, TypePtr, Downcast, Any, Type};
+use value::{CtrValue, ConcreteType, Downcast, Any, Type};
 
 use std::rc::{Rc, Weak};
 use std::cell::RefCell;
@@ -62,7 +62,7 @@ impl<T: CtrValue> Clone for Root<T> {
     }
 }
 
-impl<T: TypePtr> Downcast<Root<T>> for Root<Any> {
+impl<T: ConcreteType> Downcast<Root<T>> for Root<Any> {
     fn downcast(&self, itp: &Interpreter) -> Option<Root<T>> {
         if self.borrow().instanceof(T::typ(itp)) {
             Some(Root(self.0.clone(), Default::default()))
@@ -125,7 +125,7 @@ impl<'a, T: CtrValue> Clone for ValueHandle<'a, T> {
 
 impl<'a, T: CtrValue> Copy for ValueHandle<'a, T> { }
 
-impl<'a, T: TypePtr> Downcast<ValueHandle<'a, T>> for ValueHandle<'a, Any> {
+impl<'a, T: ConcreteType> Downcast<ValueHandle<'a, T>> for ValueHandle<'a, Any> {
     fn downcast(&self, itp: &Interpreter) -> Option<ValueHandle<'a, T>> {
         if self.instanceof(T::typ(itp)) {
             Some(ValueHandle(self.0, Default::default()))

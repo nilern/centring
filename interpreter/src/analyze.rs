@@ -1,5 +1,5 @@
 use interpreter::{Interpreter, CtrResult};
-use value::{TypePtr, Downcast, Any, Int, Const};
+use value::{ConcreteType, Downcast, Any, Int, Const};
 use refs::{Root, ValueHandle};
 
 pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {

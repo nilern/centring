@@ -23,7 +23,7 @@ pub trait Unbox: CtrValue {
     fn unbox(&self) -> Self::Prim;
 }
 
-pub trait TypePtr: CtrValue {
+pub trait ConcreteType: CtrValue {
     /// Get a reference to the corresponding runtime type.
     fn typ(itp: &Interpreter) -> ValueHandle<Type>;
 }
@@ -77,6 +77,13 @@ pub struct Const {
     header: usize,
     typ: ValuePtr,
     pub val: ValuePtr
+}
+
+/// The halt continuation.
+#[repr(C)]
+pub struct Halt {
+    header: usize,
+    typ: ValuePtr
 }
 
 impl Any {
@@ -140,19 +147,19 @@ impl<T: Copy> CtrValue for Bits<T> {
     }
 }
 
-impl TypePtr for Int {
+impl ConcreteType for Int {
     fn typ(itp: &Interpreter) -> ValueHandle<Type> {
         itp.int_t.borrow()
     }
 }
 
-impl TypePtr for ListPair {
+impl ConcreteType for ListPair {
     fn typ(itp: &Interpreter) -> ValueHandle<Type> {
         itp.pair_t.borrow()
     }
 }
 
-impl TypePtr for Const {
+impl ConcreteType for Const {
     fn typ(itp: &Interpreter) -> ValueHandle<Type> {
         itp.const_t.borrow()
     }
@@ -187,5 +194,17 @@ impl CtrValue for Type {
 impl CtrValue for Const {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
+    }
+}
+
+impl CtrValue for Halt {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
+    }
+}
+
+impl ConcreteType for Halt {
+    fn typ(itp: &Interpreter) -> ValueHandle<Type> {
+        itp.halt_t.borrow()
     }
 }
