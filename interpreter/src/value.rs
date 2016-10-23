@@ -1,6 +1,8 @@
 use refs::{ValuePtr, Root, ValueHandle};
 use interpreter::Interpreter;
 
+use std::mem;
+
 // Traits *******************************************************************
 
 /// A marker trait for Values (structs that are extensions of `Any`).
@@ -107,12 +109,7 @@ pub struct Bits<T: Copy> {
     pub data: T,
 }
 
-/// A 'fixnum'.
-pub type Int = Bits<isize>;
-
 impl<T: Copy> CtrValue for Bits<T> {}
-
-impl_typ! { Int, int_t }
 
 impl<T: Copy> Unbox for Bits<T> {
     type Prim = T;
@@ -121,6 +118,16 @@ impl<T: Copy> Unbox for Bits<T> {
         self.data
     }
 }
+
+/// A 'fixnum'.
+pub type Int = Bits<isize>;
+
+impl_typ! { Int, int_t }
+
+/// An unsigned 'fixnum'.
+pub type UInt = Bits<usize>;
+
+impl_typ! { UInt, uint_t }
 
 // Symbol *******************************************************************
 
@@ -175,6 +182,33 @@ impl CtrValue for Type {}
 
 impl_typ! { Type, type_t }
 
+// Do *********************************************************************
+
+/// An AST node for `$do`.
+#[repr(C)]
+pub struct Do {
+    header: usize,
+    typ: ValuePtr
+}
+
+impl CtrValue for Do {}
+
+impl_typ! { Do, do_t }
+
+impl Do {
+    pub fn stmts(&self, i: usize) -> Option<Root<Any>> {
+        unsafe {
+            let self_ptr: ValuePtr = mem::transmute(self);
+            if i < (*self_ptr).alloc_len() {
+                let rfields = self_ptr.offset(1) as *mut ValuePtr;
+                Some(Root::new(*rfields.offset(i as isize)))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 // Const *********************************************************************
 
 /// An AST node representing a constant.
@@ -188,6 +222,50 @@ pub struct Const {
 impl CtrValue for Const {}
 
 impl_typ! { Const, const_t }
+
+// DoCont *********************************************************************
+
+/// The `$do` continuation.
+#[repr(C)]
+pub struct DoCont {
+    header: usize,
+    typ: ValuePtr,
+    parent: ValuePtr,
+    do_ast: ValuePtr,
+    index: ValuePtr
+}
+
+impl CtrValue for DoCont {}
+
+impl_typ! { DoCont, docont_t }
+
+impl DoCont {
+    pub fn parent(&self) -> Root<Any> {
+        unsafe { Root::new(self.parent) }
+    }
+
+    pub fn do_ast(&self, itp: &mut Interpreter) -> Option<Root<Do>> {
+        unsafe {
+            let res = Root::<Do>::new(self.do_ast);
+            if res.borrow().instanceof(Do::typ(itp)) {
+                Some(res)
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn index(&self, itp: &mut Interpreter) -> Option<usize> {
+        unsafe {
+            let res = Root::<UInt>::new(self.index);
+            if res.borrow().instanceof(UInt::typ(itp)) {
+                Some(res.unbox())
+            } else {
+                None
+            }
+        }
+    }
+}
 
 // Halt *********************************************************************
 

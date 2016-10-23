@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use gc::Collector;
-use value::{CtrValue, ConcreteType, Downcast, Any, Type};
+use value::{CtrValue, ConcreteType, Downcast, Any, Symbol, Type};
 use ops::PtrEq;
 
 use std::rc::{Rc, Weak};
@@ -135,6 +135,12 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
             res.extend_from_slice(bytes);
             Some(res)
         }
+    }
+}
+
+impl<'a> ValueHandle<'a, Symbol> {
+    pub fn to_string(self) -> String {
+        String::from_utf8(self.clone_bytes().unwrap()).unwrap()
     }
 }
 
