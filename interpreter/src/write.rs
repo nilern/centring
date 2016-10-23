@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use refs::{Root, ValueHandle};
-use value::{CtrValue, Any, Int, ListPair, Downcast};
+use value::{CtrValue, Any, Int, Symbol, ListPair, Downcast};
 
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -33,10 +33,14 @@ impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
         } else {
             let obv: Option<ValueHandle<Int>> = v.downcast(&self.itp);
             if let Some(bv) = obv {
-                write!(fmt, "{}", bv.data)
-            } else {
-                unimplemented!()
+                return write!(fmt, "{}", bv.data);
             }
+            let os: Option<ValueHandle<Symbol>> = v.downcast(&self.itp);
+            if let Some(s) = os {
+                // HACK
+                return write!(fmt, "{}", String::from_utf8_lossy(&s.clone_bytes().unwrap()));
+            }
+            unimplemented!()
         }
     }
 }

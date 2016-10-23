@@ -4,7 +4,7 @@ use interpreter::Interpreter;
 // Traits *******************************************************************
 
 /// A marker trait for Values (structs that are extensions of `Any`).
-pub trait CtrValue { }
+pub trait CtrValue {}
 
 pub trait Downcast<SubType> {
     /// Try to downcast this Value reference to `SubType`. If this is not
@@ -94,7 +94,7 @@ impl Any {
     }
 }
 
-impl CtrValue for Any { }
+impl CtrValue for Any {}
 
 // Bits *********************************************************************
 
@@ -110,7 +110,7 @@ pub struct Bits<T: Copy> {
 /// A 'fixnum'.
 pub type Int = Bits<isize>;
 
-impl<T: Copy> CtrValue for Bits<T> { }
+impl<T: Copy> CtrValue for Bits<T> {}
 
 impl_typ! { Int, int_t }
 
@@ -121,6 +121,18 @@ impl<T: Copy> Unbox for Bits<T> {
         self.data
     }
 }
+
+// Symbol *******************************************************************
+
+#[repr(C)]
+pub struct Symbol {
+    header: usize,
+    typ: ValuePtr,
+}
+
+impl CtrValue for Symbol {}
+
+impl_typ! { Symbol, symbol_t }
 
 // Pair *********************************************************************
 
@@ -133,7 +145,7 @@ pub struct ListPair {
     pub tail: ValuePtr,
 }
 
-impl CtrValue for ListPair { }
+impl CtrValue for ListPair {}
 
 impl_typ! { ListPair, pair_t }
 
@@ -146,7 +158,7 @@ pub struct ListEmpty {
     typ: ValuePtr,
 }
 
-impl CtrValue for ListEmpty { }
+impl CtrValue for ListEmpty {}
 
 impl_typ! { ListEmpty, nil_t }
 
@@ -159,7 +171,7 @@ pub struct Type {
     typ: ValuePtr,
 }
 
-impl CtrValue for Type { }
+impl CtrValue for Type {}
 
 impl_typ! { Type, type_t }
 
@@ -173,7 +185,7 @@ pub struct Const {
     pub val: ValuePtr,
 }
 
-impl CtrValue for Const { }
+impl CtrValue for Const {}
 
 impl_typ! { Const, const_t }
 
@@ -186,6 +198,6 @@ pub struct Halt {
     typ: ValuePtr,
 }
 
-impl CtrValue for Halt { }
+impl CtrValue for Halt {}
 
 impl_typ! { Halt, halt_t }

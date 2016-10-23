@@ -1,6 +1,6 @@
 use gc::Collector;
-use value::{CtrValue, ConcreteType, Downcast, Any, Bits, Int, ListPair, ListEmpty, Type, Const,
-            Halt};
+use value::{CtrValue, ConcreteType, Downcast, Any, Bits, Int, Symbol, ListPair, ListEmpty, Type,
+            Const, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
@@ -17,6 +17,7 @@ pub struct Interpreter {
     pub pair_t: Root<Type>,
     pub nil_t: Root<Type>,
     pub int_t: Root<Type>,
+    pub symbol_t: Root<Type>,
     pub const_t: Root<Type>,
     pub halt_t: Root<Type>,
 }
@@ -47,6 +48,7 @@ impl Interpreter {
             pair_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             nil_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            symbol_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             halt_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
         };
@@ -56,6 +58,7 @@ impl Interpreter {
         itp.pair_t = itp.alloc_type();
         itp.nil_t = itp.alloc_type();
         itp.int_t = itp.alloc_type();
+        itp.symbol_t = itp.alloc_type();
         itp.const_t = itp.alloc_type();
         itp.halt_t = itp.alloc_type();
 
@@ -63,6 +66,7 @@ impl Interpreter {
         itp.pair_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.nil_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.int_t.clone().as_any_ref().set_type(type_t.borrow());
+        itp.symbol_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.const_t.clone().as_any_ref().set_type(type_t.borrow());
         itp.halt_t.clone().as_any_ref().set_type(type_t.borrow());
 
@@ -154,6 +158,11 @@ impl Interpreter {
     pub fn alloc_int(&mut self, v: isize) -> Root<Int> {
         let typ = self.int_t.clone();
         self.alloc_bits(typ.borrow(), v)
+    }
+
+    pub fn alloc_symbol(&mut self, chars: &str) -> Root<Symbol> {
+        let typ = self.symbol_t.clone();
+        self.alloc_bytes(typ.borrow(), chars.as_bytes())
     }
 
     pub fn alloc_const(&mut self, v: ValueHandle<Any>) -> Root<Const> {

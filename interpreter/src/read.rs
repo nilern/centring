@@ -1,5 +1,5 @@
 use interpreter::Interpreter;
-use value::{Any, Int};
+use value::{Any, Int, Symbol};
 use refs::Root;
 
 pub struct ParseState {
@@ -8,6 +8,13 @@ pub struct ParseState {
     line: usize,
     col: usize,
 }
+
+enum CharKind {
+    Constituent(char),
+    Macro { terminating: bool, char: char },
+    Whitespace,
+}
+use self::CharKind::*;
 
 #[derive(Debug)]
 pub enum ParseErrorCode {
@@ -19,8 +26,8 @@ pub enum ParseErrorCode {
     Extraneous,
     /// Was expecting a terminating character (such as ')').
     NonTerminating(char),
+    Unexpected(char)
 }
-
 use self::ParseErrorCode::*;
 
 #[derive(Debug)]
@@ -99,6 +106,21 @@ impl ParseState {
     }
 }
 
+impl CharKind {
+    fn new(c: char) -> CharKind {
+        if c == '(' || c == ')' || c == ';' {
+            Macro {
+                terminating: true,
+                char: c,
+            }
+        } else if c.is_whitespace() {
+            Whitespace
+        } else {
+            Constituent(c)
+        }
+    }
+}
+
 fn sat<F: Fn(char) -> bool>(f: F, st: &mut ParseState) -> ParseResult<char> {
     let oldpos = st.tell();
     match st.pop() {
@@ -135,6 +157,23 @@ fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Int> {
     Ok(Some(itp.alloc_int(n)))
 }
 
+fn symbol_char(st: &mut ParseState) -> ParseResult<char> {
+    match st.peek().map(CharKind::new) {
+        Some(Constituent(c)) => st.pop(),
+        Some(_) => Err(st.place_error(Unsatisfied)),
+        None => Err(st.place_error(EOF)),
+    }
+}
+
+fn symbol(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Symbol> {
+    let mut chars = String::new();
+    chars.push(try!(symbol_char(st)));
+    while let Ok(c) = symbol_char(st) {
+        chars.push(c);
+    }
+    Ok(Some(itp.alloc_symbol(&chars)))
+}
+
 fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
     if let Some(')') = st.peek() {
         let _ = st.pop();
@@ -160,21 +199,27 @@ fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
 
 fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
     loop {
-        match st.peek() {
-            Some('(') => {
+        match st.peek().map(CharKind::new) {
+            Some(Macro { char: '(', .. }) => {
                 let _ = st.pop();
                 return list(itp, st);
             }
-            Some(';') => {
+            Some(Macro { char: ';', .. }) => {
                 let _ = st.pop();
                 comment(st);
             }
-            Some(c) if c.is_whitespace() => {
+            Some(Macro { char: c, .. }) =>
+                return Err(st.place_error(Unexpected(c))),
+            Some(Whitespace) => {
                 let _ = st.pop();
             }
-            Some(_) => return int(itp, st).map(|ov| ov.map(Root::as_any_ref)),
+            Some(Constituent(_)) => {
+                return int(itp, st)
+                    .map(|ov| ov.map(Root::as_any_ref))
+                    .or_else(|_| symbol(itp, st).map(|ov| ov.map(Root::as_any_ref)))
+            }
             None => return Ok(None),
-        };
+        }
     }
 }
 

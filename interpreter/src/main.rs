@@ -26,13 +26,14 @@ use rustyline::Editor;
 use rustyline::error::ReadlineError;
 
 const USAGE: &'static str = "
-Usage: ctri [--help | --ana] -e <expr>
-       ctri [--help | --ana]
+Usage: ctri [--help | --sexp | --ana] -e <expr>
+       ctri [--help | --sexp | --ana]
 ";
 
 #[derive(RustcDecodable)]
 struct Args {
     flag_help: bool,
+    flag_sexp: bool,
     flag_ana: bool,
     arg_expr: Option<String>,
 }
@@ -41,6 +42,8 @@ impl Args {
     fn act(&self, itp: &mut Interpreter, sexp: ValueHandle<Any>) -> CtrResult<Any> {
         if self.flag_ana {
             analyze(itp, sexp).and_then(|ast| ast_to_sexpr(itp, ast.borrow()))
+        } else if self.flag_sexp {
+            Ok(sexp.root())
         } else {
             analyze(itp, sexp).and_then(|ast| itp.interpret(ast.borrow()))
         }
