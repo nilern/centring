@@ -26,6 +26,7 @@ pub enum ParseErrorCode {
     Extraneous,
     /// Was expecting a terminating character (such as ')').
     NonTerminating(char),
+    NonSharp(char),
     Unexpected(char)
 }
 use self::ParseErrorCode::*;
@@ -113,6 +114,11 @@ impl CharKind {
                 terminating: true,
                 char: c,
             }
+        } else if c == '#' {
+            Macro {
+                terminating: false,
+                char: c,
+            }
         } else if c.is_whitespace() {
             Whitespace
         } else {
@@ -159,19 +165,26 @@ fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Int> {
 
 fn symbol_char(st: &mut ParseState) -> ParseResult<char> {
     match st.peek().map(CharKind::new) {
-        Some(Constituent(c)) => st.pop(),
+        Some(Constituent(_)) | Some(Macro { terminating: false, .. }) => st.pop(),
         Some(_) => Err(st.place_error(Unsatisfied)),
         None => Err(st.place_error(EOF)),
     }
 }
 
-fn symbol(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Symbol> {
-    let mut chars = String::new();
+fn symbol_string(st: &mut ParseState, mut chars: String) -> ParseResult<String> {
     chars.push(try!(symbol_char(st)));
     while let Ok(c) = symbol_char(st) {
         chars.push(c);
     }
-    Ok(Some(itp.alloc_symbol(&chars)))
+    Ok(chars)
+}
+
+fn symbol(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Symbol> {
+    symbol_string(st, String::new()).map(|cs| Some(itp.alloc_symbol(&cs)))
+}
+
+fn qualified_symbol(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Symbol> {
+    symbol_string(st, String::from("##")).map(|cs| Some(itp.alloc_symbol(&cs)))
 }
 
 fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
@@ -200,14 +213,25 @@ fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
 fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
     loop {
         match st.peek().map(CharKind::new) {
-            Some(Macro { char: '(', .. }) => {
+            Some(Macro { char: '(', terminating: true }) => {
                 let _ = st.pop();
                 return list(itp, st);
             }
-            Some(Macro { char: ';', .. }) => {
+            Some(Macro { char: ';', terminating: true }) => {
                 let _ = st.pop();
                 comment(st);
             }
+            Some(Macro { char: '#', terminating: false}) => {
+                let _ = st.pop();
+                match st.peek() {
+                    Some('#') => {
+                        let _ = st.pop();
+                        return qualified_symbol(itp, st).map(|ov| ov.map(Root::as_any_ref))
+                    },
+                    Some(c) => return Err(st.place_error(NonSharp(c))),
+                    None => return Err(st.place_error(EOF))
+                }
+            },
             Some(Macro { char: c, .. }) =>
                 return Err(st.place_error(Unexpected(c))),
             Some(Whitespace) => {
