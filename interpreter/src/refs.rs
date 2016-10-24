@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use gc::Collector;
-use value::{CtrValue, ConcreteType, Downcast, Any, Symbol, Type};
+use value::{CtrValue, ConcreteType, Any, Symbol, Type};
 use ops::PtrEq;
 
 use std::rc::{Rc, Weak};
@@ -71,16 +71,6 @@ impl<T: CtrValue> PtrEq for Root<T> {
     }
 }
 
-impl<T: ConcreteType> Downcast<Root<T>> for Root<Any> {
-    fn downcast(&self, itp: &Interpreter) -> Option<Root<T>> {
-        if self.borrow().instanceof(T::typ(itp)) {
-            Some(Root(self.0.clone(), Default::default()))
-        } else {
-            None
-        }
-    }
-}
-
 impl<T: CtrValue> Deref for Root<T> {
     type Target = T;
 
@@ -108,6 +98,14 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
     /// Upcast this to a reference to `Any`.
     pub fn as_any_ref(self) -> ValueHandle<'a, Any> {
         ValueHandle(self.0, Default::default())
+    }
+
+    pub fn downcast<U: ConcreteType>(&self, itp: &Interpreter) -> Option<ValueHandle<'a, U>> {
+        if self.instanceof(U::typ(itp)) {
+            Some(ValueHandle(self.0, Default::default()))
+        } else {
+            None
+        }
     }
 
     pub fn root(&self) -> Root<T> {
@@ -155,16 +153,6 @@ impl<'a, T: CtrValue> Copy for ValueHandle<'a, T> {}
 impl<'a, T: CtrValue> PtrEq for ValueHandle<'a, T> {
     fn identical(&self, other: &ValueHandle<'a, T>) -> bool {
         ptr::eq(self.ptr(), other.ptr())
-    }
-}
-
-impl<'a, T: ConcreteType> Downcast<ValueHandle<'a, T>> for ValueHandle<'a, Any> {
-    fn downcast(&self, itp: &Interpreter) -> Option<ValueHandle<'a, T>> {
-        if self.instanceof(T::typ(itp)) {
-            Some(ValueHandle(self.0, Default::default()))
-        } else {
-            None
-        }
     }
 }
 

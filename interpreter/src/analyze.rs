@@ -1,23 +1,23 @@
 use interpreter::{Interpreter, CtrResult, CtrError};
-use value::{Downcast, Any, ListPair, ListEmpty, Symbol, Do, Const};
+use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Do, Const};
 use refs::{Root, ValueHandle};
 
 pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
-    let op: Option<ValueHandle<ListPair>> = v.downcast(itp);
-    if let Some(p) = op {
-        let oop: Option<Root<Symbol>> = unsafe { Root::<Any>::new(p.head).downcast(itp) };
-        if let Some(op) = oop {
-            let opstr = op.borrow().to_string();
+    if let Some(p) = v.downcast::<ListPair>(itp) {
+        let head = unsafe { Root::<Any>::new(p.head) };
+        if let Some(op) = head.borrow().downcast::<Symbol>(itp) {
+            let opstr = op.to_string();
             if opstr.starts_with("##sf#") {
-                return analyze_sf(itp, &opstr[5..], unsafe { Root::<Any>::new(p.tail).borrow() })
+                analyze_sf(itp, &opstr[5..], unsafe { Root::<Any>::new(p.tail).borrow() })
             } else {
                 unimplemented!()
             }
         } else {
             unimplemented!()
         }
+    } else {
+        Ok(itp.alloc_const(v).as_any_ref())
     }
-    Ok(itp.alloc_const(v).as_any_ref())
 }
 
 fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> CtrResult<Any> {
@@ -26,22 +26,17 @@ fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> Ctr
             let mut args = args.root();
             let mut argv = Vec::new();
             loop {
-                let oe: Option<Root<ListEmpty>> = args.downcast(itp);
-                if let Some(_) = oe {
+                if args.borrow().instanceof(ListEmpty::typ(itp)) {
                     let stmt_handles: Vec<ValueHandle<Any>> =
                         argv.iter().map(Root::borrow).collect();
-                    return Ok(itp.alloc_do(&stmt_handles).as_any_ref())
-                }
-
-                let op: Option<Root<ListPair>> = args.downcast(itp);
-                if let Some(p) = op.clone() {
+                    return Ok(itp.alloc_do(&stmt_handles).as_any_ref());
+                } else if let Some(p) = args.clone().borrow().downcast::<ListPair>(itp) {
                     let stmt = try!(analyze(itp, unsafe { Root::<Any>::new(p.head).borrow() }));
                     argv.push(stmt);
                     args = unsafe { Root::new(p.tail) };
-                    continue;
+                } else {
+                    return Err(CtrError::ImproperList(args));
                 }
-
-                return Err(CtrError::ImproperList(args));
             }
         },
         sf => Err(CtrError::UnknownSf(String::from(sf)))
@@ -49,18 +44,16 @@ fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> Ctr
 }
 
 pub fn ast_to_sexpr(itp: &mut Interpreter, ast: ValueHandle<Any>) -> CtrResult<Any> {
-    let oc: Option<ValueHandle<Const>> = ast.downcast(itp);
-    if let Some(c) = oc {
-        return Ok(unsafe { Root::new(c.val) });
-    }
-    let od: Option<ValueHandle<Do>> = ast.downcast(itp);
-    if let Some(d) = od {
+    if let Some(c) = ast.downcast::<Const>(itp) {
+        Ok(unsafe { Root::new(c.val) })
+    } else if let Some(d) = ast.downcast::<Do>(itp) {
         let mut res = itp.alloc_nil().as_any_ref();
         for i in (0..ast.alloc_len()).rev() {
             res = itp.alloc_pair(d.stmts(i).unwrap().borrow(), res.borrow()).as_any_ref();
         }
         let dosym = itp.alloc_symbol("$do");
-        return Ok(itp.alloc_pair(dosym.borrow().as_any_ref(), res.borrow()).as_any_ref());
+        Ok(itp.alloc_pair(dosym.borrow().as_any_ref(), res.borrow()).as_any_ref())
+    } else {
+        unimplemented!()
     }
-    unimplemented!()
 }

@@ -1,5 +1,5 @@
 use gc::Collector;
-use value::{CtrValue, ConcreteType, Downcast,
+use value::{CtrValue, ConcreteType,
             Any, Bits, Int, UInt, Symbol, ListPair, ListEmpty, Type,
             Do, Const, DoCont, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
@@ -93,32 +93,29 @@ impl Interpreter {
     }
 
     fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> InterpreterState {
-        let od: Option<Root<Do>> = ctrl.downcast(self);
-        if let Some(d) = od {
-            return if let Some(stmt) = d.stmts(0) {
-                InterpreterState::Eval(stmt,
-                                       self.alloc_docont(k.borrow(), d.borrow(), 0).as_any_ref())
+        let ctrl = ctrl.borrow();
+        if let Some(d) = ctrl.downcast::<Do>(self) {
+            if let Some(stmt) = d.stmts(0) {
+                InterpreterState::Eval(stmt, self.alloc_docont(k.borrow(), d, 0).as_any_ref())
             } else {
                 // TODO: continue with a tuple:
                 InterpreterState::Cont(self.alloc_nil().as_any_ref(), k)
             }
+        } else if let Some(c) = ctrl.downcast::<Const>(self) {
+            InterpreterState::Cont(unsafe { Root::new(c.val) }, k)
+        } else {
+            unimplemented!()
         }
-
-        let oc: Option<Root<Const>> = ctrl.downcast(self);
-        if let Some(c) = oc {
-            return InterpreterState::Cont(unsafe { Root::new(c.val) }, k)
-        }
-
-        unimplemented!()
     }
 
     fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> InterpreterState {
-        if k.borrow().instanceof(Halt::typ(self)) {
+        let k = k.borrow();
+
+        if k.instanceof(Halt::typ(self)) {
             return InterpreterState::Halt(v);
         }
 
-        let odc: Option<Root<DoCont>> = k.downcast(self);
-        if let Some(dc) = odc {
+        if let Some(dc) = k.downcast::<DoCont>(self) {
             if let Some(i) = dc.index(self) {
                 let i = i + 1;
                 if let Some(d) = dc.do_ast(self) {

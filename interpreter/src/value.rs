@@ -8,12 +8,6 @@ use std::mem;
 /// A marker trait for Values (structs that are extensions of `Any`).
 pub trait CtrValue {}
 
-pub trait Downcast<SubType> {
-    /// Try to downcast this Value reference to `SubType`. If this is not
-    /// possible, return `None`.
-    fn downcast(&self, itp: &Interpreter) -> Option<SubType>;
-}
-
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
 pub trait Unbox: CtrValue {
     type Prim: Copy;

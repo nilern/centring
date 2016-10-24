@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use refs::{Root, ValueHandle};
-use value::{CtrValue, Any, Int, Symbol, ListPair, Downcast};
+use value::{CtrValue, Any, Int, Symbol, ListPair};
 
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -31,16 +31,14 @@ impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
                 _ => unimplemented!(),
             }
         } else {
-            let obv: Option<ValueHandle<Int>> = v.downcast(&self.itp);
-            if let Some(bv) = obv {
-                return write!(fmt, "{}", bv.data);
+            if let Some(bv) = v.downcast::<Int>(&self.itp) {
+                write!(fmt, "{}", bv.data)
+            } else if let Some(s) = v.downcast::<Symbol>(&self.itp) {
+                // HACK:
+                write!(fmt, "{}", String::from_utf8_lossy(&s.clone_bytes().unwrap()))
+            } else {
+                unimplemented!()
             }
-            let os: Option<ValueHandle<Symbol>> = v.downcast(&self.itp);
-            if let Some(s) = os {
-                // HACK
-                return write!(fmt, "{}", String::from_utf8_lossy(&s.clone_bytes().unwrap()));
-            }
-            unimplemented!()
         }
     }
 }
@@ -54,8 +52,7 @@ fn write_list<T: CtrValue>(fmt: &mut Formatter,
         match v.alloc_len() {
             0 => write!(fmt, ")"),
             2 => {
-                let olv: Option<ValueHandle<ListPair>> = v.downcast(&ls.itp);
-                if let Some(lv) = olv {
+                if let Some(lv) = v.downcast::<ListPair>(&ls.itp) {
                     let head: Root<Any> = unsafe { Root::new(lv.head) };
                     let tail: Root<Any> = unsafe { Root::new(lv.tail) };
                     if !start {
