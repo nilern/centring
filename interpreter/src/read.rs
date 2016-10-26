@@ -265,20 +265,17 @@ pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
 mod tests {
     use super::{ParseState, read};
     use interpreter::Interpreter;
-    use value::{ListPair, Unbox, Any, Int};
-    use refs::Root;
+    use value::{ListPair, Unbox, Int};
 
     #[test]
     fn int_list() {
         let mut itp = Interpreter::new();
         let mut st = ParseState::new(String::from("(235)"));
         let res = read(&mut itp, &mut st);
-        unsafe {
-            let app = res.unwrap().unwrap();
-            let pp = app.borrow().downcast::<ListPair>(&itp).unwrap();
-            let nr = Root::<Any>::new((*pp).head);
-            let n = nr.borrow().downcast::<Int>(&itp).unwrap().unbox();
-            assert_eq!(n, 235);
-        }
+        let app = res.unwrap().unwrap();
+        let pp = app.borrow().downcast::<ListPair>(&itp).unwrap();
+        let nr = (*pp).first();
+        let n = nr.borrow().downcast::<Int>(&itp).unwrap().unbox();
+        assert_eq!(n, 235);
     }
 }

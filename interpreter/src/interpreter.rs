@@ -94,6 +94,7 @@ impl Interpreter {
 
     fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> InterpreterState {
         let ctrl = ctrl.borrow();
+        
         if let Some(d) = ctrl.downcast::<Do>(self) {
             if let Some(stmt) = d.stmts(0) {
                 InterpreterState::Eval(stmt, self.alloc_docont(k.borrow(), d, 0).as_any_ref())
@@ -102,7 +103,7 @@ impl Interpreter {
                 InterpreterState::Cont(self.alloc_nil().as_any_ref(), k)
             }
         } else if let Some(c) = ctrl.downcast::<Const>(self) {
-            InterpreterState::Cont(unsafe { Root::new(c.val) }, k)
+            InterpreterState::Cont(c.val(), k)
         } else {
             unimplemented!()
         }
@@ -112,24 +113,26 @@ impl Interpreter {
         let k = k.borrow();
 
         if k.instanceof(Halt::typ(self)) {
-            return InterpreterState::Halt(v);
-        }
-
-        if let Some(dc) = k.downcast::<DoCont>(self) {
+            InterpreterState::Halt(v)
+        } else if let Some(dc) = k.downcast::<DoCont>(self) {
             if let Some(i) = dc.index(self) {
                 let i = i + 1;
                 if let Some(d) = dc.do_ast(self) {
-                    return if let Some(stmt) = d.stmts(i) {
+                    if let Some(stmt) = d.stmts(i) {
                         let new_k = self.alloc_docont(dc.parent().borrow(), d.borrow(), i);
                         InterpreterState::Eval(stmt, new_k.as_any_ref())
                     } else {
                         InterpreterState::Cont(v, dc.parent())
                     }
+                } else {
+                    unimplemented!()
                 }
+            } else {
+                unimplemented!()
             }
+        } else {
+            unimplemented!()
         }
-
-        unimplemented!()
     }
 
     pub fn alloc_rec<'a, T: CtrValue>(&mut self,
@@ -138,9 +141,7 @@ impl Interpreter {
                                       -> Root<T> {
         if !self.gc.rec_poll(fields.len()) {
             self.mark_roots();
-            unsafe {
-                self.gc.collect();
-            }
+            unsafe { self.gc.collect(); }
         }
         let res = unsafe { Root::new(self.gc.alloc_rec(typ, fields)) };
         self.stack_roots.push(Root::downgrade(&res));
@@ -150,9 +151,7 @@ impl Interpreter {
     pub fn alloc_bytes<T: CtrValue>(&mut self, typ: ValueHandle<Type>, data: &[u8]) -> Root<T> {
         if !self.gc.bytes_poll(data.len()) {
             self.mark_roots();
-            unsafe {
-                self.gc.collect();
-            }
+            unsafe { self.gc.collect(); }
         }
         let res = unsafe { Root::new(self.gc.alloc_bytes(typ, data)) };
         self.stack_roots.push(Root::downgrade(&res));

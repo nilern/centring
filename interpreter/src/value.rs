@@ -100,7 +100,7 @@ impl CtrValue for Any {}
 pub struct Bits<T: Copy> {
     header: usize,
     typ: ValuePtr,
-    pub data: T,
+    data: T,
 }
 
 impl<T: Copy> CtrValue for Bits<T> {}
@@ -142,13 +142,23 @@ impl_typ! { Symbol, symbol_t }
 pub struct ListPair {
     header: usize,
     typ: ValuePtr,
-    pub head: ValuePtr,
-    pub tail: ValuePtr,
+    head: ValuePtr,
+    tail: ValuePtr,
 }
 
 impl CtrValue for ListPair {}
 
 impl_typ! { ListPair, pair_t }
+
+impl ListPair {
+    pub fn first(&self) -> Root<Any> {
+        unsafe { Root::new(self.head) }
+    }
+    
+    pub fn rest(&self) -> Root<Any> {
+        unsafe { Root::new(self.tail) }
+    }
+}
 
 // Nil **********************************************************************
 
@@ -210,12 +220,18 @@ impl Do {
 pub struct Const {
     header: usize,
     typ: ValuePtr,
-    pub val: ValuePtr,
+    val: ValuePtr,
 }
 
 impl CtrValue for Const {}
 
 impl_typ! { Const, const_t }
+
+impl Const {
+    pub fn val(&self) -> Root<Any> {
+        unsafe { Root::new(self.val) }
+    }
+}
 
 // DoCont *********************************************************************
 
