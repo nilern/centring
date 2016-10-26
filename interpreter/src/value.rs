@@ -158,6 +158,34 @@ impl ListPair {
     pub fn rest(&self) -> Root<Any> {
         unsafe { Root::new(self.tail) }
     }
+    
+    pub fn iter<'a>(&self, itp: &'a Interpreter) -> ListIter<'a> {
+        ListIter {
+            list: unsafe { Root::new(mem::transmute::<&ListPair, *mut Any>(self)) },
+            itp: itp
+        }
+    }
+}
+
+pub struct ListIter<'a> {
+    list: Root<Any>,
+    itp: &'a Interpreter
+}
+
+impl<'a> Iterator for ListIter<'a> {
+    type Item = Root<Any>;
+    
+    fn next(&mut self) -> Option<Root<Any>> {
+        let ls = self.list.clone();
+        if let Some(pair) = ls.borrow().downcast::<ListPair>(self.itp) {
+            self.list = pair.rest();
+            Some(pair.first())
+        } else if ls.borrow().instanceof(ListEmpty::typ(self.itp)) {
+            None
+        } else {
+            panic!()
+        }
+    }
 }
 
 // Nil **********************************************************************

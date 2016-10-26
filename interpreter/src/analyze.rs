@@ -22,20 +22,18 @@ pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
 fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> CtrResult<Any> {
     match opstr {
         "do" => {
-            let mut args = args.root();
-            let mut argv = Vec::new();
-            loop {
-                if args.borrow().instanceof(ListEmpty::typ(itp)) {
-                    let stmt_handles: Vec<ValueHandle<Any>> =
-                        argv.iter().map(Root::borrow).collect();
-                    return Ok(itp.alloc_do(&stmt_handles).as_any_ref());
-                } else if let Some(p) = args.clone().borrow().downcast::<ListPair>(itp) {
-                    let stmt = try!(analyze(itp, p.first().borrow()));
-                    argv.push(stmt);
-                    args = p.rest();
-                } else {
-                    return Err(CtrError::ImproperList(args));
+            if let Some(pair) = args.downcast::<ListPair>(itp) {
+                let mut argv: Vec<Root<Any>> = pair.iter(itp).collect();
+                let mut stmt_handles = vec![];
+                for stmt in argv.iter_mut() {
+                    *stmt = try!(analyze(itp, (*stmt).borrow()));
+                    stmt_handles.push((*stmt).borrow());
                 }
+                Ok(itp.alloc_do(&stmt_handles).as_any_ref())
+            } else if args.instanceof(ListEmpty::typ(itp)) {
+                Ok(itp.alloc_do(&[]).as_any_ref())
+            } else {
+                return Err(CtrError::ImproperList(args.root()));
             }
         },
         sf => Err(CtrError::UnknownSf(String::from(sf)))

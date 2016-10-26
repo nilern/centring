@@ -135,8 +135,7 @@ impl Interpreter {
         }
     }
 
-    pub fn alloc_rec<'a, T: CtrValue>(&mut self,
-                                      typ: ValueHandle<Type>,
+    pub fn alloc_rec<'a, T: CtrValue>(&mut self, typ: ValueHandle<Type>,
                                       fields: &[ValueHandle<Any>])
                                       -> Root<T> {
         if !self.gc.rec_poll(fields.len()) {
