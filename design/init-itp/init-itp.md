@@ -1,30 +1,136 @@
 # Data Representation
 
-# AST
+## Basic Types
 
-    type ast = Fn Symbol.t Symbol.t [|(condition, ast)|]
-             | App ast ast
-             | Def Symbol.t ast
-             | Primop primop [|ast|] [|ast|]
-             | Closure env ast
-             | Do [|ast|]
-             | Id Symbol.t
-             | Const value
+    (defbits Int ##sys#word-size)
 
-# Primops
+    (defbits UInt ##sys#word-size)
+    
+    (defbits UInt8 8)
+    
+    (defbits VoidPtr ##sys#ptr-size)
+    
+    (defrecord String
+      (... (: bytes UInt8)))
+    
+    (defrecord Symbol
+      (... (: bytes UInt8)))
+    
+    (defrecord Array
+      (... (mut elems)))
+    
+## Internal Types
 
-    type primop = Expr string ([|value|] -> value)
-                | Stmt string ([|value|] -> ())
-                | Ctrl string ([|value|] -> [|ast|] -> ast)
+    (defrecord Env
+      parent
+      (: count UInt)
+      (: buckets Array))
+    
+    (defrecord EnvBucket
+      next
+      (: key Symbol)
+      value)
+             
+    (defrecord SourceInfo
+      (: line UInt)
+      (: column UInt)
+      (: filename String))
 
-# CEK
+### AST
 
-    type cont = Fn ast env cont
-              | Arg value env cont
-              | Def Symbol.t env cont
-              | Primop primop value list [|ast|] int [|ast|] env cont
-              | Do [|ast|] int env cont
-              | Halt
+    (defrecord Fn
+      (include SourceInfo)
+      (: name Symbol)
+      (: parameter Symbol)
+      (... cases))
+
+    (defrecord App
+      (include SourceInfo)
+      op
+      (... args))
+      
+    (defrecord Def
+      (include SourceInfo)
+      (: name Symbol)
+      value)
+      
+    (defrecord Expr
+      (include SourceInfo)
+      (: op VoidPtr)
+      (... args))
+      
+    (defrecord Stmt
+      (include SourceInfo)
+      (: op VoidPtr)
+      (... args))
+
+    (defrecord Ctrl
+      (include SourceInfo)
+      (: op VoidPtr)
+      determinant
+      (... branches))
+      
+    (defrecord Closure
+      (include SourceInfo)
+      (: env Env)
+      body)
+
+    (defrecord Do
+      (include SourceInfo)
+      (... statements))
+      
+    (defrecord Id
+      (include SourceInfo)
+      (: name Symbol))
+             
+    (defrecord Const
+      (include SourceInfo)
+      value)
+
+### Continuations
+
+    (defrecord FnCont
+      parent
+      (: ast App)
+      (: env Env))
+
+    (defrecord ArgCont
+      parent
+      (: ast App)
+      (: env Env))
+
+    (defrecord DefCont
+      parent
+      (: name Symbol)
+      (: env Env))
+
+    (defrecord ExprCont
+      parent
+      (: ast Expr)
+      (: index UInt)
+      (: env Env)
+      (: vals Array))
+
+    (defrecord StmtCont
+      parent
+      (: ast Stmt)
+      (: index UInt)
+      (: env Env)
+      (: vals Array))
+
+    (defrecord CtrlCont
+      parent
+      (: ast Ctrl)
+      (: index UInt)
+      (: env Env))
+
+    (defrecord DoCont
+      parent
+      (: ast Do)
+      (: index UInt)
+      (: env Env))
+    
+    (defrecord HaltCont)
 
 # Special Forms
 
