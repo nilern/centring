@@ -40,7 +40,8 @@ pub enum CtrError {
         received: usize,
     },
     UnknownSf(String),
-    ImproperList(Root<Any>)
+    ImproperList(Root<Any>),
+    Index(usize, usize)
 }
 
 pub type CtrResult<T> = Result<Root<T>, CtrError>;

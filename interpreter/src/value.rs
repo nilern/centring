@@ -1,5 +1,5 @@
 use refs::{ValuePtr, Root, ValueHandle};
-use interpreter::Interpreter;
+use interpreter::{Interpreter, CtrError};
 
 use std::mem;
 
