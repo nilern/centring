@@ -135,6 +135,25 @@ impl CtrValue for Symbol {}
 
 impl_typ! { Symbol, symbol_t }
 
+// String **********************************************************************
+
+#[repr(C)]
+pub struct String {
+    header: usize,
+    typ: ValuePtr
+}
+
+impl CtrValue for String {}
+
+impl_typ! { String, string_t }
+
+impl String {
+    fn new(itp: &mut Interpreter, chars: &str) -> Root<String> {
+        let typ = itp.string_t.clone();
+        itp.alloc_bytes(typ.borrow(), chars.as_bytes())
+    }
+}
+
 // Pair *********************************************************************
 
 /// The good ol' cons cell.
@@ -200,6 +219,46 @@ pub struct ListEmpty {
 impl CtrValue for ListEmpty {}
 
 impl_typ! { ListEmpty, nil_t }
+
+// ArrayMut ***********************************************************************
+
+/// A mutable array
+#[repr(C)]
+pub struct ArrayMut {
+    header: usize,
+    typ: ValuePtr,
+}
+
+impl CtrValue for ArrayMut {}
+
+impl_typ! { ArrayMut, array_mut_t }
+
+impl ArrayMut {
+    pub fn get(&self, i: usize) -> Option<Root<Any>> {
+        unsafe {
+            let self_ptr: ValuePtr = mem::transmute(self);
+            if i < (*self_ptr).alloc_len() {
+                let rfields = self_ptr.offset(1) as *mut ValuePtr;
+                Some(Root::new(*rfields.offset(i as isize)))
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn set(&self, i: usize, v: ValueHandle<Any>) -> Result<(), CtrError> {
+        unsafe {
+            let self_ptr: ValuePtr = mem::transmute(self);
+            if i < (*self_ptr).alloc_len() {
+                let rfields = self_ptr.offset(1) as *mut ValuePtr;
+                *rfields.offset(i as isize) = v.ptr();
+                Ok(())
+            } else {
+                Err(CtrError::Index(i, (*self_ptr).alloc_len()))
+            }
+        }
+    }
+}
 
 // Type *********************************************************************
 

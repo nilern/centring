@@ -16,7 +16,7 @@
     (defrecord Symbol
       (... (: bytes UInt8)))
     
-    (defrecord Array
+    (defrecord ArrayMut
       (... (mut elems)))
     
 ## Internal Types
@@ -24,7 +24,7 @@
     (defrecord Env
       parent
       (: count UInt)
-      (: buckets Array))
+      (: buckets ArrayMut))
     
     (defrecord EnvBucket
       next
@@ -109,14 +109,14 @@
       (: ast Expr)
       (: index UInt)
       (: env Env)
-      (: vals Array))
+      (... vals))
 
     (defrecord StmtCont
       parent
       (: ast Stmt)
       (: index UInt)
       (: env Env)
-      (: vals Array))
+      (... vals))
 
     (defrecord CtrlCont
       parent
