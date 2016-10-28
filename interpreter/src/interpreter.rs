@@ -1,13 +1,14 @@
 use gc::Collector;
 use value::{CtrValue, ConcreteType,
             Any, Bits, Int, UInt, Symbol, ListPair, ListEmpty, Type,
-            Do, Const, DoCont, Halt};
+            Expr, Do, Const, ExprCont, DoCont, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
 use std::ptr;
 use std::mem;
 use std::slice;
+use std::iter;
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
@@ -26,11 +27,12 @@ pub struct Interpreter {
     pub expr_t: Root<Type>,
     pub do_t: Root<Type>,
     pub const_t: Root<Type>,
+    pub exprcont_t: Root<Type>,
     pub docont_t: Root<Type>,
     pub halt_t: Root<Type>,
 }
 
-enum InterpreterState {
+enum State {
     Eval(Root<Any>, Root<Any>),
     Cont(Root<Any>, Root<Any>),
     Halt(Root<Any>),
@@ -43,7 +45,8 @@ pub enum CtrError {
     },
     UnknownSf(String),
     ImproperList(Root<Any>),
-    Index(usize, usize)
+    Index(usize, usize),
+    Type(Root<Type>)
 }
 
 pub type CtrResult<T> = Result<Root<T>, CtrError>;
@@ -66,6 +69,7 @@ impl Interpreter {
             expr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             do_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            exprcont_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             docont_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             halt_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
         };
@@ -84,6 +88,7 @@ impl Interpreter {
         itp.expr_t = itp.alloc_type();
         itp.do_t = itp.alloc_type();
         itp.const_t = itp.alloc_type();
+        itp.exprcont_t = itp.alloc_type();
         itp.docont_t = itp.alloc_type();
         itp.halt_t = itp.alloc_type();
 
@@ -93,49 +98,56 @@ impl Interpreter {
     }
 
     pub fn interpret(&mut self, ast: ValueHandle<Any>) -> CtrResult<Any> {
-        let mut state = InterpreterState::Eval(unsafe { Root::new(ast.ptr()) },
-                                               self.alloc_halt().as_any_ref());
+        let mut state = State::Eval(unsafe { Root::new(ast.ptr()) },
+                                    self.alloc_halt().as_any_ref());
         loop {
             // Need to use a trampoline/state machine here for manual TCO.
             state = match state {
-                InterpreterState::Eval(ctrl, k) => self.eval(ctrl, k),
-                InterpreterState::Cont(ctrl, k) => self.cont(ctrl, k),
-                InterpreterState::Halt(v) => return Ok(v),
+                State::Eval(ctrl, k) => try!(self.eval(ctrl, k)),
+                State::Cont(ctrl, k) => try!(self.cont(ctrl, k)),
+                State::Halt(v) => return Ok(v),
             };
         }
     }
 
-    fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> InterpreterState {
+    fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let ctrl = ctrl.borrow();
         
-        if let Some(d) = ctrl.downcast::<Do>(self) {
+        if let Some(expr) = ctrl.downcast::<Expr>(self) {
+            if let Some(arg) = expr.args(0) {
+                Ok(State::Eval(arg, ExprCont::new(self, k, expr.root(), 0).as_any_ref()))
+            } else {
+                let l = ExprCont::new(self, k, expr.root(), 0);
+                self.exec_expr(l)
+            }
+        } else if let Some(d) = ctrl.downcast::<Do>(self) {
             if let Some(stmt) = d.stmts(0) {
-                InterpreterState::Eval(stmt, self.alloc_docont(k.borrow(), d, 0).as_any_ref())
+                Ok(State::Eval(stmt, self.alloc_docont(k.borrow(), d, 0).as_any_ref()))
             } else {
                 // TODO: continue with a tuple:
-                InterpreterState::Cont(self.alloc_nil().as_any_ref(), k)
+                Ok(State::Cont(self.alloc_nil().as_any_ref(), k))
             }
         } else if let Some(c) = ctrl.downcast::<Const>(self) {
-            InterpreterState::Cont(c.val(), k)
+            Ok(State::Cont(c.val(), k))
         } else {
             unimplemented!()
         }
     }
 
-    fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> InterpreterState {
+    fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let k = k.borrow();
 
         if k.instanceof(Halt::typ(self)) {
-            InterpreterState::Halt(v)
+            Ok(State::Halt(v))
         } else if let Some(dc) = k.downcast::<DoCont>(self) {
             if let Some(i) = dc.index(self) {
                 let i = i + 1;
                 if let Some(d) = dc.do_ast(self) {
                     if let Some(stmt) = d.stmts(i) {
                         let new_k = self.alloc_docont(dc.parent().borrow(), d.borrow(), i);
-                        InterpreterState::Eval(stmt, new_k.as_any_ref())
+                        Ok(State::Eval(stmt, new_k.as_any_ref()))
                     } else {
-                        InterpreterState::Cont(v, dc.parent())
+                        Ok(State::Cont(v, dc.parent()))
                     }
                 } else {
                     unimplemented!()
@@ -147,6 +159,15 @@ impl Interpreter {
             unimplemented!()
         }
     }
+    
+    fn exec_expr(&mut self, exprc: Root<ExprCont>) -> Result<State, CtrError> {
+        if let Some(expr) = exprc.ast(self) {
+            let res = try!(expr.op(self)(self, exprc.args_iter()));
+            Ok(State::Cont(res, exprc.parent()))
+        } else {
+            Err(CtrError::Type(Expr::typ(self).root()))
+        }
+    }
 
     pub fn alloc_rec<'a, T: CtrValue>(&mut self, typ: ValueHandle<Type>,
                                       fields: &[ValueHandle<Any>])
@@ -156,6 +177,17 @@ impl Interpreter {
             unsafe { self.gc.collect(); }
         }
         let res = unsafe { Root::new(self.gc.alloc_rec(typ, fields)) };
+        self.stack_roots.push(Root::downgrade(&res));
+        res
+    }
+
+    pub fn alloc_rec_iter<'a, T, I>(&mut self, typ: ValueHandle<Type>, nfields: usize, fields: I)
+        -> Root<T> where T: CtrValue, I: Iterator<Item=Root<Any>> {
+        if !self.gc.rec_poll(nfields) {
+            self.mark_roots();
+            unsafe { self.gc.collect(); }
+        }
+        let res = unsafe { Root::new(self.gc.alloc_rec_iter(typ, nfields, fields)) };
         self.stack_roots.push(Root::downgrade(&res));
         res
     }

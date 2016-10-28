@@ -1,12 +1,18 @@
 use refs::{ValuePtr, Root, ValueHandle};
 use interpreter::{Interpreter, CtrError};
+use primops::ExprFn;
 
+use std::ops::Deref;
 use std::mem;
 
 // Traits *******************************************************************
 
 /// A marker trait for Values (structs that are extensions of `Any`).
-pub trait CtrValue {}
+pub trait CtrValue: Sized {
+    fn as_any(&self) -> &Any {
+        unsafe { mem::transmute(self) }
+    }
+}
 
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
 pub trait Unbox: CtrValue {
@@ -53,7 +59,27 @@ unsafe fn set_indexed<T: CtrValue>(rec: &T, i: usize, v: ValueHandle<Any>) -> Re
     } else {
         Err(CtrError::Index(i, len))
     }
-}  
+}
+
+pub struct IndexedFields<T: CtrValue> {
+    rec: Root<T>,
+    index: usize,
+    len: usize
+}
+
+impl<T: CtrValue> Iterator for IndexedFields<T> {
+    type Item = Root<Any>;
+
+    fn next(&mut self) -> Option<Root<Any>> {
+        if self.index < self.len {
+            let res = unsafe { get_indexed(self.rec.deref(), self.index) };
+            self.index += 1;
+            res
+        } else {
+            None
+        }
+    }
+}
 
 // Any **********************************************************************
 
@@ -300,7 +326,7 @@ impl CtrValue for Expr {}
 impl_typ! { Expr, expr_t }
 
 impl Expr {
-    pub fn op(&self, itp: &Interpreter) -> fn(&mut Interpreter, &[Root<Any>]) -> Root<Any> {
+    pub fn op<I: Iterator<Item=Root<Any>>>(&self, itp: &Interpreter) -> ExprFn<I> {
         let op = unsafe { Root::<Any>::new(self.op) };
         if let Some(f) = op.borrow().downcast::<VoidPtr>(itp) {
             unsafe { mem::transmute(f.unbox()) }
@@ -309,8 +335,20 @@ impl Expr {
         }
     }
     
+    pub fn argc(&self) -> usize {
+        self.as_any().alloc_len() - 1
+    }
+    
     pub fn args(&self, i: usize) -> Option<Root<Any>> {
         unsafe { get_indexed(self, i) }
+    }
+    
+    pub fn args_iter(&self) -> IndexedFields<Expr> {
+        IndexedFields {
+            rec: unsafe { Root::new(mem::transmute::<&Expr, ValuePtr>(self)) },
+            index: 0,
+            len: self.argc() - (mem::size_of::<Expr>() - mem::size_of::<Any>())
+        }
     }
 }
 
@@ -393,6 +431,61 @@ impl DoCont {
             } else {
                 None
             }
+        }
+    }
+}
+
+// ExprCont *********************************************************************
+
+/// A continuation for `Expr`.
+#[repr(C)]
+pub struct ExprCont {
+    header: usize,
+    typ: ValuePtr,
+    parent: ValuePtr,
+    expr_ast: ValuePtr,
+    index: ValuePtr
+}
+
+impl CtrValue for ExprCont {}
+
+impl_typ! { ExprCont, exprcont_t }
+
+impl ExprCont {
+    pub fn new(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Expr>, index: usize)
+           -> Root<ExprCont> {
+        let typ = itp.exprcont_t.clone();
+        let argc = expr_ast.argc();
+        let mut args = expr_ast.args_iter();
+        let fields = [parent, expr_ast.as_any_ref(), itp.alloc_uint(index).as_any_ref()];
+        itp.alloc_rec_iter(typ.borrow(), fields.len() + argc,
+                           fields.into_iter().cloned().chain(args))
+    }
+    
+    pub fn parent(&self) -> Root<Any> {
+        unsafe { Root::new(self.parent) }
+    }
+
+    pub fn ast(&self, itp: &mut Interpreter) -> Option<Root<Expr>> {
+        unsafe {
+            let res = Root::<Expr>::new(self.expr_ast);
+            if res.borrow().instanceof(Expr::typ(itp)) {
+                Some(res)
+            } else {
+                None
+            }
+        }
+    }
+    
+    pub fn argc(&self) -> usize {
+        self.as_any().alloc_len() - 3
+    }
+    
+    pub fn args_iter(&self) -> IndexedFields<ExprCont> {
+        IndexedFields {
+            rec: unsafe { Root::new(mem::transmute::<&ExprCont, ValuePtr>(self)) },
+            index: 0,
+            len: self.argc() - (mem::size_of::<ExprCont>() - mem::size_of::<Any>())
         }
     }
 }

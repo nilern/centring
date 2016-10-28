@@ -1,11 +1,13 @@
 use interpreter::{Interpreter, CtrResult};
 use interpreter::CtrError::Argc;
-use value::CtrValue;
-use refs::ValueHandle;
+use value::{CtrValue, Any};
+use refs::{Root, ValueHandle};
 
 use std::clone::Clone;
 use std::cmp::Ordering::Greater;
 use std::mem;
+
+pub type ExprFn<I> = fn(&mut Interpreter, I) -> CtrResult<Any>;
 
 fn rec<T: CtrValue>(itp: &mut Interpreter, args: &[ValueHandle<T>]) -> CtrResult<T> {
     if args.len() > 0 {
