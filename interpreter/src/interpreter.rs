@@ -20,8 +20,10 @@ pub struct Interpreter {
     pub array_mut_t: Root<Type>,
     pub int_t: Root<Type>,
     pub uint_t: Root<Type>,
+    pub voidptr_t: Root<Type>,
     pub symbol_t: Root<Type>,
     pub string_t: Root<Type>,
+    pub expr_t: Root<Type>,
     pub do_t: Root<Type>,
     pub const_t: Root<Type>,
     pub docont_t: Root<Type>,
@@ -58,8 +60,10 @@ impl Interpreter {
             nil_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             uint_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            voidptr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             symbol_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             string_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            expr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             do_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             docont_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
@@ -74,8 +78,10 @@ impl Interpreter {
         itp.nil_t = itp.alloc_type();
         itp.int_t = itp.alloc_type();
         itp.uint_t = itp.alloc_type();
+        itp.voidptr_t = itp.alloc_type();
         itp.symbol_t = itp.alloc_type();
         itp.string_t = itp.alloc_type();
+        itp.expr_t = itp.alloc_type();
         itp.do_t = itp.alloc_type();
         itp.const_t = itp.alloc_type();
         itp.docont_t = itp.alloc_type();

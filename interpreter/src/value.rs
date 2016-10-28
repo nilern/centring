@@ -31,6 +31,30 @@ macro_rules! impl_typ {
     }
 }
 
+// General
+
+unsafe fn get_indexed<T: CtrValue>(rec: &T, i: usize) -> Option<Root<Any>> {
+    let rec_ptr: *mut T = mem::transmute(rec);
+    if i < (*(rec_ptr as *mut Any)).alloc_len() {
+        let fields = rec_ptr.offset(1) as *mut ValuePtr;
+        Some(Root::new(*fields.offset(i as isize)))
+    } else {
+        None
+    }
+}
+
+unsafe fn set_indexed<T: CtrValue>(rec: &T, i: usize, v: ValueHandle<Any>) -> Result<(), CtrError> {
+    let rec_ptr: *mut T = mem::transmute(rec);
+    let len = (*(rec_ptr as *mut Any)).alloc_len();
+    if i < len {
+        let fields = rec_ptr.offset(1) as *mut ValuePtr;
+        *fields.offset(i as isize) = v.ptr();
+        Ok(())
+    } else {
+        Err(CtrError::Index(i, len))
+    }
+}  
+
 // Any **********************************************************************
 
 /// The layout of every Centring Value on the GC heap starts with the fields
@@ -122,6 +146,11 @@ impl_typ! { Int, int_t }
 pub type UInt = Bits<usize>;
 
 impl_typ! { UInt, uint_t }
+
+/// A void pointer.                                                                                 
+pub type VoidPtr = Bits<*mut ()>;                                                                   
+                                                                                                    
+impl_typ! { VoidPtr, voidptr_t }  
 
 // Symbol *******************************************************************
 
@@ -235,28 +264,11 @@ impl_typ! { ArrayMut, array_mut_t }
 
 impl ArrayMut {
     pub fn get(&self, i: usize) -> Option<Root<Any>> {
-        unsafe {
-            let self_ptr: ValuePtr = mem::transmute(self);
-            if i < (*self_ptr).alloc_len() {
-                let rfields = self_ptr.offset(1) as *mut ValuePtr;
-                Some(Root::new(*rfields.offset(i as isize)))
-            } else {
-                None
-            }
-        }
+        unsafe { get_indexed(self, i) }
     }
 
     pub fn set(&self, i: usize, v: ValueHandle<Any>) -> Result<(), CtrError> {
-        unsafe {
-            let self_ptr: ValuePtr = mem::transmute(self);
-            if i < (*self_ptr).alloc_len() {
-                let rfields = self_ptr.offset(1) as *mut ValuePtr;
-                *rfields.offset(i as isize) = v.ptr();
-                Ok(())
-            } else {
-                Err(CtrError::Index(i, (*self_ptr).alloc_len()))
-            }
-        }
+        unsafe { set_indexed(self, i, v) }
     }
 }
 
@@ -273,6 +285,35 @@ impl CtrValue for Type {}
 
 impl_typ! { Type, type_t }
 
+// Expr *******************************************************************                         
+                                                                                                
+/// An AST node for expressions (such as `(%eq? a b)`).                                             
+#[repr(C)]                                                                                          
+pub struct Expr {                                                                                   
+    header: usize,                                                                                  
+    typ: ValuePtr,                                                                                  
+    op: ValuePtr
+}
+
+impl CtrValue for Expr {}
+
+impl_typ! { Expr, expr_t }
+
+impl Expr {
+    pub fn op(&self, itp: &Interpreter) -> fn(&mut Interpreter, &[Root<Any>]) -> Root<Any> {
+        let op = unsafe { Root::<Any>::new(self.op) };
+        if let Some(f) = op.borrow().downcast::<VoidPtr>(itp) {
+            unsafe { mem::transmute(f.unbox()) }
+        } else {
+            panic!()
+        }
+    }
+    
+    pub fn args(&self, i: usize) -> Option<Root<Any>> {
+        unsafe { get_indexed(self, i) }
+    }
+}
+
 // Do *********************************************************************
 
 /// An AST node for `$do`.
@@ -288,15 +329,7 @@ impl_typ! { Do, do_t }
 
 impl Do {
     pub fn stmts(&self, i: usize) -> Option<Root<Any>> {
-        unsafe {
-            let self_ptr: ValuePtr = mem::transmute(self);
-            if i < (*self_ptr).alloc_len() {
-                let rfields = self_ptr.offset(1) as *mut ValuePtr;
-                Some(Root::new(*rfields.offset(i as isize)))
-            } else {
-                None
-            }
-        }
+        unsafe { get_indexed(self, i) }
     }
 }
 
