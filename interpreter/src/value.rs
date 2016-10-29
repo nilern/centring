@@ -3,6 +3,7 @@ use interpreter::{Interpreter, CtrError};
 use primops::ExprFn;
 
 use std::ops::Deref;
+use std::iter;
 use std::mem;
 
 // Traits *******************************************************************
@@ -168,15 +169,29 @@ pub type Int = Bits<isize>;
 
 impl_typ! { Int, int_t }
 
+impl Int {
+    pub fn new(itp: &mut Interpreter, n: isize) -> Root<Int> {
+        let typ = itp.int_t.clone();
+        itp.alloc_bits(typ.borrow(), n)
+    }
+}
+
 /// An unsigned 'fixnum'.
 pub type UInt = Bits<usize>;
 
 impl_typ! { UInt, uint_t }
 
-/// A void pointer.                                                                                 
-pub type VoidPtr = Bits<*mut ()>;                                                                   
-                                                                                                    
-impl_typ! { VoidPtr, voidptr_t }  
+impl UInt {
+    pub fn new(itp: &mut Interpreter, n: usize) -> Root<UInt> {
+        let typ = itp.uint_t.clone();
+        itp.alloc_bits(typ.borrow(), n)
+    }
+}
+
+/// A void pointer.
+pub type VoidPtr = Bits<*mut ()>;
+
+impl_typ! { VoidPtr, voidptr_t }
 
 // Symbol *******************************************************************
 
@@ -189,6 +204,13 @@ pub struct Symbol {
 impl CtrValue for Symbol {}
 
 impl_typ! { Symbol, symbol_t }
+
+impl Symbol {
+    pub fn new(itp: &mut Interpreter, chars: &str) -> Root<Symbol> {
+        let typ = itp.symbol_t.clone();
+        itp.alloc_bytes(typ.borrow(), chars.as_bytes())
+    }
+}
 
 // String **********************************************************************
 
@@ -225,14 +247,20 @@ impl CtrValue for ListPair {}
 impl_typ! { ListPair, pair_t }
 
 impl ListPair {
+    pub fn new(itp: &mut Interpreter, head: Root<Any>, tail: Root<Any>) -> Root<ListPair> {
+        let typ = itp.pair_t.clone();
+        let fields = [head, tail];
+        itp.alloc_rec_iter(typ.borrow(), fields.len(), fields.into_iter().cloned())
+    }
+
     pub fn first(&self) -> Root<Any> {
         unsafe { Root::new(self.head) }
     }
-    
+
     pub fn rest(&self) -> Root<Any> {
         unsafe { Root::new(self.tail) }
     }
-    
+
     pub fn iter<'a>(&self, itp: &'a Interpreter) -> ListIter<'a> {
         ListIter {
             list: unsafe { Root::new(mem::transmute::<&ListPair, *mut Any>(self)) },
@@ -248,7 +276,7 @@ pub struct ListIter<'a> {
 
 impl<'a> Iterator for ListIter<'a> {
     type Item = Root<Any>;
-    
+
     fn next(&mut self) -> Option<Root<Any>> {
         let ls = self.list.clone();
         if let Some(pair) = ls.borrow().downcast::<ListPair>(self.itp) {
@@ -274,6 +302,13 @@ pub struct ListEmpty {
 impl CtrValue for ListEmpty {}
 
 impl_typ! { ListEmpty, nil_t }
+
+impl ListEmpty {
+    pub fn new(itp: &mut Interpreter) -> Root<ListEmpty> {
+        let typ = itp.nil_t.clone();
+        itp.alloc_rec_iter(typ.borrow(), 0, iter::empty())
+    }
+}
 
 // ArrayMut ***********************************************************************
 
@@ -311,13 +346,20 @@ impl CtrValue for Type {}
 
 impl_typ! { Type, type_t }
 
-// Expr *******************************************************************                         
-                                                                                                
-/// An AST node for expressions (such as `(%eq? a b)`).                                             
-#[repr(C)]                                                                                          
-pub struct Expr {                                                                                   
-    header: usize,                                                                                  
-    typ: ValuePtr,                                                                                  
+impl Type {
+    pub fn new(itp: &mut Interpreter) -> Root<Type> {
+        let typ = itp.type_t.clone();
+        itp.alloc_rec_iter(typ.borrow(), 0, iter::empty())
+    }
+}
+
+// Expr *******************************************************************
+
+/// An AST node for expressions (such as `(%eq? a b)`).
+#[repr(C)]
+pub struct Expr {
+    header: usize,
+    typ: ValuePtr,
     op: ValuePtr
 }
 
@@ -334,15 +376,15 @@ impl Expr {
             panic!()
         }
     }
-    
+
     pub fn argc(&self) -> usize {
         self.as_any().alloc_len() - 1
     }
-    
+
     pub fn args(&self, i: usize) -> Option<Root<Any>> {
         unsafe { get_indexed(self, i) }
     }
-    
+
     pub fn args_iter(&self) -> IndexedFields<Expr> {
         IndexedFields {
             rec: unsafe { Root::new(mem::transmute::<&Expr, ValuePtr>(self)) },
@@ -366,6 +408,11 @@ impl CtrValue for Do {}
 impl_typ! { Do, do_t }
 
 impl Do {
+    pub fn new(itp: &mut Interpreter, stmts: &[Root<Any>]) -> Root<Do> {
+        let typ = itp.do_t.clone();
+        itp.alloc_rec_iter(typ.borrow(), stmts.len(), stmts.into_iter().cloned())
+    }
+
     pub fn stmts(&self, i: usize) -> Option<Root<Any>> {
         unsafe { get_indexed(self, i) }
     }
@@ -386,6 +433,12 @@ impl CtrValue for Const {}
 impl_typ! { Const, const_t }
 
 impl Const {
+    pub fn new(itp: &mut Interpreter, v: Root<Any>) -> Root<Const> {
+        let typ = itp.const_t.clone();
+        let fields = [v];
+        itp.alloc_rec_iter(typ.borrow(), fields.len(), fields.into_iter().cloned())
+    }
+
     pub fn val(&self) -> Root<Any> {
         unsafe { Root::new(self.val) }
     }
@@ -408,6 +461,14 @@ impl CtrValue for DoCont {}
 impl_typ! { DoCont, docont_t }
 
 impl DoCont {
+    pub fn new(itp: &mut Interpreter, parent: Root<Any>, do_ast: Root<Do>, i: usize)
+               -> Root<DoCont> {
+        let typ = itp.docont_t.clone();
+        let i = UInt::new(itp, i);
+        let fields = [parent, do_ast.as_any_ref(), i.as_any_ref()];
+        itp.alloc_rec_iter(typ.borrow(), fields.len(), fields.into_iter().cloned())
+    }
+
     pub fn parent(&self) -> Root<Any> {
         unsafe { Root::new(self.parent) }
     }
@@ -456,12 +517,12 @@ impl ExprCont {
            -> Root<ExprCont> {
         let typ = itp.exprcont_t.clone();
         let argc = expr_ast.argc();
-        let mut args = expr_ast.args_iter();
-        let fields = [parent, expr_ast.as_any_ref(), itp.alloc_uint(index).as_any_ref()];
+        let args = expr_ast.args_iter();
+        let fields = [parent, expr_ast.as_any_ref(), UInt::new(itp, index).as_any_ref()];
         itp.alloc_rec_iter(typ.borrow(), fields.len() + argc,
                            fields.into_iter().cloned().chain(args))
     }
-    
+
     pub fn parent(&self) -> Root<Any> {
         unsafe { Root::new(self.parent) }
     }
@@ -476,11 +537,11 @@ impl ExprCont {
             }
         }
     }
-    
+
     pub fn argc(&self) -> usize {
         self.as_any().alloc_len() - 3
     }
-    
+
     pub fn args_iter(&self) -> IndexedFields<ExprCont> {
         IndexedFields {
             rec: unsafe { Root::new(mem::transmute::<&ExprCont, ValuePtr>(self)) },
@@ -502,3 +563,10 @@ pub struct Halt {
 impl CtrValue for Halt {}
 
 impl_typ! { Halt, halt_t }
+
+impl Halt {
+    pub fn new(itp: &mut Interpreter) -> Root<Halt> {
+        let typ = itp.halt_t.clone();
+        itp.alloc_rec_iter(typ.borrow(), 0, iter::empty())
+    }
+}

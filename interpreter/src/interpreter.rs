@@ -1,6 +1,6 @@
 use gc::Collector;
 use value::{CtrValue, ConcreteType,
-            Any, Bits, Int, UInt, Symbol, ListPair, ListEmpty, Type,
+            Any, Bits, ListEmpty, Type,
             Expr, Do, Const, ExprCont, DoCont, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
@@ -8,7 +8,6 @@ use std::cmp::Ordering;
 use std::ptr;
 use std::mem;
 use std::slice;
-use std::iter;
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
@@ -75,22 +74,22 @@ impl Interpreter {
         };
 
         // TODO: structure for the types
-        let type_t = itp.alloc_type();
+        let type_t = Type::new(&mut itp);
         itp.type_t = type_t.clone();
-        itp.pair_t = itp.alloc_type();
-        itp.array_mut_t = itp.alloc_type();
-        itp.nil_t = itp.alloc_type();
-        itp.int_t = itp.alloc_type();
-        itp.uint_t = itp.alloc_type();
-        itp.voidptr_t = itp.alloc_type();
-        itp.symbol_t = itp.alloc_type();
-        itp.string_t = itp.alloc_type();
-        itp.expr_t = itp.alloc_type();
-        itp.do_t = itp.alloc_type();
-        itp.const_t = itp.alloc_type();
-        itp.exprcont_t = itp.alloc_type();
-        itp.docont_t = itp.alloc_type();
-        itp.halt_t = itp.alloc_type();
+        itp.pair_t = Type::new(&mut itp);
+        itp.array_mut_t = Type::new(&mut itp);
+        itp.nil_t = Type::new(&mut itp);
+        itp.int_t = Type::new(&mut itp);
+        itp.uint_t = Type::new(&mut itp);
+        itp.voidptr_t = Type::new(&mut itp);
+        itp.symbol_t = Type::new(&mut itp);
+        itp.string_t = Type::new(&mut itp);
+        itp.expr_t = Type::new(&mut itp);
+        itp.do_t = Type::new(&mut itp);
+        itp.const_t = Type::new(&mut itp);
+        itp.exprcont_t = Type::new(&mut itp);
+        itp.docont_t = Type::new(&mut itp);
+        itp.halt_t = Type::new(&mut itp);
 
         itp.type_t.clone().as_any_ref().set_type(type_t.borrow());
 
@@ -98,8 +97,7 @@ impl Interpreter {
     }
 
     pub fn interpret(&mut self, ast: ValueHandle<Any>) -> CtrResult<Any> {
-        let mut state = State::Eval(unsafe { Root::new(ast.ptr()) },
-                                    self.alloc_halt().as_any_ref());
+        let mut state = State::Eval(unsafe { Root::new(ast.ptr()) }, Halt::new(self).as_any_ref());
         loop {
             // Need to use a trampoline/state machine here for manual TCO.
             state = match state {
@@ -112,7 +110,7 @@ impl Interpreter {
 
     fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let ctrl = ctrl.borrow();
-        
+
         if let Some(expr) = ctrl.downcast::<Expr>(self) {
             if let Some(arg) = expr.args(0) {
                 Ok(State::Eval(arg, ExprCont::new(self, k, expr.root(), 0).as_any_ref()))
@@ -122,10 +120,10 @@ impl Interpreter {
             }
         } else if let Some(d) = ctrl.downcast::<Do>(self) {
             if let Some(stmt) = d.stmts(0) {
-                Ok(State::Eval(stmt, self.alloc_docont(k.borrow(), d, 0).as_any_ref()))
+                Ok(State::Eval(stmt, DoCont::new(self, k, d.root(), 0).as_any_ref()))
             } else {
                 // TODO: continue with a tuple:
-                Ok(State::Cont(self.alloc_nil().as_any_ref(), k))
+                Ok(State::Cont(ListEmpty::new(self).as_any_ref(), k))
             }
         } else if let Some(c) = ctrl.downcast::<Const>(self) {
             Ok(State::Cont(c.val(), k))
@@ -144,7 +142,7 @@ impl Interpreter {
                 let i = i + 1;
                 if let Some(d) = dc.do_ast(self) {
                     if let Some(stmt) = d.stmts(i) {
-                        let new_k = self.alloc_docont(dc.parent().borrow(), d.borrow(), i);
+                        let new_k = DoCont::new(self, dc.parent(), d, i);
                         Ok(State::Eval(stmt, new_k.as_any_ref()))
                     } else {
                         Ok(State::Cont(v, dc.parent()))
@@ -159,7 +157,7 @@ impl Interpreter {
             unimplemented!()
         }
     }
-    
+
     fn exec_expr(&mut self, exprc: Root<ExprCont>) -> Result<State, CtrError> {
         if let Some(expr) = exprc.ast(self) {
             let res = try!(expr.op(self)(self, exprc.args_iter()));
@@ -209,64 +207,6 @@ impl Interpreter {
         self.alloc_bytes(typ, data_bytes)
     }
 
-    pub fn alloc_pair(&mut self, head: ValueHandle<Any>, tail: ValueHandle<Any>) -> Root<ListPair> {
-        let typ = self.pair_t.clone();
-        let fields = [head, tail];
-        self.alloc_rec(typ.borrow(), &fields)
-    }
-
-    pub fn alloc_nil(&mut self) -> Root<ListEmpty> {
-        let typ = self.nil_t.clone();
-        let fields = [];
-        self.alloc_rec(typ.borrow(), &fields)
-    }
-
-    pub fn alloc_type(&mut self) -> Root<Type> {
-        let typ = self.type_t.clone();
-        let fields = [];
-        self.alloc_rec(typ.borrow(), &fields)
-    }
-
-    pub fn alloc_uint(&mut self, v: usize) -> Root<UInt> {
-        let typ = self.uint_t.clone();
-        self.alloc_bits(typ.borrow(), v)
-    }
-
-    pub fn alloc_int(&mut self, v: isize) -> Root<Int> {
-        let typ = self.int_t.clone();
-        self.alloc_bits(typ.borrow(), v)
-    }
-
-    pub fn alloc_symbol(&mut self, chars: &str) -> Root<Symbol> {
-        let typ = self.symbol_t.clone();
-        self.alloc_bytes(typ.borrow(), chars.as_bytes())
-    }
-
-    pub fn alloc_do(&mut self, stmts: &[ValueHandle<Any>]) -> Root<Do> {
-        let typ = self.do_t.clone();
-        self.alloc_rec(typ.borrow(), stmts)
-    }
-
-    pub fn alloc_const(&mut self, v: ValueHandle<Any>) -> Root<Const> {
-        let typ = self.const_t.clone();
-        let fields = [v];
-        self.alloc_rec(typ.borrow(), &fields)
-    }
-
-    pub fn alloc_docont(&mut self, parent: ValueHandle<Any>, do_ast: ValueHandle<Do>, i: usize)
-                        -> Root<DoCont> {
-        let typ = self.docont_t.clone();
-        let i = self.alloc_uint(i);
-        let fields = [parent, do_ast.as_any_ref(), i.borrow().as_any_ref()];
-        self.alloc_rec(typ.borrow(), &fields)
-    }
-
-    pub fn alloc_halt(&mut self) -> Root<Halt> {
-        let typ = self.halt_t.clone();
-        let fields = [];
-        self.alloc_rec(typ.borrow(), &fields)
-    }
-
     fn mark_roots(&mut self) {
         let gc = &mut self.gc;
         // The following also takes care of Root members of self since they
@@ -290,18 +230,18 @@ impl Interpreter {
 #[cfg(test)]
 mod tests {
     use super::Interpreter;
-    use value::{Bits, Unbox};
+    use value::{ListPair, Int, Unbox};
 
     #[test]
     fn collect() {
         let mut itp = Interpreter::new();
-        let a = itp.alloc_int(3);
-        let b = itp.alloc_int(5);
-        let tup = itp.alloc_pair(a.borrow().as_any_ref(), b.borrow().as_any_ref());
+        let a = Int::new(&mut itp, 3);
+        let b = Int::new(&mut itp, 5);
+        let tup = ListPair::new(&mut itp, a.clone().as_any_ref(), b.as_any_ref());
         itp.mark_roots();
         unsafe {
             itp.gc.collect();
-            assert_eq!((*(a.ptr() as *const Bits<i64>)).unbox(), 3);
+            assert_eq!(a.unbox(), 3);
         }
     }
 }

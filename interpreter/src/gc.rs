@@ -1,4 +1,4 @@
-use value::{CtrValue, Any, Type};
+use value::{Any, Type};
 use refs::{ValuePtr, Root, ValueHandle};
 
 use std::ptr;

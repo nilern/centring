@@ -15,7 +15,7 @@ pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
             unimplemented!()
         }
     } else {
-        Ok(itp.alloc_const(v).as_any_ref())
+        Ok(Const::new(itp, v.root()).as_any_ref())
     }
 }
 
@@ -24,14 +24,12 @@ fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> Ctr
         "do" => {
             if let Some(pair) = args.downcast::<ListPair>(itp) {
                 let mut argv: Vec<Root<Any>> = pair.iter(itp).collect();
-                let mut stmt_handles = vec![];
                 for stmt in argv.iter_mut() {
                     *stmt = try!(analyze(itp, (*stmt).borrow()));
-                    stmt_handles.push((*stmt).borrow());
                 }
-                Ok(itp.alloc_do(&stmt_handles).as_any_ref())
+                Ok(Do::new(itp, &argv).as_any_ref())
             } else if args.instanceof(ListEmpty::typ(itp)) {
-                Ok(itp.alloc_do(&[]).as_any_ref())
+                Ok(Do::new(itp, &[]).as_any_ref())
             } else {
                 return Err(CtrError::ImproperList(args.root()));
             }
@@ -44,12 +42,12 @@ pub fn ast_to_sexpr(itp: &mut Interpreter, ast: ValueHandle<Any>) -> CtrResult<A
     if let Some(c) = ast.downcast::<Const>(itp) {
         Ok(c.val())
     } else if let Some(d) = ast.downcast::<Do>(itp) {
-        let mut res = itp.alloc_nil().as_any_ref();
+        let mut res = ListEmpty::new(itp).as_any_ref();
         for i in (0..ast.alloc_len()).rev() {
-            res = itp.alloc_pair(d.stmts(i).unwrap().borrow(), res.borrow()).as_any_ref();
+            res = ListPair::new(itp, d.stmts(i).unwrap(), res).as_any_ref()
         }
-        let dosym = itp.alloc_symbol("$do");
-        Ok(itp.alloc_pair(dosym.borrow().as_any_ref(), res.borrow()).as_any_ref())
+        let dosym = Symbol::new(itp, "$do");
+        Ok(ListPair::new(itp, dosym.as_any_ref(), res).as_any_ref())
     } else {
         unimplemented!()
     }

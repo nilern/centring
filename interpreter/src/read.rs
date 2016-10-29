@@ -1,5 +1,5 @@
 use interpreter::Interpreter;
-use value::{Any, Int, Symbol};
+use value::{Any, Int, Symbol, ListPair, ListEmpty};
 use refs::Root;
 
 pub struct ParseState {
@@ -160,7 +160,7 @@ fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Int> {
     while let Ok(d) = digit(st) {
         n = n * 10 + d as isize;
     }
-    Ok(Some(itp.alloc_int(n)))
+    Ok(Some(Int::new(itp, n)))
 }
 
 fn symbol_char(st: &mut ParseState) -> ParseResult<char> {
@@ -180,24 +180,23 @@ fn symbol_string(st: &mut ParseState, mut chars: String) -> ParseResult<String> 
 }
 
 fn symbol(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Symbol> {
-    symbol_string(st, String::new()).map(|cs| Some(itp.alloc_symbol(&cs)))
+    symbol_string(st, String::new()).map(|cs| Some(Symbol::new(itp, &cs)))
 }
 
 fn qualified_symbol(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Symbol> {
-    symbol_string(st, String::from("##")).map(|cs| Some(itp.alloc_symbol(&cs)))
+    symbol_string(st, String::from("##")).map(|cs| Some(Symbol::new(itp, &cs)))
 }
 
 fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
     if let Some(')') = st.peek() {
         let _ = st.pop();
-        Ok(Some(itp.alloc_nil().as_any_ref()))
+        Ok(Some(ListEmpty::new(itp).as_any_ref()))
     } else {
         match expr(itp, st) {
             Ok(Some(head)) => {
                 match list(itp, st) {
                     Ok(Some(tail)) => {
-                        let ls = itp.alloc_pair(head.borrow(), tail.borrow());
-                        // let ls = ListPair::new(itp, head.ptr(), tail.ptr());
+                        let ls = ListPair::new(itp, head, tail);
                         Ok(Some(ls.as_any_ref()))
                     }
                     Ok(None) => Err(st.place_error(NonTerminating(')'))),

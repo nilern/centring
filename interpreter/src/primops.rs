@@ -1,7 +1,7 @@
 use interpreter::{Interpreter, CtrResult};
 use interpreter::CtrError::Argc;
 use value::{CtrValue, Any};
-use refs::{Root, ValueHandle};
+use refs::ValueHandle;
 
 use std::clone::Clone;
 use std::cmp::Ordering::Greater;
