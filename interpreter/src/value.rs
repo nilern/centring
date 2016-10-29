@@ -2,7 +2,6 @@ use refs::{ValuePtr, Root, ValueHandle};
 use interpreter::{Interpreter, CtrError};
 use primops::ExprFn;
 
-use std::ops::Deref;
 use std::iter;
 use std::mem;
 
@@ -13,6 +12,35 @@ pub trait CtrValue: Sized {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
     }
+}
+
+pub trait UnsizedCtrValue: CtrValue {
+    type Item: CtrValue;
+    type Storage;
+
+    fn flex_len(&self) -> usize {
+        let self_any = self.as_any();
+        let nonflex_size = mem::size_of::<Self>() - mem::size_of::<Any>();
+        if self_any.pointy() {
+            self_any.alloc_len() - nonflex_size / mem::size_of::<ValuePtr>()
+        } else {
+            (self_any.alloc_len() - nonflex_size) / mem::size_of::<Self::Storage>()
+        }
+    }
+
+    fn flex_get(&self, i: usize) -> Option<Root<Self::Item>>;
+
+    fn flex_iter(&self) -> IndexedFields<Self> {
+        IndexedFields {
+            rec: unsafe { Root::new(mem::transmute::<&Self, ValuePtr>(self)) },
+            index: 0,
+            len: self.flex_len()
+        }
+    }
+}
+
+pub trait UnsizedCtrValueMut: UnsizedCtrValue {
+    fn flex_set(&self, i: usize, v: ValueHandle<Self::Item>) -> Result<(), CtrError>;
 }
 
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
@@ -38,42 +66,20 @@ macro_rules! impl_typ {
     }
 }
 
-// General
+// IndexedFields **********************************************************************************
 
-unsafe fn get_indexed<T: CtrValue>(rec: &T, i: usize) -> Option<Root<Any>> {
-    let rec_ptr: *mut T = mem::transmute(rec);
-    if i < (*(rec_ptr as *mut Any)).alloc_len() {
-        let fields = rec_ptr.offset(1) as *mut ValuePtr;
-        Some(Root::new(*fields.offset(i as isize)))
-    } else {
-        None
-    }
-}
-
-unsafe fn set_indexed<T: CtrValue>(rec: &T, i: usize, v: ValueHandle<Any>) -> Result<(), CtrError> {
-    let rec_ptr: *mut T = mem::transmute(rec);
-    let len = (*(rec_ptr as *mut Any)).alloc_len();
-    if i < len {
-        let fields = rec_ptr.offset(1) as *mut ValuePtr;
-        *fields.offset(i as isize) = v.ptr();
-        Ok(())
-    } else {
-        Err(CtrError::Index(i, len))
-    }
-}
-
-pub struct IndexedFields<T: CtrValue> {
+pub struct IndexedFields<T: UnsizedCtrValue> {
     rec: Root<T>,
     index: usize,
     len: usize
 }
 
-impl<T: CtrValue> Iterator for IndexedFields<T> {
+impl<T: UnsizedCtrValue> Iterator for IndexedFields<T> {
     type Item = Root<Any>;
 
     fn next(&mut self) -> Option<Root<Any>> {
         if self.index < self.len {
-            let res = unsafe { get_indexed(self.rec.deref(), self.index) };
+            let res = self.rec.flex_get(self.index).map(Root::as_any_ref);
             self.index += 1;
             res
         } else {
@@ -82,7 +88,7 @@ impl<T: CtrValue> Iterator for IndexedFields<T> {
     }
 }
 
-impl<T: CtrValue> ExactSizeIterator for IndexedFields<T> {
+impl<T: UnsizedCtrValue> ExactSizeIterator for IndexedFields<T> {
     fn len(&self) -> usize {
         self.len
     }
@@ -329,13 +335,49 @@ impl CtrValue for ArrayMut {}
 
 impl_typ! { ArrayMut, array_mut_t }
 
+impl UnsizedCtrValue for ArrayMut {
+    type Item = Any;
+    type Storage = ValuePtr;
+
+    fn flex_get(&self, i: usize) -> Option<Root<Any>> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Storage;
+                Some(Root::new(*fields.offset(i as isize)))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+impl UnsizedCtrValueMut for ArrayMut {
+    fn flex_set(&self, i: usize, v: ValueHandle<Self::Item>) -> Result<(), CtrError> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Storage;
+                *fields.offset(i as isize) = v.ptr();
+                Ok(())
+            } else {
+                Err(CtrError::Index(i, self.flex_len()))
+            }
+        }
+    }
+}
+
 impl ArrayMut {
+    pub fn len(&self) -> usize {
+        self.flex_len()
+    }
+
     pub fn get(&self, i: usize) -> Option<Root<Any>> {
-        unsafe { get_indexed(self, i) }
+        self.flex_get(i)
     }
 
     pub fn set(&self, i: usize, v: ValueHandle<Any>) -> Result<(), CtrError> {
-        unsafe { set_indexed(self, i, v) }
+        self.flex_set(i, v)
     }
 }
 
@@ -373,6 +415,23 @@ impl CtrValue for Expr {}
 
 impl_typ! { Expr, expr_t }
 
+impl UnsizedCtrValue for Expr {
+    type Item = Any;
+    type Storage = ValuePtr;
+
+    fn flex_get(&self, i: usize) -> Option<Root<Any>> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Storage;
+                Some(Root::new(*fields.offset(i as isize)))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 impl Expr {
     pub fn op<I: Iterator<Item=Root<Any>>>(&self, itp: &Interpreter) -> ExprFn<I> {
         let op = unsafe { Root::<Any>::new(self.op) };
@@ -384,19 +443,15 @@ impl Expr {
     }
 
     pub fn argc(&self) -> usize {
-        self.as_any().alloc_len() - 1
+        self.flex_len()
     }
 
     pub fn args(&self, i: usize) -> Option<Root<Any>> {
-        unsafe { get_indexed(self, i) }
+        self.flex_get(i)
     }
 
     pub fn args_iter(&self) -> IndexedFields<Expr> {
-        IndexedFields {
-            rec: unsafe { Root::new(mem::transmute::<&Expr, ValuePtr>(self)) },
-            index: 0,
-            len: self.argc() - (mem::size_of::<Expr>() - mem::size_of::<Any>())
-        }
+        self.flex_iter()
     }
 }
 
@@ -413,6 +468,23 @@ impl CtrValue for Do {}
 
 impl_typ! { Do, do_t }
 
+impl UnsizedCtrValue for Do {
+    type Item = Any;
+    type Storage = ValuePtr;
+
+    fn flex_get(&self, i: usize) -> Option<Root<Any>> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Storage;
+                Some(Root::new(*fields.offset(i as isize)))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 impl Do {
     pub fn new(itp: &mut Interpreter, stmts: &[Root<Any>]) -> Root<Do> {
         let typ = itp.do_t.clone();
@@ -420,7 +492,7 @@ impl Do {
     }
 
     pub fn stmts(&self, i: usize) -> Option<Root<Any>> {
-        unsafe { get_indexed(self, i) }
+        self.flex_get(i)
     }
 }
 
@@ -518,6 +590,23 @@ impl CtrValue for ExprCont {}
 
 impl_typ! { ExprCont, exprcont_t }
 
+impl UnsizedCtrValue for ExprCont {
+    type Item = Any;
+    type Storage = ValuePtr;
+
+    fn flex_get(&self, i: usize) -> Option<Root<Any>> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Storage;
+                Some(Root::new(*fields.offset(i as isize)))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 impl ExprCont {
     pub fn new(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Expr>, index: usize)
            -> Root<ExprCont> {
@@ -544,15 +633,11 @@ impl ExprCont {
     }
 
     pub fn argc(&self) -> usize {
-        self.as_any().alloc_len() - 3
+        self.flex_len()
     }
 
     pub fn args_iter(&self) -> IndexedFields<ExprCont> {
-        IndexedFields {
-            rec: unsafe { Root::new(mem::transmute::<&ExprCont, ValuePtr>(self)) },
-            index: 0,
-            len: self.argc() - (mem::size_of::<ExprCont>() - mem::size_of::<Any>())
-        }
+        self.flex_iter()
     }
 }
 
