@@ -82,6 +82,12 @@ impl<T: CtrValue> Iterator for IndexedFields<T> {
     }
 }
 
+impl<T: CtrValue> ExactSizeIterator for IndexedFields<T> {
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
 // Any **********************************************************************
 
 /// The layout of every Centring Value on the GC heap starts with the fields
@@ -250,7 +256,7 @@ impl ListPair {
     pub fn new(itp: &mut Interpreter, head: Root<Any>, tail: Root<Any>) -> Root<ListPair> {
         let typ = itp.pair_t.clone();
         let fields = [head, tail];
-        itp.alloc_rec_iter(typ.borrow(), fields.len(), fields.into_iter().cloned())
+        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
     pub fn first(&self) -> Root<Any> {
@@ -306,7 +312,7 @@ impl_typ! { ListEmpty, nil_t }
 impl ListEmpty {
     pub fn new(itp: &mut Interpreter) -> Root<ListEmpty> {
         let typ = itp.nil_t.clone();
-        itp.alloc_rec_iter(typ.borrow(), 0, iter::empty())
+        itp.alloc_rec(typ.borrow(), iter::empty())
     }
 }
 
@@ -349,7 +355,7 @@ impl_typ! { Type, type_t }
 impl Type {
     pub fn new(itp: &mut Interpreter) -> Root<Type> {
         let typ = itp.type_t.clone();
-        itp.alloc_rec_iter(typ.borrow(), 0, iter::empty())
+        itp.alloc_rec(typ.borrow(), iter::empty())
     }
 }
 
@@ -410,7 +416,7 @@ impl_typ! { Do, do_t }
 impl Do {
     pub fn new(itp: &mut Interpreter, stmts: &[Root<Any>]) -> Root<Do> {
         let typ = itp.do_t.clone();
-        itp.alloc_rec_iter(typ.borrow(), stmts.len(), stmts.into_iter().cloned())
+        itp.alloc_rec(typ.borrow(), stmts.into_iter().cloned())
     }
 
     pub fn stmts(&self, i: usize) -> Option<Root<Any>> {
@@ -436,7 +442,7 @@ impl Const {
     pub fn new(itp: &mut Interpreter, v: Root<Any>) -> Root<Const> {
         let typ = itp.const_t.clone();
         let fields = [v];
-        itp.alloc_rec_iter(typ.borrow(), fields.len(), fields.into_iter().cloned())
+        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
     pub fn val(&self) -> Root<Any> {
@@ -466,7 +472,7 @@ impl DoCont {
         let typ = itp.docont_t.clone();
         let i = UInt::new(itp, i);
         let fields = [parent, do_ast.as_any_ref(), i.as_any_ref()];
-        itp.alloc_rec_iter(typ.borrow(), fields.len(), fields.into_iter().cloned())
+        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
     pub fn parent(&self) -> Root<Any> {
@@ -516,11 +522,10 @@ impl ExprCont {
     pub fn new(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Expr>, index: usize)
            -> Root<ExprCont> {
         let typ = itp.exprcont_t.clone();
-        let argc = expr_ast.argc();
-        let args = expr_ast.args_iter();
-        let fields = [parent, expr_ast.as_any_ref(), UInt::new(itp, index).as_any_ref()];
-        itp.alloc_rec_iter(typ.borrow(), fields.len() + argc,
-                           fields.into_iter().cloned().chain(args))
+        let mut fields = vec![parent, expr_ast.clone().as_any_ref(),
+                              UInt::new(itp, index).as_any_ref()];
+        fields.extend(expr_ast.args_iter());
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
 
     pub fn parent(&self) -> Root<Any> {
@@ -567,6 +572,6 @@ impl_typ! { Halt, halt_t }
 impl Halt {
     pub fn new(itp: &mut Interpreter) -> Root<Halt> {
         let typ = itp.halt_t.clone();
-        itp.alloc_rec_iter(typ.borrow(), 0, iter::empty())
+        itp.alloc_rec(typ.borrow(), iter::empty())
     }
 }

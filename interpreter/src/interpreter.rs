@@ -167,25 +167,13 @@ impl Interpreter {
         }
     }
 
-    pub fn alloc_rec<'a, T: CtrValue>(&mut self, typ: ValueHandle<Type>,
-                                      fields: &[ValueHandle<Any>])
-                                      -> Root<T> {
+    pub fn alloc_rec<'a, T, I>(&mut self, typ: ValueHandle<Type>, fields: I)
+        -> Root<T> where T: CtrValue, I: Iterator<Item=Root<Any>> + ExactSizeIterator {
         if !self.gc.rec_poll(fields.len()) {
             self.mark_roots();
             unsafe { self.gc.collect(); }
         }
         let res = unsafe { Root::new(self.gc.alloc_rec(typ, fields)) };
-        self.stack_roots.push(Root::downgrade(&res));
-        res
-    }
-
-    pub fn alloc_rec_iter<'a, T, I>(&mut self, typ: ValueHandle<Type>, nfields: usize, fields: I)
-        -> Root<T> where T: CtrValue, I: Iterator<Item=Root<Any>> {
-        if !self.gc.rec_poll(nfields) {
-            self.mark_roots();
-            unsafe { self.gc.collect(); }
-        }
-        let res = unsafe { Root::new(self.gc.alloc_rec_iter(typ, nfields, fields)) };
         self.stack_roots.push(Root::downgrade(&res));
         res
     }

@@ -58,42 +58,13 @@ impl Collector {
     /// You must first use `bytes_poll` and if that is false, you need to mark
     /// the GC roots and call `collect` to free/allocate more space in
     /// the GC heap.
-    pub unsafe fn alloc_rec(&mut self,
-                            typ: ValueHandle<Type>,
-                            fields: &[ValueHandle<Any>])
-                            -> ValuePtr {
+    pub unsafe fn alloc_rec<I>(&mut self, typ: ValueHandle<Type>, fields: I) -> ValuePtr
+        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
         let len = self.fromspace.len();
         self.fromspace.set_len(len + size_of::<Any>() / size_of::<ValuePtr>() + fields.len());
 
         let res = self.free_rec;
         (*res).header = Any::header(fields.len(), true);
-        (*res).typ = typ.ptr();
-
-        let mut field = res.offset(1) as *mut ValuePtr;
-        for i in 0..fields.len() {
-            *field = fields[i].ptr();
-            field = field.offset(1);
-        }
-        self.free_rec = field as ValuePtr;
-        res
-    }
-
-    /// Construct a record with a type of `typ` and `field_count` field values of `fields`.
-    ///
-    /// # Safety
-    /// You must first use `bytes_poll` and if that is false, you need to mark
-    /// the GC roots and call `collect` to free/allocate more space in
-    /// the GC heap.
-    ///
-    /// `fields` should have exactly `fields_count` items.
-    pub unsafe fn alloc_rec_iter<I>(&mut self, typ: ValueHandle<Type>, field_count: usize,
-                                       fields: I) -> ValuePtr
-        where I: Iterator<Item=Root<Any>> {
-        let len = self.fromspace.len();
-        self.fromspace.set_len(len + size_of::<Any>() / size_of::<ValuePtr>() + field_count);
-
-        let res = self.free_rec;
-        (*res).header = Any::header(field_count, true);
         (*res).typ = typ.ptr();
 
         let mut field = res.offset(1) as *mut ValuePtr;

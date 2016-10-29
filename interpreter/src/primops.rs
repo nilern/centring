@@ -1,17 +1,19 @@
-use interpreter::{Interpreter, CtrResult};
+use interpreter::{Interpreter, CtrResult, CtrError};
 use interpreter::CtrError::Argc;
-use value::{CtrValue, Any};
-use refs::ValueHandle;
+use value::{CtrValue, ConcreteType, Any, Type};
+use refs::Root;
 
-use std::clone::Clone;
 use std::cmp::Ordering::Greater;
-use std::mem;
 
 pub type ExprFn<I> = fn(&mut Interpreter, I) -> CtrResult<Any>;
 
-fn rec<T: CtrValue>(itp: &mut Interpreter, args: &[ValueHandle<T>]) -> CtrResult<T> {
+fn rec<T: CtrValue>(itp: &mut Interpreter, args: &[Root<Any>]) -> CtrResult<T> {
     if args.len() > 0 {
-        unsafe { Ok(itp.alloc_rec(mem::transmute(args[0].clone()), mem::transmute(&args[1..]))) }
+        if let Some(t) = args[0].borrow().downcast::<Type>(itp) {
+            Ok(itp.alloc_rec(t, args[1..].into_iter().cloned()))
+        } else {
+            Err(CtrError::Type(Type::typ(itp).root()))
+        }
     } else {
         Err(Argc {
             expected: (Greater, 0),
