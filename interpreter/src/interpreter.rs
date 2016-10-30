@@ -8,6 +8,7 @@ use std::cmp::Ordering;
 use std::ptr;
 use std::mem;
 use std::slice;
+use std::iter;
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
@@ -37,12 +38,14 @@ enum State {
     Halt(Root<Any>),
 }
 
+#[derive(Debug)]
 pub enum CtrError {
     Argc {
         expected: (Ordering, usize),
         received: usize,
     },
     UnknownSf(String),
+    UnknownIntr(String),
     ImproperList(Root<Any>),
     Index(usize, usize),
     Type(Root<Type>)
@@ -113,9 +116,10 @@ impl Interpreter {
 
         if let Some(expr) = ctrl.downcast::<Expr>(self) {
             if let Some(arg) = expr.args(0) {
-                Ok(State::Eval(arg, ExprCont::new(self, k, expr.root(), 0).as_any_ref()))
+                Ok(State::Eval(arg, ExprCont::new(self, k, expr.root(), 0, expr.args_iter())
+                                        .as_any_ref()))
             } else {
-                let l = ExprCont::new(self, k, expr.root(), 0);
+                let l = ExprCont::new(self, k, expr.root(), 0, iter::empty());
                 self.exec_expr(l)
             }
         } else if let Some(d) = ctrl.downcast::<Do>(self) {
@@ -137,9 +141,26 @@ impl Interpreter {
 
         if k.instanceof(Halt::typ(self)) {
             Ok(State::Halt(v))
+        } else if let Some(ec) = k.downcast::<ExprCont>(self) {
+            if let Some(i) = ec.index(self) {
+                let j = i + 1;
+                if let Some(e) = ec.ast(self) {
+                    let new_k = ExprCont::new(self, ec.parent(), e.clone(), j, ec.args_iter());
+                    try!(new_k.set_arg(i, v));
+                    if let Some(arg) = e.args(j) {
+                        Ok(State::Eval(arg, new_k.as_any_ref()))
+                    } else {
+                        self.exec_expr(new_k)
+                    }
+                } else {
+                    panic!()
+                }
+            } else {
+                panic!()
+            }
         } else if let Some(dc) = k.downcast::<DoCont>(self) {
-            if let Some(i) = dc.index(self) {
-                let i = i + 1;
+            if let Some(mut i) = dc.index(self) {
+                i += 1;
                 if let Some(d) = dc.do_ast(self) {
                     if let Some(stmt) = d.stmts(i) {
                         let new_k = DoCont::new(self, dc.parent(), d, i);
@@ -148,10 +169,10 @@ impl Interpreter {
                         Ok(State::Cont(v, dc.parent()))
                     }
                 } else {
-                    unimplemented!()
+                    panic!()
                 }
             } else {
-                unimplemented!()
+                panic!()
             }
         } else {
             unimplemented!()

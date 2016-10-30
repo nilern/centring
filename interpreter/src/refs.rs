@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 use std::ptr;
+use std::fmt;
 
 /// A pointer to a Value.
 pub type ValuePtr = *mut Any;
@@ -81,6 +82,12 @@ impl<T: CtrValue> Deref for Root<T> {
 impl<T: CtrValue> DerefMut for Root<T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { &mut *(*self.0.borrow_mut() as *mut T) }
+    }
+}
+
+impl<T: CtrValue> fmt::Debug for Root<T> {
+    fn fmt(&self, fmt: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        write!(fmt, "#<Root<T>>")
     }
 }
 

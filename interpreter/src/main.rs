@@ -53,10 +53,9 @@ impl Args {
         let mut st = read::ParseState::new(estr);
         match read::read(itp, &mut st) {
             Ok(Some(v)) => {
-                if let Ok(sexp) = self.act(itp, v.borrow()) {
-                    println!("{}", ContextValue::new(sexp.borrow(), itp));
-                } else {
-                    unimplemented!();
+                match self.act(itp, v.borrow()) {
+                    Ok(sexp) => println!("{}", ContextValue::new(sexp.borrow(), itp)),
+                    Err(e) => println!("{:?}", e)
                 }
             }
             Ok(None) => {}

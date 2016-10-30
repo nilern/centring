@@ -1,6 +1,7 @@
 use interpreter::{Interpreter, CtrResult, CtrError};
-use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Do, Const};
+use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Expr, Do, Const};
 use refs::{Root, ValueHandle};
+use primops;
 
 pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
     if let Some(p) = v.downcast::<ListPair>(itp) {
@@ -8,6 +9,8 @@ pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
             let opstr = op.to_string();
             if opstr.starts_with("##sf#") {
                 analyze_sf(itp, &opstr[5..], p.rest().borrow())
+            } else if opstr.starts_with("##intr#") {
+                analyze_intr(itp, &opstr[7..], p.rest().borrow())
             } else {
                 unimplemented!()
             }
@@ -35,6 +38,25 @@ fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> Ctr
             }
         },
         sf => Err(CtrError::UnknownSf(String::from(sf)))
+    }
+}
+
+fn analyze_intr(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> CtrResult<Any> {
+    let op = match opstr {
+        "iadd" => primops::iadd,
+        intr => return Err(CtrError::UnknownIntr(String::from(intr)))
+    };
+    if let Some(pair) = args.downcast::<ListPair>(itp) {
+        let mut argv: Vec<Root<Any>> = pair.iter(itp).collect();
+        for stmt in argv.iter_mut() {
+            *stmt = try!(analyze(itp, (*stmt).borrow()));
+        }
+        Ok(Expr::new(itp, op, argv.into_iter()).as_any_ref())
+    } else if args.instanceof(ListEmpty::typ(itp)) {
+        let argv = Vec::new();
+        Ok(Expr::new(itp, op, argv.into_iter()).as_any_ref())
+    } else {
+        return Err(CtrError::ImproperList(args.root()));
     }
 }
 

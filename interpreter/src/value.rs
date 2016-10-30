@@ -209,6 +209,13 @@ pub type VoidPtr = Bits<*mut ()>;
 
 impl_typ! { VoidPtr, voidptr_t }
 
+impl VoidPtr {
+    pub fn new(itp: &mut Interpreter, ptr: *mut ()) -> Root<VoidPtr> {
+        let typ = itp.voidptr_t.clone();
+        itp.alloc_bits(typ.borrow(), ptr)
+    }
+}
+
 // Symbol *******************************************************************
 
 #[repr(C)]
@@ -472,7 +479,15 @@ impl UnsizedCtrValue for Expr {
 }
 
 impl Expr {
-    pub fn op<I: Iterator<Item=Root<Any>>>(&self, itp: &Interpreter) -> ExprFn<I> {
+    pub fn new<I>(itp: &mut Interpreter, op: ExprFn, args: I) -> Root<Expr>
+        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        let typ = itp.expr_t.clone();
+        let mut fields = vec![VoidPtr::new(itp, op as *mut ()).as_any_ref()];
+        fields.extend(args);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
+    }
+
+    pub fn op(&self, itp: &Interpreter) -> ExprFn {
         let op = unsafe { Root::<Any>::new(self.op) };
         if let Some(f) = op.borrow().downcast::<VoidPtr>(itp) {
             unsafe { mem::transmute(f.unbox()) }
@@ -646,13 +661,28 @@ impl UnsizedCtrValue for ExprCont {
     }
 }
 
+impl UnsizedCtrValueMut for ExprCont {
+    fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Storage;
+                *fields.offset(i as isize) = v.ptr();
+                Ok(())
+            } else {
+                Err(CtrError::Index(i, self.flex_len()))
+            }
+        }
+    }
+}
+
 impl ExprCont {
-    pub fn new(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Expr>, index: usize)
-           -> Root<ExprCont> {
+    pub fn new<I>(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Expr>, index: usize,
+               args: I) -> Root<ExprCont> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
         let typ = itp.exprcont_t.clone();
         let mut fields = vec![parent, expr_ast.clone().as_any_ref(),
                               UInt::new(itp, index).as_any_ref()];
-        fields.extend(expr_ast.args_iter());
+        fields.extend(args);
         itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
 
@@ -671,8 +701,23 @@ impl ExprCont {
         }
     }
 
+    pub fn index(&self, itp: &mut Interpreter) -> Option<usize> {
+        unsafe {
+            let res = Root::<UInt>::new(self.index);
+            if res.borrow().instanceof(UInt::typ(itp)) {
+                Some(res.unbox())
+            } else {
+                None
+            }
+        }
+    }
+
     pub fn argc(&self) -> usize {
         self.flex_len()
+    }
+
+    pub fn set_arg(&self, i: usize, arg: Root<Any>) -> Result<(), CtrError> {
+        self.flex_set(i, arg)
     }
 
     pub fn args_iter(&self) -> IndexedFields<ExprCont> {
