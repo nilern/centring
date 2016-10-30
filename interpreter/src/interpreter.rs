@@ -10,6 +10,18 @@ use std::mem;
 use std::slice;
 use std::iter;
 
+trait Eval {
+    fn eval(&self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError>;
+}
+
+trait Continuation {
+    fn continu(&self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError>;
+}
+
+trait Primop {
+    fn exec(&self, itp: &mut Interpreter) -> Result<State, CtrError>;
+}
+
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
 /// by `lua_State` in PUC Lua.
 pub struct Interpreter {
@@ -32,7 +44,7 @@ pub struct Interpreter {
     pub halt_t: Root<Type>,
 }
 
-enum State {
+pub enum State {
     Eval(Root<Any>, Root<Any>),
     Cont(Root<Any>, Root<Any>),
     Halt(Root<Any>),
@@ -100,7 +112,7 @@ impl Interpreter {
     }
 
     pub fn interpret(&mut self, ast: ValueHandle<Any>) -> CtrResult<Any> {
-        let mut state = State::Eval(unsafe { Root::new(ast.ptr()) }, Halt::new(self).as_any_ref());
+        let mut state = State::Eval(ast.root(), Halt::new(self).as_any_ref());
         loop {
             // Need to use a trampoline/state machine here for manual TCO.
             state = match state {
@@ -113,24 +125,12 @@ impl Interpreter {
 
     fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let ctrl = ctrl.borrow();
-
         if let Some(expr) = ctrl.downcast::<Expr>(self) {
-            if let Some(arg) = expr.args(0) {
-                Ok(State::Eval(arg, ExprCont::new(self, k, expr.root(), 0, expr.args_iter())
-                                        .as_any_ref()))
-            } else {
-                let l = ExprCont::new(self, k, expr.root(), 0, iter::empty());
-                self.exec_expr(l)
-            }
+            expr.eval(self, k)
         } else if let Some(d) = ctrl.downcast::<Do>(self) {
-            if let Some(stmt) = d.stmts(0) {
-                Ok(State::Eval(stmt, DoCont::new(self, k, d.root(), 0).as_any_ref()))
-            } else {
-                // TODO: continue with a tuple:
-                Ok(State::Cont(ListEmpty::new(self).as_any_ref(), k))
-            }
+            d.eval(self, k)
         } else if let Some(c) = ctrl.downcast::<Const>(self) {
-            Ok(State::Cont(c.val(), k))
+            c.eval(self, k)
         } else {
             unimplemented!()
         }
@@ -138,53 +138,14 @@ impl Interpreter {
 
     fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let k = k.borrow();
-
-        if k.instanceof(Halt::typ(self)) {
-            Ok(State::Halt(v))
+        if let Some(halt) = k.downcast::<Halt>(self) {
+            halt.continu(self, v)
         } else if let Some(ec) = k.downcast::<ExprCont>(self) {
-            if let Some(i) = ec.index(self) {
-                let j = i + 1;
-                if let Some(e) = ec.ast(self) {
-                    let new_k = ExprCont::new(self, ec.parent(), e.clone(), j, ec.args_iter());
-                    try!(new_k.set_arg(i, v));
-                    if let Some(arg) = e.args(j) {
-                        Ok(State::Eval(arg, new_k.as_any_ref()))
-                    } else {
-                        self.exec_expr(new_k)
-                    }
-                } else {
-                    panic!()
-                }
-            } else {
-                panic!()
-            }
+            ec.continu(self, v)
         } else if let Some(dc) = k.downcast::<DoCont>(self) {
-            if let Some(mut i) = dc.index(self) {
-                i += 1;
-                if let Some(d) = dc.do_ast(self) {
-                    if let Some(stmt) = d.stmts(i) {
-                        let new_k = DoCont::new(self, dc.parent(), d, i);
-                        Ok(State::Eval(stmt, new_k.as_any_ref()))
-                    } else {
-                        Ok(State::Cont(v, dc.parent()))
-                    }
-                } else {
-                    panic!()
-                }
-            } else {
-                panic!()
-            }
+            dc.continu(self, v)
         } else {
             unimplemented!()
-        }
-    }
-
-    fn exec_expr(&mut self, exprc: Root<ExprCont>) -> Result<State, CtrError> {
-        if let Some(expr) = exprc.ast(self) {
-            let res = try!(expr.op(self)(self, exprc.args_iter()));
-            Ok(State::Cont(res, exprc.parent()))
-        } else {
-            Err(CtrError::Type(Expr::typ(self).root()))
         }
     }
 
@@ -232,6 +193,97 @@ impl Interpreter {
                 false
             }
         });
+    }
+}
+
+impl Eval for Expr {
+    fn eval(&self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+        if let Some(arg) = self.args(0) {
+            Ok(State::Eval(arg, ExprCont::new(itp, k,
+                unsafe { Root::new(mem::transmute::<&Expr, ValuePtr>(self)) }, 0, self.args_iter())
+                .as_any_ref()))
+        } else {
+            let l = ExprCont::new(itp, k,
+                unsafe { Root::new(mem::transmute::<&Expr, ValuePtr>(self)) }, 0, iter::empty());
+            l.exec(itp)
+        }
+    }
+}
+
+impl Eval for Do {
+    fn eval(&self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+        if let Some(stmt) = self.stmts(0) {
+            Ok(State::Eval(stmt,
+                DoCont::new(itp, k, unsafe { Root::new(mem::transmute::<&Do, ValuePtr>(self)) }, 0)
+                .as_any_ref()))
+        } else {
+            // TODO: continue with a tuple:
+            Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), k))
+        }
+    }
+}
+
+impl Eval for Const {
+    fn eval(&self, _: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+        Ok(State::Cont(self.val(), k))
+    }
+}
+
+impl Continuation for DoCont {
+    fn continu(&self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
+        if let Some(mut i) = self.index(itp) {
+            i += 1;
+            if let Some(d) = self.do_ast(itp) {
+                if let Some(stmt) = d.stmts(i) {
+                    let new_k = DoCont::new(itp, self.parent(), d, i);
+                    Ok(State::Eval(stmt, new_k.as_any_ref()))
+                } else {
+                    Ok(State::Cont(v, self.parent()))
+                }
+            } else {
+                panic!()
+            }
+        } else {
+            panic!()
+        }
+    }
+}
+
+impl Continuation for ExprCont {
+    fn continu(&self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
+        if let Some(i) = self.index(itp) {
+            let j = i + 1;
+            if let Some(e) = self.ast(itp) {
+                let new_k = ExprCont::new(itp, self.parent(), e.clone(), j, self.args_iter());
+                try!(new_k.set_arg(i, v));
+                if let Some(arg) = e.args(j) {
+                    Ok(State::Eval(arg, new_k.as_any_ref()))
+                } else {
+                    new_k.exec(itp)
+                }
+            } else {
+                panic!()
+            }
+        } else {
+            panic!()
+        }
+    }
+}
+
+impl Continuation for Halt {
+    fn continu(&self, _: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
+        Ok(State::Halt(v))
+    }
+}
+
+impl Primop for ExprCont {
+    fn exec(&self, itp: &mut Interpreter) -> Result<State, CtrError> {
+        if let Some(expr) = self.ast(itp) {
+            let res = try!(expr.op(itp)(itp, self.args_iter()));
+            Ok(State::Cont(res, self.parent()))
+        } else {
+            Err(CtrError::Type(Expr::typ(itp).root()))
+        }
     }
 }
 

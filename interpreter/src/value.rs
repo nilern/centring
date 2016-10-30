@@ -1,5 +1,5 @@
 use refs::{ValuePtr, Root, ValueHandle};
-use interpreter::{Interpreter, CtrError};
+use interpreter::{Interpreter, CtrError, State};
 use primops::ExprFn;
 
 use std::iter;

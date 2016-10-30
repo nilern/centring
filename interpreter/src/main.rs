@@ -9,7 +9,7 @@ pub mod ops;
 pub mod gc;
 pub mod primops;
 pub mod value;
-pub mod refs;
+pub mod refs; // FIXME: all non-static methods should be on these
 pub mod read;
 pub mod analyze;
 pub mod interpreter;
@@ -24,6 +24,8 @@ use analyze::{analyze, ast_to_sexpr};
 use docopt::Docopt;
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
+
+
 
 const USAGE: &'static str = "
 Usage: ctri [--help | --sexp | --ana] -e <expr>
