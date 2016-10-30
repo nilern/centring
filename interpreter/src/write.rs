@@ -22,7 +22,7 @@ impl<'a, T: CtrValue> ContextValue<'a, T> {
 impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
     fn fmt(&self, fmt: &mut Formatter) -> Result<(), fmt::Error> {
         if let Some(sym) = self.val.downcast::<Symbol>(self.itp) {
-            write!(fmt, "{}", String::from_utf8_lossy(&sym.clone_bytes().unwrap()))
+            write!(fmt, "{}", sym.to_string())
         } else if let Some(n) = self.val.downcast::<Int>(self.itp) {
             write!(fmt, "{}", n.unbox())
         } else if let Some(pair) = self.val.downcast::<ListPair>(self.itp) {

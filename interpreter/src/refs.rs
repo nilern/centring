@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use gc::Collector;
-use value::{CtrValue, ConcreteType, Any, Symbol, Type};
+use value::{CtrValue, ConcreteType, Any, Type};
 use ops::PtrEq;
 
 use std::rc::{Rc, Weak};
@@ -8,7 +8,6 @@ use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
 use std::marker::PhantomData;
 use std::ptr;
-use std::slice;
 
 /// A pointer to a Value.
 pub type ValuePtr = *mut Any;
@@ -120,25 +119,6 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
     /// Dynamic typecheck (`:`).
     pub fn instanceof(self, typ: ValueHandle<Type>) -> bool {
         self.as_any_ref().get_type().borrow().identical(&typ)
-    }
-
-    pub fn clone_bytes(self) -> Option<Vec<u8>> { // HACK
-        let self_any = self.as_any_ref();
-        if self_any.pointy() {
-            None
-        } else {
-            let len = self_any.alloc_len();
-            let bytes = unsafe { slice::from_raw_parts(self_any.ptr().offset(1) as *mut u8, len) };
-            let mut res = Vec::with_capacity(len);
-            res.extend_from_slice(bytes);
-            Some(res)
-        }
-    }
-}
-
-impl<'a> ValueHandle<'a, Symbol> {
-    pub fn to_string(self) -> String {
-        String::from_utf8(self.clone_bytes().unwrap()).unwrap()
     }
 }
 

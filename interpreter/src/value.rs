@@ -3,7 +3,11 @@ use interpreter::{Interpreter, CtrError};
 use primops::ExprFn;
 
 use std::iter;
+use std::slice;
+use std::string;
 use std::mem;
+use std::hash::{Hash, Hasher};
+use std::collections::hash_map::DefaultHasher;
 
 // Traits *******************************************************************
 
@@ -15,7 +19,7 @@ pub trait CtrValue: Sized {
 }
 
 pub trait UnsizedCtrValue: CtrValue {
-    type Item: CtrValue;
+    type Item;
     type Storage;
 
     fn flex_len(&self) -> usize {
@@ -28,7 +32,7 @@ pub trait UnsizedCtrValue: CtrValue {
         }
     }
 
-    fn flex_get(&self, i: usize) -> Option<Root<Self::Item>>;
+    fn flex_get(&self, i: usize) -> Option<Self::Item>;
 
     fn flex_iter(&self) -> IndexedFields<Self> {
         IndexedFields {
@@ -40,7 +44,7 @@ pub trait UnsizedCtrValue: CtrValue {
 }
 
 pub trait UnsizedCtrValueMut: UnsizedCtrValue {
-    fn flex_set(&self, i: usize, v: ValueHandle<Self::Item>) -> Result<(), CtrError>;
+    fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError>;
 }
 
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
@@ -75,11 +79,11 @@ pub struct IndexedFields<T: UnsizedCtrValue> {
 }
 
 impl<T: UnsizedCtrValue> Iterator for IndexedFields<T> {
-    type Item = Root<Any>;
+    type Item = T::Item;
 
-    fn next(&mut self) -> Option<Root<Any>> {
+    fn next(&mut self) -> Option<T::Item> {
         if self.index < self.len {
-            let res = self.rec.flex_get(self.index).map(Root::as_any_ref);
+            let res = self.rec.flex_get(self.index);
             self.index += 1;
             res
         } else {
@@ -211,16 +215,51 @@ impl_typ! { VoidPtr, voidptr_t }
 pub struct Symbol {
     header: usize,
     typ: ValuePtr,
+    hash: usize
 }
 
 impl CtrValue for Symbol {}
 
 impl_typ! { Symbol, symbol_t }
 
+impl UnsizedCtrValue for Symbol {
+    type Item = u8;
+    type Storage = u8;
+
+    fn flex_get(&self, i: usize) -> Option<Self::Item> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Storage;
+                Some(*fields.offset(i as isize))
+            } else {
+                None
+            }
+        }
+    }
+}
+
 impl Symbol {
     pub fn new(itp: &mut Interpreter, chars: &str) -> Root<Symbol> {
         let typ = itp.symbol_t.clone();
-        itp.alloc_bytes(typ.borrow(), chars.as_bytes())
+
+        // Precompute hash:
+        let mut hasher = DefaultHasher::new();
+        chars.hash(&mut hasher);
+        let hash = hasher.finish() as usize;
+
+        // (Awkwardly) join the bytes of the hash and the chars:
+        let mut bytes = Vec::new();
+        let hash_bytes = unsafe { slice::from_raw_parts(mem::transmute::<&usize, *mut u8>(&hash),
+                                                        mem::size_of::<usize>()) };
+        bytes.extend_from_slice(hash_bytes);
+        bytes.extend_from_slice(chars.as_bytes());
+
+        itp.alloc_bytes(typ.borrow(), &bytes)
+    }
+
+    pub fn to_string(&self) -> string::String {
+        string::String::from_utf8(self.flex_iter().collect()).unwrap()
     }
 }
 
@@ -336,7 +375,7 @@ impl CtrValue for ArrayMut {}
 impl_typ! { ArrayMut, array_mut_t }
 
 impl UnsizedCtrValue for ArrayMut {
-    type Item = Any;
+    type Item = Root<Any>;
     type Storage = ValuePtr;
 
     fn flex_get(&self, i: usize) -> Option<Root<Any>> {
@@ -353,7 +392,7 @@ impl UnsizedCtrValue for ArrayMut {
 }
 
 impl UnsizedCtrValueMut for ArrayMut {
-    fn flex_set(&self, i: usize, v: ValueHandle<Self::Item>) -> Result<(), CtrError> {
+    fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError> {
         unsafe {
             let ptr: *mut Self = mem::transmute(self);
             if i < self.flex_len() {
@@ -376,7 +415,7 @@ impl ArrayMut {
         self.flex_get(i)
     }
 
-    pub fn set(&self, i: usize, v: ValueHandle<Any>) -> Result<(), CtrError> {
+    pub fn set(&self, i: usize, v: Root<Any>) -> Result<(), CtrError> {
         self.flex_set(i, v)
     }
 }
@@ -416,7 +455,7 @@ impl CtrValue for Expr {}
 impl_typ! { Expr, expr_t }
 
 impl UnsizedCtrValue for Expr {
-    type Item = Any;
+    type Item = Root<Any>;
     type Storage = ValuePtr;
 
     fn flex_get(&self, i: usize) -> Option<Root<Any>> {
@@ -469,7 +508,7 @@ impl CtrValue for Do {}
 impl_typ! { Do, do_t }
 
 impl UnsizedCtrValue for Do {
-    type Item = Any;
+    type Item = Root<Any>;
     type Storage = ValuePtr;
 
     fn flex_get(&self, i: usize) -> Option<Root<Any>> {
@@ -591,7 +630,7 @@ impl CtrValue for ExprCont {}
 impl_typ! { ExprCont, exprcont_t }
 
 impl UnsizedCtrValue for ExprCont {
-    type Item = Any;
+    type Item = Root<Any>;
     type Storage = ValuePtr;
 
     fn flex_get(&self, i: usize) -> Option<Root<Any>> {
