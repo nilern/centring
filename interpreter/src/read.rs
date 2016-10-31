@@ -273,7 +273,7 @@ mod tests {
         let res = read(&mut itp, &mut st);
         let app = res.unwrap().unwrap();
         let pp = app.borrow().downcast::<ListPair>(&itp).unwrap();
-        let nr = (*pp).first();
+        let nr = pp.first();
         let n = nr.borrow().downcast::<Int>(&itp).unwrap().unbox();
         assert_eq!(n, 235);
     }

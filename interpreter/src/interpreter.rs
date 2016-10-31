@@ -11,15 +11,15 @@ use std::slice;
 use std::iter;
 
 trait Eval {
-    fn eval(&self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError>;
+    fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError>;
 }
 
 trait Continuation {
-    fn continu(&self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError>;
+    fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError>;
 }
 
 trait Primop {
-    fn exec(&self, itp: &mut Interpreter) -> Result<State, CtrError>;
+    fn exec(self, itp: &mut Interpreter) -> Result<State, CtrError>;
 }
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
@@ -151,7 +151,10 @@ impl Interpreter {
 
     pub fn alloc_rec<'a, T, I>(&mut self, typ: ValueHandle<Type>, fields: I)
         -> Root<T> where T: CtrValue, I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        println!("allocating record");
+        println!("got space? {}", self.gc.rec_poll(fields.len()));
         if !self.gc.rec_poll(fields.len()) {
+            println!("collecting");
             self.mark_roots();
             unsafe { self.gc.collect(); }
         }
@@ -196,26 +199,22 @@ impl Interpreter {
     }
 }
 
-impl Eval for Expr {
-    fn eval(&self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+impl<'a> Eval for ValueHandle<'a, Expr> {
+    fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
         if let Some(arg) = self.args(0) {
-            Ok(State::Eval(arg, ExprCont::new(itp, k,
-                unsafe { Root::new(mem::transmute::<&Expr, ValuePtr>(self)) }, 0, self.args_iter())
+            Ok(State::Eval(arg, ExprCont::new(itp, k, self.root(), 0, self.args_iter())
                 .as_any_ref()))
         } else {
-            let l = ExprCont::new(itp, k,
-                unsafe { Root::new(mem::transmute::<&Expr, ValuePtr>(self)) }, 0, iter::empty());
-            l.exec(itp)
+            let l = ExprCont::new(itp, k, self.root(), 0, iter::empty());
+            l.borrow().exec(itp)
         }
     }
 }
 
-impl Eval for Do {
-    fn eval(&self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+impl<'a> Eval for ValueHandle<'a, Do> {
+    fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
         if let Some(stmt) = self.stmts(0) {
-            Ok(State::Eval(stmt,
-                DoCont::new(itp, k, unsafe { Root::new(mem::transmute::<&Do, ValuePtr>(self)) }, 0)
-                .as_any_ref()))
+            Ok(State::Eval(stmt, DoCont::new(itp, k, self.root(), 0).as_any_ref()))
         } else {
             // TODO: continue with a tuple:
             Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), k))
@@ -223,18 +222,18 @@ impl Eval for Do {
     }
 }
 
-impl Eval for Const {
-    fn eval(&self, _: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+impl<'a> Eval for ValueHandle<'a, Const> {
+    fn eval(self, _: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
         Ok(State::Cont(self.val(), k))
     }
 }
 
-impl Continuation for DoCont {
-    fn continu(&self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
+impl<'a> Continuation for ValueHandle<'a, DoCont> {
+    fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
         if let Some(mut i) = self.index(itp) {
             i += 1;
             if let Some(d) = self.do_ast(itp) {
-                if let Some(stmt) = d.stmts(i) {
+                if let Some(stmt) = d.borrow().stmts(i) {
                     let new_k = DoCont::new(itp, self.parent(), d, i);
                     Ok(State::Eval(stmt, new_k.as_any_ref()))
                 } else {
@@ -249,17 +248,17 @@ impl Continuation for DoCont {
     }
 }
 
-impl Continuation for ExprCont {
-    fn continu(&self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
+impl<'a> Continuation for ValueHandle<'a, ExprCont> {
+    fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
         if let Some(i) = self.index(itp) {
             let j = i + 1;
             if let Some(e) = self.ast(itp) {
                 let new_k = ExprCont::new(itp, self.parent(), e.clone(), j, self.args_iter());
-                try!(new_k.set_arg(i, v));
-                if let Some(arg) = e.args(j) {
+                try!(new_k.borrow().set_arg(i, v));
+                if let Some(arg) = e.borrow().args(j) {
                     Ok(State::Eval(arg, new_k.as_any_ref()))
                 } else {
-                    new_k.exec(itp)
+                    new_k.borrow().exec(itp)
                 }
             } else {
                 panic!()
@@ -270,16 +269,16 @@ impl Continuation for ExprCont {
     }
 }
 
-impl Continuation for Halt {
-    fn continu(&self, _: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
+impl<'a> Continuation for ValueHandle<'a, Halt> {
+    fn continu(self, _: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
         Ok(State::Halt(v))
     }
 }
 
-impl Primop for ExprCont {
-    fn exec(&self, itp: &mut Interpreter) -> Result<State, CtrError> {
+impl<'a> Primop for ValueHandle<'a, ExprCont> {
+    fn exec(self, itp: &mut Interpreter) -> Result<State, CtrError> {
         if let Some(expr) = self.ast(itp) {
-            let res = try!(expr.op(itp)(itp, self.args_iter()));
+            let res = try!(expr.borrow().op(itp)(itp, self.args_iter()));
             Ok(State::Cont(res, self.parent()))
         } else {
             Err(CtrError::Type(Expr::typ(itp).root()))

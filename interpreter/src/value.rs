@@ -1,5 +1,5 @@
 use refs::{ValuePtr, Root, ValueHandle};
-use interpreter::{Interpreter, CtrError, State};
+use interpreter::{Interpreter, CtrError};
 use primops::ExprFn;
 
 use std::iter;
@@ -310,18 +310,20 @@ impl ListPair {
         let fields = [head, tail];
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
+}
 
-    pub fn first(&self) -> Root<Any> {
+impl<'a> ValueHandle<'a, ListPair> {
+    pub fn first(self) -> Root<Any> {
         unsafe { Root::new(self.head) }
     }
 
-    pub fn rest(&self) -> Root<Any> {
+    pub fn rest(self) -> Root<Any> {
         unsafe { Root::new(self.tail) }
     }
 
-    pub fn iter<'a>(&self, itp: &'a Interpreter) -> ListIter<'a> {
+    pub fn iter(self, itp: &Interpreter) -> ListIter {
         ListIter {
-            list: unsafe { Root::new(mem::transmute::<&ListPair, *mut Any>(self)) },
+            list: self.as_any_ref().root(),
             itp: itp
         }
     }
@@ -413,16 +415,16 @@ impl UnsizedCtrValueMut for ArrayMut {
     }
 }
 
-impl ArrayMut {
-    pub fn len(&self) -> usize {
+impl<'a> ValueHandle<'a, ArrayMut> {
+    pub fn len(self) -> usize {
         self.flex_len()
     }
 
-    pub fn get(&self, i: usize) -> Option<Root<Any>> {
+    pub fn get(self, i: usize) -> Option<Root<Any>> {
         self.flex_get(i)
     }
 
-    pub fn set(&self, i: usize, v: Root<Any>) -> Result<(), CtrError> {
+    pub fn set(self, i: usize, v: Root<Any>) -> Result<(), CtrError> {
         self.flex_set(i, v)
     }
 }
@@ -486,8 +488,18 @@ impl Expr {
         fields.extend(args);
         itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
+}
 
-    pub fn op(&self, itp: &Interpreter) -> ExprFn {
+impl<'a> ValueHandle<'a, Expr> {
+    pub fn new<I>(itp: &mut Interpreter, op: ExprFn, args: I) -> Root<Expr>
+        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        let typ = itp.expr_t.clone();
+        let mut fields = vec![VoidPtr::new(itp, op as *mut ()).as_any_ref()];
+        fields.extend(args);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
+    }
+
+    pub fn op(self, itp: &Interpreter) -> ExprFn {
         let op = unsafe { Root::<Any>::new(self.op) };
         if let Some(f) = op.borrow().downcast::<VoidPtr>(itp) {
             unsafe { mem::transmute(f.unbox()) }
@@ -496,15 +508,15 @@ impl Expr {
         }
     }
 
-    pub fn argc(&self) -> usize {
+    pub fn argc(self) -> usize {
         self.flex_len()
     }
 
-    pub fn args(&self, i: usize) -> Option<Root<Any>> {
+    pub fn args(self, i: usize) -> Option<Root<Any>> {
         self.flex_get(i)
     }
 
-    pub fn args_iter(&self) -> IndexedFields<Expr> {
+    pub fn args_iter(self) -> IndexedFields<Expr> {
         self.flex_iter()
     }
 }
@@ -544,8 +556,10 @@ impl Do {
         let typ = itp.do_t.clone();
         itp.alloc_rec(typ.borrow(), stmts.into_iter().cloned())
     }
+}
 
-    pub fn stmts(&self, i: usize) -> Option<Root<Any>> {
+impl<'a> ValueHandle<'a, Do> {
+    pub fn stmts(self, i: usize) -> Option<Root<Any>> {
         self.flex_get(i)
     }
 }
@@ -570,8 +584,10 @@ impl Const {
         let fields = [v];
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
+}
 
-    pub fn val(&self) -> Root<Any> {
+impl<'a> ValueHandle<'a, Const> {
+    pub fn val(self) -> Root<Any> {
         unsafe { Root::new(self.val) }
     }
 }
@@ -600,30 +616,28 @@ impl DoCont {
         let fields = [parent, do_ast.as_any_ref(), i.as_any_ref()];
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
+}
 
-    pub fn parent(&self) -> Root<Any> {
+impl<'a> ValueHandle<'a, DoCont> {
+    pub fn parent(self) -> Root<Any> {
         unsafe { Root::new(self.parent) }
     }
 
-    pub fn do_ast(&self, itp: &mut Interpreter) -> Option<Root<Do>> {
-        unsafe {
-            let res = Root::<Do>::new(self.do_ast);
-            if res.borrow().instanceof(Do::typ(itp)) {
-                Some(res)
-            } else {
-                None
-            }
+    pub fn do_ast(self, itp: &mut Interpreter) -> Option<Root<Do>> {
+        let res = unsafe { Root::<Do>::new(self.do_ast) };
+        if res.borrow().instanceof(Do::typ(itp)) {
+            Some(res)
+        } else {
+            None
         }
     }
 
-    pub fn index(&self, itp: &mut Interpreter) -> Option<usize> {
-        unsafe {
-            let res = Root::<UInt>::new(self.index);
-            if res.borrow().instanceof(UInt::typ(itp)) {
-                Some(res.unbox())
-            } else {
-                None
-            }
+    pub fn index(self, itp: &mut Interpreter) -> Option<usize> {
+        let res = unsafe { Root::<UInt>::new(self.index) };
+        if res.borrow().instanceof(UInt::typ(itp)) {
+            Some(res.unbox())
+        } else {
+            None
         }
     }
 }
@@ -685,42 +699,40 @@ impl ExprCont {
         fields.extend(args);
         itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
+}
 
-    pub fn parent(&self) -> Root<Any> {
+impl<'a> ValueHandle<'a, ExprCont> {
+    pub fn parent(self) -> Root<Any> {
         unsafe { Root::new(self.parent) }
     }
 
-    pub fn ast(&self, itp: &mut Interpreter) -> Option<Root<Expr>> {
-        unsafe {
-            let res = Root::<Expr>::new(self.expr_ast);
-            if res.borrow().instanceof(Expr::typ(itp)) {
-                Some(res)
-            } else {
-                None
-            }
+    pub fn ast(self, itp: &mut Interpreter) -> Option<Root<Expr>> {
+        let res = unsafe { Root::<Expr>::new(self.expr_ast) };
+        if res.borrow().instanceof(Expr::typ(itp)) {
+            Some(res)
+        } else {
+            None
         }
     }
 
-    pub fn index(&self, itp: &mut Interpreter) -> Option<usize> {
-        unsafe {
-            let res = Root::<UInt>::new(self.index);
-            if res.borrow().instanceof(UInt::typ(itp)) {
-                Some(res.unbox())
-            } else {
-                None
-            }
+    pub fn index(self, itp: &mut Interpreter) -> Option<usize> {
+        let res = unsafe { Root::<UInt>::new(self.index) };
+        if res.borrow().instanceof(UInt::typ(itp)) {
+            Some(res.unbox())
+        } else {
+            None
         }
     }
 
-    pub fn argc(&self) -> usize {
+    pub fn argc(self) -> usize {
         self.flex_len()
     }
 
-    pub fn set_arg(&self, i: usize, arg: Root<Any>) -> Result<(), CtrError> {
+    pub fn set_arg(self, i: usize, arg: Root<Any>) -> Result<(), CtrError> {
         self.flex_set(i, arg)
     }
 
-    pub fn args_iter(&self) -> IndexedFields<ExprCont> {
+    pub fn args_iter(self) -> IndexedFields<ExprCont> {
         self.flex_iter()
     }
 }

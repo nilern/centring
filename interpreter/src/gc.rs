@@ -42,6 +42,8 @@ impl Collector {
     /// Can we allocate a record with `field_count` fields or do we need to run
     /// a garbage collection first?
     pub fn rec_poll(&self, field_count: usize) -> bool {
+        println!("capacity: {}", self.fromspace.capacity());
+        println!("reserved: {}", self.fromspace.len());
         self.fromspace.capacity() - self.fromspace.len() >=
         size_of::<Any>() / size_of::<ValuePtr>() + field_count
     }
@@ -146,10 +148,10 @@ impl Collector {
     /// this. Otherwise you will get segfaults or at the very least pointers to
     /// garbage data.
     pub unsafe fn collect(&mut self) {
-        let mut scan: *mut usize = self.tospace.as_mut_ptr() as *mut usize;
-        let mut free: *mut usize = scan.offset(self.tospace.len() as isize);
-        while scan < (self.tospace.as_mut_ptr() as *mut usize).offset(self.tospace.len() as isize) {
-            let len = (*(scan as *mut Any)).alloc_len();
+        let mut scan = self.tospace.as_mut_ptr() as *mut ValuePtr;
+        let mut free = scan.offset(self.tospace.len() as isize);
+        while scan < free {
+            let len = (*(scan as ValuePtr)).alloc_len();
             scan = scan.offset(1);
             *scan = transmute(self.mark(*scan as ValuePtr));
             scan = scan.offset(1);
@@ -162,11 +164,20 @@ impl Collector {
             free = free.offset(2 + len as isize);
         }
         self.sweep();
+
         swap(&mut self.fromspace, &mut self.tospace);
+        self.free_rec = transmute(free);
         self.tospace.clear();
-        if self.fromspace.len() > 8 * self.fromspace.capacity() / 10 {
-            self.fromspace.reserve(size_of::<usize>());
-            self.tospace.reserve(size_of::<usize>());
+
+        let flen = self.fromspace.len();
+        let fcap = self.fromspace.capacity();
+        let mut tcap = self.tospace.capacity();
+        if tcap < fcap {
+            self.tospace.reserve(fcap - tcap);
+        }
+        tcap = self.tospace.capacity();
+        if flen > 8 * fcap / 10 {
+            self.tospace.reserve(tcap);
         }
         self.blob_bytes_allocated = 0;
     }
