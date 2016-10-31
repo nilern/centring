@@ -70,6 +70,38 @@ macro_rules! impl_typ {
     }
 }
 
+macro_rules! impl_unboxed_flex_get {
+    {} => {
+        fn flex_get(&self, i: usize) -> Option<Self::Item> {
+            unsafe {
+                let ptr: *mut Self = mem::transmute(self);
+                if i < self.flex_len() {
+                    let fields = ptr.offset(1) as *mut Self::Storage;
+                    Some(*fields.offset(i as isize))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
+macro_rules! impl_boxed_flex_get {
+    {} => {
+        fn flex_get(&self, i: usize) -> Option<Root<Any>> {
+            unsafe {
+                let ptr: *mut Self = mem::transmute(self);
+                if i < self.flex_len() {
+                    let fields = ptr.offset(1) as *mut Self::Storage;
+                    Some(Root::new(*fields.offset(i as isize)))
+                } else {
+                    None
+                }
+            }
+        }
+    }
+}
+
 // IndexedFields **********************************************************************************
 
 pub struct IndexedFields<T: UnsizedCtrValue> {
@@ -233,17 +265,7 @@ impl UnsizedCtrValue for Symbol {
     type Item = u8;
     type Storage = u8;
 
-    fn flex_get(&self, i: usize) -> Option<Self::Item> {
-        unsafe {
-            let ptr: *mut Self = mem::transmute(self);
-            if i < self.flex_len() {
-                let fields = ptr.offset(1) as *mut Self::Storage;
-                Some(*fields.offset(i as isize))
-            } else {
-                None
-            }
-        }
-    }
+    impl_unboxed_flex_get! { }
 }
 
 impl Symbol {
@@ -387,17 +409,7 @@ impl UnsizedCtrValue for ArrayMut {
     type Item = Root<Any>;
     type Storage = ValuePtr;
 
-    fn flex_get(&self, i: usize) -> Option<Root<Any>> {
-        unsafe {
-            let ptr: *mut Self = mem::transmute(self);
-            if i < self.flex_len() {
-                let fields = ptr.offset(1) as *mut Self::Storage;
-                Some(Root::new(*fields.offset(i as isize)))
-            } else {
-                None
-            }
-        }
-    }
+    impl_boxed_flex_get! { }
 }
 
 impl UnsizedCtrValueMut for ArrayMut {
@@ -467,17 +479,7 @@ impl UnsizedCtrValue for Expr {
     type Item = Root<Any>;
     type Storage = ValuePtr;
 
-    fn flex_get(&self, i: usize) -> Option<Root<Any>> {
-        unsafe {
-            let ptr: *mut Self = mem::transmute(self);
-            if i < self.flex_len() {
-                let fields = ptr.offset(1) as *mut Self::Storage;
-                Some(Root::new(*fields.offset(i as isize)))
-            } else {
-                None
-            }
-        }
-    }
+    impl_boxed_flex_get! { }
 }
 
 impl Expr {
@@ -538,17 +540,7 @@ impl UnsizedCtrValue for Do {
     type Item = Root<Any>;
     type Storage = ValuePtr;
 
-    fn flex_get(&self, i: usize) -> Option<Root<Any>> {
-        unsafe {
-            let ptr: *mut Self = mem::transmute(self);
-            if i < self.flex_len() {
-                let fields = ptr.offset(1) as *mut Self::Storage;
-                Some(Root::new(*fields.offset(i as isize)))
-            } else {
-                None
-            }
-        }
-    }
+    impl_boxed_flex_get! { }
 }
 
 impl Do {
@@ -662,17 +654,7 @@ impl UnsizedCtrValue for ExprCont {
     type Item = Root<Any>;
     type Storage = ValuePtr;
 
-    fn flex_get(&self, i: usize) -> Option<Root<Any>> {
-        unsafe {
-            let ptr: *mut Self = mem::transmute(self);
-            if i < self.flex_len() {
-                let fields = ptr.offset(1) as *mut Self::Storage;
-                Some(Root::new(*fields.offset(i as isize)))
-            } else {
-                None
-            }
-        }
-    }
+    impl_boxed_flex_get! { }
 }
 
 impl UnsizedCtrValueMut for ExprCont {
