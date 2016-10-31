@@ -42,8 +42,6 @@ impl Collector {
     /// Can we allocate a record with `field_count` fields or do we need to run
     /// a garbage collection first?
     pub fn rec_poll(&self, field_count: usize) -> bool {
-        println!("capacity: {}", self.fromspace.capacity());
-        println!("reserved: {}", self.fromspace.len());
         self.fromspace.capacity() - self.fromspace.len() >=
         size_of::<Any>() / size_of::<ValuePtr>() + field_count
     }
@@ -148,6 +146,13 @@ impl Collector {
     /// this. Otherwise you will get segfaults or at the very least pointers to
     /// garbage data.
     pub unsafe fn collect(&mut self) {
+        // Ensure tospace is at least as big as fromspace:
+        let fcap = self.fromspace.capacity();
+        if self.tospace.capacity() < fcap {
+            self.tospace.reserve_exact(fcap);
+        }
+
+        // Copy & compact:
         let mut scan = self.tospace.as_mut_ptr() as *mut ValuePtr;
         let mut free = scan.offset(self.tospace.len() as isize);
         while scan < free {
@@ -161,24 +166,21 @@ impl Collector {
                 scan = scan.offset(1);
             }
 
-            free = free.offset(2 + len as isize);
+            free = (self.tospace.as_mut_ptr() as *mut ValuePtr).offset(self.tospace.len() as isize);
         }
+        // Sweep blobspace:
         self.sweep();
 
-        swap(&mut self.fromspace, &mut self.tospace);
-        self.free_rec = transmute(free);
-        self.tospace.clear();
+        swap(&mut self.fromspace, &mut self.tospace); // fromspace <-> tospace
+        self.free_rec = free as ValuePtr; // continue allocating where the copying left off
+        self.tospace.clear(); // don't need the tospace contents anymore so empty it
 
-        let flen = self.fromspace.len();
-        let fcap = self.fromspace.capacity();
-        let mut tcap = self.tospace.capacity();
-        if tcap < fcap {
-            self.tospace.reserve(fcap - tcap);
+        // Grow tospace if fromspace is at >80% despite having just collected:
+        if self.fromspace.len() as f64 > 0.8*self.fromspace.capacity() as f64 {
+            let tcap = self.tospace.capacity();
+            self.tospace.reserve(2*tcap);
         }
-        tcap = self.tospace.capacity();
-        if flen > 8 * fcap / 10 {
-            self.tospace.reserve(tcap);
-        }
+        // Haven't allocated any blobs after this collection:
         self.blob_bytes_allocated = 0;
     }
 

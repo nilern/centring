@@ -151,10 +151,7 @@ impl Interpreter {
 
     pub fn alloc_rec<'a, T, I>(&mut self, typ: ValueHandle<Type>, fields: I)
         -> Root<T> where T: CtrValue, I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        println!("allocating record");
-        println!("got space? {}", self.gc.rec_poll(fields.len()));
-        if !self.gc.rec_poll(fields.len()) {
-            println!("collecting");
+        while !self.gc.rec_poll(fields.len()) {
             self.mark_roots();
             unsafe { self.gc.collect(); }
         }
