@@ -1,3 +1,11 @@
+//! Since the GC can move values, it is unsafe to hold on to &-references or  raw pointers over
+//! allocations. That is why we have `Root<T>` and `ValueHandle<'a, T>`.
+//!
+//! At the moment the type system does not enforce this property, but as a corollary any function
+//! or method that allocates must take `ValueHandle`:s or `Root`:s as arguments
+//! (including `self`!). Since we need a `&mut Interpreter` for allocation, functions and methods
+//! that take one of those are the ones that potentially must take `ValueHandle`:s or `Root`:s.
+
 use interpreter::Interpreter;
 use gc::Collector;
 use value::{CtrValue, ConcreteType, Any, Type};
@@ -19,7 +27,7 @@ pub type ValuePtr = *mut Any;
 /// these after collections.
 pub struct Root<T: CtrValue>(Rc<RefCell<ValuePtr>>, PhantomData<T>);
 
-/// Like `Root`, but weak (as in `std::(a)rc::Weak`). Used by the `Interpeter`
+/// Like `Root`, but weak (as in `std::(a)rc::Weak`). Used by the `Interpreter`
 /// to track live roots on the Rust stack.
 pub struct WeakRoot(Weak<RefCell<ValuePtr>>);
 
