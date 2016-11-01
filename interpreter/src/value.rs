@@ -597,7 +597,7 @@ impl DoCont {
         unsafe { Root::new(self.parent) }
     }
 
-    pub fn do_ast(&self, itp: &mut Interpreter) -> Option<Root<Do>> {
+    pub fn do_ast(&self, itp: &Interpreter) -> Option<Root<Do>> {
         let res = unsafe { Root::<Do>::new(self.do_ast) };
         if res.borrow().instanceof(Do::typ(itp)) {
             Some(res)
@@ -606,7 +606,7 @@ impl DoCont {
         }
     }
 
-    pub fn index(&self, itp: &mut Interpreter) -> Option<usize> {
+    pub fn index(&self, itp: &Interpreter) -> Option<usize> {
         let res = unsafe { Root::<UInt>::new(self.index) };
         if res.borrow().instanceof(UInt::typ(itp)) {
             Some(res.unbox())
@@ -668,7 +668,7 @@ impl ExprCont {
         unsafe { Root::new(self.parent) }
     }
 
-    pub fn ast(&self, itp: &mut Interpreter) -> Option<Root<Expr>> {
+    pub fn ast(&self, itp: &Interpreter) -> Option<Root<Expr>> {
         let res = unsafe { Root::<Expr>::new(self.expr_ast) };
         if res.borrow().instanceof(Expr::typ(itp)) {
             Some(res)
@@ -677,7 +677,7 @@ impl ExprCont {
         }
     }
 
-    pub fn index(&self, itp: &mut Interpreter) -> Option<usize> {
+    pub fn index(&self, itp: &Interpreter) -> Option<usize> {
         let res = unsafe { Root::<UInt>::new(self.index) };
         if res.borrow().instanceof(UInt::typ(itp)) {
             Some(res.unbox())
