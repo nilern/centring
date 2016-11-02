@@ -1,6 +1,6 @@
 use gc::Collector;
 use value::{CtrValue, ConcreteType,
-            Any, Bits, ListEmpty, Type,
+            Any, Bits, ListEmpty, Type, Symbol,
             Expr, Do, Const, ExprCont, DoCont, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
@@ -63,7 +63,8 @@ pub enum CtrError {
     UnknownIntr(String),
     ImproperList(Root<Any>),
     Index(usize, usize),
-    Type(Root<Type>)
+    Type(Root<Type>),
+    SetUnbound(Root<Symbol>)
 }
 
 pub type CtrResult<T> = Result<Root<T>, CtrError>;

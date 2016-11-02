@@ -1,6 +1,7 @@
 use refs::{ValuePtr, Root, ValueHandle};
 use interpreter::{Interpreter, CtrError};
 use primops::ExprFn;
+use ops::PtrEq;
 
 use std::iter;
 use std::slice;
@@ -290,7 +291,7 @@ impl VoidPtr {
 pub struct Symbol {
     header: usize,
     typ: ValuePtr,
-    hash: usize
+    hash: u64
 }
 
 impl CtrValue for Symbol {}
@@ -311,16 +312,20 @@ impl Symbol {
         // Precompute hash:
         let mut hasher = DefaultHasher::new();
         chars.hash(&mut hasher);
-        let hash = hasher.finish() as usize;
+        let hash = hasher.finish();
 
         // (Awkwardly) join the bytes of the hash and the chars:
         let mut bytes = Vec::new();
-        let hash_bytes = unsafe { slice::from_raw_parts(mem::transmute::<&usize, *mut u8>(&hash),
-                                                        mem::size_of::<usize>()) };
+        let hash_bytes = unsafe { slice::from_raw_parts(mem::transmute::<&u64, *mut u8>(&hash),
+                                                        mem::size_of::<u64>()) };
         bytes.extend_from_slice(hash_bytes);
         bytes.extend_from_slice(chars.as_bytes());
 
         itp.alloc_bytes(typ.borrow(), &bytes)
+    }
+
+    pub fn hash(&self) -> u64 {
+        self.hash
     }
 
     pub fn to_string(&self) -> string::String {
@@ -475,6 +480,10 @@ impl ArrayMut {
     pub fn set(&self, i: usize, v: Root<Any>) -> Result<(), CtrError> {
         self.flex_set(i, v)
     }
+
+    pub fn iter(&self) -> IndexedFields<ArrayMut> {
+        self.flex_iter()
+    }
 }
 
 // Type *******************************************************************************************
@@ -514,30 +523,129 @@ impl CtrValue for Env { }
 impl_typ! { Env, env_t }
 
 impl Env {
+    /// Create a fresh environment frame, optionally prepending it to a pre-existing frame chain.
     pub fn new(itp: &mut Interpreter, parent: Option<Root<Env>>) -> Root<Env> {
         let typ = itp.env_t.clone();
-        let parent = if let Some(penv) = parent {
-            penv.as_any_ref()
-        } else {
-            Bool::new(itp, false).as_any_ref()
-        };
-        let count = UInt::new(itp, 0).as_any_ref();
-        let elems: Vec<_> = iter::repeat(Bool::new(itp, false).as_any_ref()).take(4).collect();
-        let buckets = ArrayMut::new(itp, elems.into_iter()).as_any_ref();
-        let fields = [parent, count, buckets];
+        let fields = [parent.map(Root::as_any_ref)
+                      .unwrap_or_else(|| Bool::new(itp, false).as_any_ref()),
+                      UInt::new(itp, 0).as_any_ref(),
+                      Env::new_bucket_array(itp, 4).as_any_ref()];
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
+    fn new_bucket_array(itp: &mut Interpreter, len: usize) -> Root<ArrayMut> {
+        let elems: Vec<_> = iter::repeat(Bool::new(itp, false).as_any_ref()).take(len).collect();
+        ArrayMut::new(itp, elems.into_iter())
+    }
+
+    // TODO: these shouldn't be public
     getter!{ parent: Env }
-
     getter!{ count: usize; unbox }
+    getter!{ buckets: ArrayMut }
 
-    getter!{ buckets: EnvBucket }
+    fn set_buckets(&mut self, new_buckets: ValueHandle<ArrayMut>) {
+        self.buckets = new_buckets.ptr()
+    }
+
+    /// Look up the value of a variable by going up the environment frame stack.
+    pub fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> Option<Root<Any>> {
+        self.lookup_bucket(itp, key).map(|b| b.value())
+    }
+
+    /// Set the value of a (pre-existing) variable by going up the environment frame stack.
+    pub fn set(&self, itp: &Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>)
+        -> Result<(), CtrError> {
+        if let Some(mut b) = self.lookup_bucket(itp, key) {
+            Ok(b.set_value(value))
+        } else {
+            Err(CtrError::SetUnbound(key.root()))
+        }
+    }
+
+    fn lookup_bucket(&self, itp: &Interpreter, key: ValueHandle<Symbol>)
+                     -> Option<Root<EnvBucket>> {
+        let mut frame = Some(self);
+        while let Some(env) = frame {
+            let buckets = self.buckets(itp).unwrap();
+            let index = key.hash() as usize % buckets.len();
+            if let Some(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
+                if let Some(bucket) = start_bucket.lookup(itp, key) {
+                    return Some(bucket);
+                }
+            }
+            frame = env.parent(itp).map(|env| unsafe { mem::transmute(env.ptr()) });
+        }
+        None
+    }
+
+    fn load_factor(&self, itp: &Interpreter) -> f64 {
+        self.count(itp).unwrap() as f64 / self.buckets(itp).unwrap().len() as f64
+    }
+}
+
+impl<'a> ValueHandle<'a, Env> {
+    /// Initialize (or overwrite) a variable in the topmost environment frame.
+    pub fn def(self, itp: &mut Interpreter,
+               key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
+        // first we need to see whether the variable already exists in this frame:
+        let buckets = self.buckets(itp).unwrap();
+        let index = key.hash() as usize % buckets.len();
+        if let Some(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
+            // there was a bucket chain at the index
+            if let Some(mut bucket) = start_bucket.lookup(itp, key) {
+                // the chain has a bucket with the key; replace the value
+                return bucket.set_value(value);
+            }
+        }
+        // didn't exist, so we create it here:
+        self.assoc(itp, key, value);
+    }
+
+    fn assoc(self, itp: &mut Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
+        if self.load_factor(itp) >= 0.75 {
+            self.rehash(itp);
+        }
+        self._assoc(itp, key, value);
+    }
+
+    fn _assoc(self, itp: &mut Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
+        let buckets = self.buckets(itp).unwrap();
+        let index = key.hash() as usize % buckets.len();
+        let old_buckets = buckets.get(index).unwrap().downcast::<EnvBucket>(itp);
+        let new_bucket = EnvBucket::new(itp, old_buckets, key.root(), value.root());
+        buckets.set(index, new_bucket.as_any_ref()).unwrap();
+        self.inc_count(itp);
+    }
+
+    fn rehash(mut self, itp: &mut Interpreter) {
+        let old_buckets = self.buckets(itp).unwrap();
+        self.set_buckets(Env::new_bucket_array(itp, 2 * old_buckets.len()).borrow());
+        self.set_count(itp, 0);
+        for bucket_list in old_buckets.iter() {
+            let mut bucket = bucket_list.downcast::<EnvBucket>(itp);
+            while let Some(b) = bucket {
+                let k = b.key(itp).unwrap();
+                let v = b.value();
+                self.assoc(itp, k.borrow(), v.borrow());
+                bucket = b.next(itp).and_then(|bucket| bucket.downcast::<EnvBucket>(itp));
+            }
+        }
+    }
+
+    fn set_count(mut self, itp: &mut Interpreter, count: usize) {
+        let count = UInt::new(itp, count);
+        self.count = count.ptr();
+    }
+
+    fn inc_count(self, itp: &mut Interpreter) {
+        let old_count = self.count(itp).unwrap();
+        self.set_count(itp, old_count + 1);
+    }
 }
 
 /// A hash bucket for Env.
 #[repr(C)]
-pub struct EnvBucket {
+struct EnvBucket {
     header: usize,
     typ: ValuePtr,
     next: ValuePtr,
@@ -550,14 +658,11 @@ impl CtrValue for EnvBucket { }
 impl_typ! { EnvBucket, env_bucket_t }
 
 impl EnvBucket {
-    pub fn new(itp: &mut Interpreter, next: Option<Root<EnvBucket>>, key: Root<Symbol>,
+    fn new(itp: &mut Interpreter, next: Option<Root<EnvBucket>>, key: Root<Symbol>,
                value: Root<Any>) -> Root<EnvBucket> {
         let typ = itp.env_bucket_t.clone();
-        let next = if let Some(nb) = next {
-            nb.as_any_ref()
-        } else {
-            Bool::new(itp, false).as_any_ref()
-        };
+        let next = next.map(Root::as_any_ref)
+                       .unwrap_or_else(|| Bool::new(itp, false).as_any_ref());
         let fields = [next, key.as_any_ref(), value];
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
@@ -567,6 +672,21 @@ impl EnvBucket {
     getter!{ key: Symbol }
 
     getter!{ value: Any }
+
+    fn set_value(&mut self, value: ValueHandle<Any>) {
+        self.value = value.ptr()
+    }
+
+    fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> Option<Root<EnvBucket>> {
+        let mut bucket = Some(self);
+        while let Some(b) = bucket {
+            if b.key(itp).unwrap().borrow().identical(&key) {
+                return Some(unsafe { Root::new(mem::transmute(b)) });
+            }
+            bucket = b.next(itp).map(|b| unsafe{ mem::transmute(b.ptr()) });
+        }
+        None
+    }
 }
 
 // Expr *******************************************************************************************
