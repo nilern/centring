@@ -33,9 +33,12 @@ pub struct Interpreter {
     pub array_mut_t: Root<Type>,
     pub int_t: Root<Type>,
     pub uint_t: Root<Type>,
+    pub bool_t: Root<Type>,
     pub voidptr_t: Root<Type>,
     pub symbol_t: Root<Type>,
     pub string_t: Root<Type>,
+    pub env_t: Root<Type>,
+    pub env_bucket_t: Root<Type>,
     pub expr_t: Root<Type>,
     pub do_t: Root<Type>,
     pub const_t: Root<Type>,
@@ -77,9 +80,12 @@ impl Interpreter {
             nil_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             uint_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            bool_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             voidptr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             symbol_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             string_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            env_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            env_bucket_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             expr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             do_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
@@ -96,9 +102,12 @@ impl Interpreter {
         itp.nil_t = Type::new(&mut itp);
         itp.int_t = Type::new(&mut itp);
         itp.uint_t = Type::new(&mut itp);
+        itp.bool_t = Type::new(&mut itp);
         itp.voidptr_t = Type::new(&mut itp);
         itp.symbol_t = Type::new(&mut itp);
         itp.string_t = Type::new(&mut itp);
+        itp.env_t = Type::new(&mut itp);
+        itp.env_bucket_t = Type::new(&mut itp);
         itp.expr_t = Type::new(&mut itp);
         itp.do_t = Type::new(&mut itp);
         itp.const_t = Type::new(&mut itp);

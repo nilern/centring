@@ -9,7 +9,7 @@ use std::mem;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
 
-// Traits *******************************************************************
+// Traits *****************************************************************************************
 
 /// A marker trait for Values (structs that are extensions of `Any`).
 pub trait CtrValue: Sized {
@@ -60,6 +60,8 @@ pub trait ConcreteType: CtrValue {
     fn typ(itp: &Interpreter) -> ValueHandle<Type>;
 }
 
+// Macros *****************************************************************************************
+
 macro_rules! impl_typ {
     { $rs_typ: ident, $itp_field: ident } => {
         impl ConcreteType for $rs_typ {
@@ -68,6 +70,28 @@ macro_rules! impl_typ {
             }
         }
     }
+}
+
+macro_rules! getter {
+    { $field:ident : Any } => {
+        pub fn $field(&self) -> Root<Any> {
+            unsafe { Root::new(self.$field) }
+        }
+    };
+
+    { $field:ident : $t:ty } => {
+        pub fn $field(&self, itp: &Interpreter) -> Option<Root<$t>> {
+            let res = unsafe { Root::<Any>::new(self.$field) };
+            res.downcast::<$t>(itp)
+        }
+    };
+
+    { $field:ident : $t:ty ; unbox } => {
+        pub fn $field(&self, itp: &Interpreter) -> Option<$t> {
+            let res = unsafe { Root::<Any>::new(self.$field) };
+            res.downcast::<Bits<$t>>(itp).map(|res| res.unbox())
+        }
+    };
 }
 
 macro_rules! impl_unboxed_flex_get {
@@ -130,7 +154,7 @@ impl<T: UnsizedCtrValue> ExactSizeIterator for IndexedFields<T> {
     }
 }
 
-// Any **********************************************************************
+// Any ********************************************************************************************
 
 /// The layout of every Centring Value on the GC heap starts with the fields
 /// of this struct.
@@ -191,7 +215,7 @@ impl Any {
 
 impl CtrValue for Any {}
 
-// Bits *********************************************************************
+// Bits *******************************************************************************************
 
 /// Wraps some data that has no inner structure, for example `Int64` wraps
 /// an i64.
@@ -236,6 +260,18 @@ impl UInt {
     }
 }
 
+/// An unsigned 'fixnum'.
+pub type Bool = Bits<bool>;
+
+impl_typ! { Bool, bool_t }
+
+impl Bool {
+    pub fn new(itp: &mut Interpreter, v: bool) -> Root<Bool> {
+        let typ = itp.bool_t.clone();
+        itp.alloc_bits(typ.borrow(), v)
+    }
+}
+
 /// A void pointer.
 pub type VoidPtr = Bits<*mut ()>;
 
@@ -248,7 +284,7 @@ impl VoidPtr {
     }
 }
 
-// Symbol *******************************************************************
+// Symbol *****************************************************************************************
 
 #[repr(C)]
 pub struct Symbol {
@@ -292,7 +328,7 @@ impl Symbol {
     }
 }
 
-// String **********************************************************************
+// String *****************************************************************************************
 
 #[repr(C)]
 pub struct String {
@@ -311,15 +347,15 @@ impl String {
     }
 }
 
-// Pair *********************************************************************
+// Pair *******************************************************************************************
 
 /// The good ol' cons cell.
 #[repr(C)]
 pub struct ListPair {
     header: usize,
     typ: ValuePtr,
-    head: ValuePtr,
-    tail: ValuePtr,
+    first: ValuePtr,
+    rest: ValuePtr,
 }
 
 impl CtrValue for ListPair {}
@@ -333,13 +369,9 @@ impl ListPair {
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
-    pub fn first(&self) -> Root<Any> {
-        unsafe { Root::new(self.head) }
-    }
+    getter!{ first: Any }
 
-    pub fn rest(&self) -> Root<Any> {
-        unsafe { Root::new(self.tail) }
-    }
+    getter!{ rest: Any }
 
     pub fn iter<'a>(&self, itp: &'a Interpreter) -> ListIter<'a> {
         ListIter {
@@ -370,7 +402,7 @@ impl<'a> Iterator for ListIter<'a> {
     }
 }
 
-// Nil **********************************************************************
+// Nil ********************************************************************************************
 
 /// Plain old `'()`
 #[repr(C)]
@@ -390,7 +422,7 @@ impl ListEmpty {
     }
 }
 
-// ArrayMut ***********************************************************************
+// ArrayMut ***************************************************************************************
 
 /// A mutable array
 #[repr(C)]
@@ -426,6 +458,12 @@ impl UnsizedCtrValueMut for ArrayMut {
 }
 
 impl ArrayMut {
+    pub fn new<I>(itp: &mut Interpreter, elems: I) -> Root<ArrayMut>
+        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        let typ = itp.array_mut_t.clone();
+        itp.alloc_rec(typ.borrow(), elems)
+    }
+
     pub fn len(&self) -> usize {
         self.flex_len()
     }
@@ -439,13 +477,13 @@ impl ArrayMut {
     }
 }
 
-// Type *********************************************************************
+// Type *******************************************************************************************
 
 /// A type.
 #[repr(C)]
 pub struct Type {
     header: usize,
-    typ: ValuePtr,
+    typ: ValuePtr
 }
 
 impl CtrValue for Type {}
@@ -459,7 +497,79 @@ impl Type {
     }
 }
 
-// Expr *******************************************************************
+// Env ********************************************************************************************
+
+/// An environment frame.
+#[repr(C)]
+pub struct Env {
+    header: usize,
+    typ: ValuePtr,
+    parent: ValuePtr,
+    count: ValuePtr,
+    buckets: ValuePtr
+}
+
+impl CtrValue for Env { }
+
+impl_typ! { Env, env_t }
+
+impl Env {
+    pub fn new(itp: &mut Interpreter, parent: Option<Root<Env>>) -> Root<Env> {
+        let typ = itp.env_t.clone();
+        let parent = if let Some(penv) = parent {
+            penv.as_any_ref()
+        } else {
+            Bool::new(itp, false).as_any_ref()
+        };
+        let count = UInt::new(itp, 0).as_any_ref();
+        let elems: Vec<_> = iter::repeat(Bool::new(itp, false).as_any_ref()).take(4).collect();
+        let buckets = ArrayMut::new(itp, elems.into_iter()).as_any_ref();
+        let fields = [parent, count, buckets];
+        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+    }
+
+    getter!{ parent: Env }
+
+    getter!{ count: usize; unbox }
+
+    getter!{ buckets: EnvBucket }
+}
+
+/// A hash bucket for Env.
+#[repr(C)]
+pub struct EnvBucket {
+    header: usize,
+    typ: ValuePtr,
+    next: ValuePtr,
+    key: ValuePtr,
+    value: ValuePtr
+}
+
+impl CtrValue for EnvBucket { }
+
+impl_typ! { EnvBucket, env_bucket_t }
+
+impl EnvBucket {
+    pub fn new(itp: &mut Interpreter, next: Option<Root<EnvBucket>>, key: Root<Symbol>,
+               value: Root<Any>) -> Root<EnvBucket> {
+        let typ = itp.env_bucket_t.clone();
+        let next = if let Some(nb) = next {
+            nb.as_any_ref()
+        } else {
+            Bool::new(itp, false).as_any_ref()
+        };
+        let fields = [next, key.as_any_ref(), value];
+        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+    }
+
+    getter!{ next: EnvBucket }
+
+    getter!{ key: Symbol }
+
+    getter!{ value: Any }
+}
+
+// Expr *******************************************************************************************
 
 /// An AST node for expressions (such as `(%eq? a b)`).
 #[repr(C)]
@@ -511,7 +621,7 @@ impl Expr {
     }
 }
 
-// Do *********************************************************************
+// Do *********************************************************************************************
 
 /// An AST node for `$do`.
 #[repr(C)]
@@ -542,7 +652,7 @@ impl Do {
     }
 }
 
-// Const *********************************************************************
+// Const ******************************************************************************************
 
 /// An AST node representing a constant.
 #[repr(C)]
@@ -563,12 +673,10 @@ impl Const {
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
-    pub fn val(&self) -> Root<Any> {
-        unsafe { Root::new(self.val) }
-    }
+    getter!{ val: Any }
 }
 
-// DoCont *********************************************************************
+// DoCont *****************************************************************************************
 
 /// The `$do` continuation.
 #[repr(C)]
@@ -593,30 +701,14 @@ impl DoCont {
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
-    pub fn parent(&self) -> Root<Any> {
-        unsafe { Root::new(self.parent) }
-    }
+    getter!{ parent: Any }
 
-    pub fn do_ast(&self, itp: &Interpreter) -> Option<Root<Do>> {
-        let res = unsafe { Root::<Do>::new(self.do_ast) };
-        if res.borrow().instanceof(Do::typ(itp)) {
-            Some(res)
-        } else {
-            None
-        }
-    }
+    getter!{ do_ast: Do }
 
-    pub fn index(&self, itp: &Interpreter) -> Option<usize> {
-        let res = unsafe { Root::<UInt>::new(self.index) };
-        if res.borrow().instanceof(UInt::typ(itp)) {
-            Some(res.unbox())
-        } else {
-            None
-        }
-    }
+    getter!{ index: usize; unbox }
 }
 
-// ExprCont *********************************************************************
+// ExprCont ***************************************************************************************
 
 /// A continuation for `Expr`.
 #[repr(C)]
@@ -624,7 +716,7 @@ pub struct ExprCont {
     header: usize,
     typ: ValuePtr,
     parent: ValuePtr,
-    expr_ast: ValuePtr,
+    ast: ValuePtr,
     index: ValuePtr
 }
 
@@ -664,27 +756,11 @@ impl ExprCont {
         itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
 
-    pub fn parent(&self) -> Root<Any> {
-        unsafe { Root::new(self.parent) }
-    }
+    getter!{ parent: Any }
 
-    pub fn ast(&self, itp: &Interpreter) -> Option<Root<Expr>> {
-        let res = unsafe { Root::<Expr>::new(self.expr_ast) };
-        if res.borrow().instanceof(Expr::typ(itp)) {
-            Some(res)
-        } else {
-            None
-        }
-    }
+    getter!{ ast: Expr }
 
-    pub fn index(&self, itp: &Interpreter) -> Option<usize> {
-        let res = unsafe { Root::<UInt>::new(self.index) };
-        if res.borrow().instanceof(UInt::typ(itp)) {
-            Some(res.unbox())
-        } else {
-            None
-        }
-    }
+    getter!{ index: usize; unbox }
 
     pub fn argc(&self) -> usize {
         self.flex_len()
@@ -699,7 +775,7 @@ impl ExprCont {
     }
 }
 
-// Halt *********************************************************************
+// Halt *******************************************************************************************
 
 /// The halt continuation.
 #[repr(C)]

@@ -65,6 +65,14 @@ impl<T: CtrValue> Root<T> {
     pub fn as_any_ref(self) -> Root<Any> {
         Root(self.0, Default::default())
     }
+
+    pub fn downcast<U: ConcreteType>(self, itp: &Interpreter) -> Option<Root<U>> {
+        if self.borrow().instanceof(U::typ(itp)) {
+            Some(Root(self.0, Default::default()))
+        } else {
+            None
+        }
+    }
 }
 
 impl<T: CtrValue> Clone for Root<T> {
