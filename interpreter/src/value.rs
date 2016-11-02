@@ -626,7 +626,7 @@ impl<'a> ValueHandle<'a, Env> {
             while let Some(b) = bucket {
                 let k = b.key(itp).unwrap();
                 let v = b.value();
-                self.assoc(itp, k.borrow(), v.borrow());
+                self._assoc(itp, k.borrow(), v.borrow());
                 bucket = b.next(itp).and_then(|bucket| bucket.downcast::<EnvBucket>(itp));
             }
         }
