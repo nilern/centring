@@ -73,6 +73,21 @@ macro_rules! impl_typ {
     }
 }
 
+macro_rules! ctr_struct {
+    { struct $name:ident = $itp_field:ident { $($field_name:ident : $field_type:ty),* } } => {
+        #[repr(C)]
+        pub struct $name {
+            header: usize,
+            typ: ValuePtr,
+            $($field_name: ValuePtr),*
+        }
+
+        impl CtrValue for $name {}
+
+        impl_typ! { $name, $itp_field }
+    }
+}
+
 macro_rules! getter {
     { $field:ident : Any } => {
         pub fn $field(&self) -> Root<Any> {
@@ -335,15 +350,9 @@ impl Symbol {
 
 // String *****************************************************************************************
 
-#[repr(C)]
-pub struct String {
-    header: usize,
-    typ: ValuePtr
+ctr_struct!{
+    struct String = string_t { }
 }
-
-impl CtrValue for String {}
-
-impl_typ! { String, string_t }
 
 impl String {
     fn new(itp: &mut Interpreter, chars: &str) -> Root<String> {
@@ -355,17 +364,12 @@ impl String {
 // Pair *******************************************************************************************
 
 /// The good ol' cons cell.
-#[repr(C)]
-pub struct ListPair {
-    header: usize,
-    typ: ValuePtr,
-    first: ValuePtr,
-    rest: ValuePtr,
+ctr_struct!{
+    struct ListPair = pair_t {
+        first: Any,
+        rest: Any
+    }
 }
-
-impl CtrValue for ListPair {}
-
-impl_typ! { ListPair, pair_t }
 
 impl ListPair {
     pub fn new(itp: &mut Interpreter, head: Root<Any>, tail: Root<Any>) -> Root<ListPair> {
@@ -410,15 +414,9 @@ impl<'a> Iterator for ListIter<'a> {
 // Nil ********************************************************************************************
 
 /// Plain old `'()`
-#[repr(C)]
-pub struct ListEmpty {
-    header: usize,
-    typ: ValuePtr,
+ctr_struct!{
+    struct ListEmpty = nil_t { }
 }
-
-impl CtrValue for ListEmpty {}
-
-impl_typ! { ListEmpty, nil_t }
 
 impl ListEmpty {
     pub fn new(itp: &mut Interpreter) -> Root<ListEmpty> {
@@ -430,15 +428,9 @@ impl ListEmpty {
 // ArrayMut ***************************************************************************************
 
 /// A mutable array
-#[repr(C)]
-pub struct ArrayMut {
-    header: usize,
-    typ: ValuePtr,
+ctr_struct!{
+    struct ArrayMut = array_mut_t { }
 }
-
-impl CtrValue for ArrayMut {}
-
-impl_typ! { ArrayMut, array_mut_t }
 
 impl UnsizedCtrValue for ArrayMut {
     type Item = Root<Any>;
@@ -489,15 +481,9 @@ impl ArrayMut {
 // Type *******************************************************************************************
 
 /// A type.
-#[repr(C)]
-pub struct Type {
-    header: usize,
-    typ: ValuePtr
+ctr_struct!{
+    struct Type = type_t { }
 }
-
-impl CtrValue for Type {}
-
-impl_typ! { Type, type_t }
 
 impl Type {
     pub fn new(itp: &mut Interpreter) -> Root<Type> {
@@ -509,18 +495,13 @@ impl Type {
 // Env ********************************************************************************************
 
 /// An environment frame.
-#[repr(C)]
-pub struct Env {
-    header: usize,
-    typ: ValuePtr,
-    parent: ValuePtr,
-    count: ValuePtr,
-    buckets: ValuePtr
+ctr_struct!{
+    struct Env = env_t {
+        parent: Env,
+        count: UInt,
+        buckets: ArrayMut
+    }
 }
-
-impl CtrValue for Env { }
-
-impl_typ! { Env, env_t }
 
 impl Env {
     /// Create a fresh environment frame, optionally prepending it to a pre-existing frame chain.
@@ -644,18 +625,13 @@ impl<'a> ValueHandle<'a, Env> {
 }
 
 /// A hash bucket for Env.
-#[repr(C)]
-struct EnvBucket {
-    header: usize,
-    typ: ValuePtr,
-    next: ValuePtr,
-    key: ValuePtr,
-    value: ValuePtr
+ctr_struct!{
+    struct EnvBucket = env_bucket_t {
+        next: EnvBucket,
+        key: Symbol,
+        value: Any
+    }
 }
-
-impl CtrValue for EnvBucket { }
-
-impl_typ! { EnvBucket, env_bucket_t }
 
 impl EnvBucket {
     fn new(itp: &mut Interpreter, next: Option<Root<EnvBucket>>, key: Root<Symbol>,
@@ -692,16 +668,11 @@ impl EnvBucket {
 // Expr *******************************************************************************************
 
 /// An AST node for expressions (such as `(%eq? a b)`).
-#[repr(C)]
-pub struct Expr {
-    header: usize,
-    typ: ValuePtr,
-    op: ValuePtr
+ctr_struct!{
+    struct Expr = expr_t {
+        op: VoidPtr
+    }
 }
-
-impl CtrValue for Expr {}
-
-impl_typ! { Expr, expr_t }
 
 impl UnsizedCtrValue for Expr {
     type Item = Root<Any>;
@@ -744,15 +715,9 @@ impl Expr {
 // Do *********************************************************************************************
 
 /// An AST node for `$do`.
-#[repr(C)]
-pub struct Do {
-    header: usize,
-    typ: ValuePtr
+ctr_struct!{
+    struct Do = do_t { }
 }
-
-impl CtrValue for Do {}
-
-impl_typ! { Do, do_t }
 
 impl UnsizedCtrValue for Do {
     type Item = Root<Any>;
@@ -775,16 +740,11 @@ impl Do {
 // Const ******************************************************************************************
 
 /// An AST node representing a constant.
-#[repr(C)]
-pub struct Const {
-    header: usize,
-    typ: ValuePtr,
-    val: ValuePtr,
+ctr_struct!{
+    struct Const = const_t {
+        val: Any
+    }
 }
-
-impl CtrValue for Const {}
-
-impl_typ! { Const, const_t }
 
 impl Const {
     pub fn new(itp: &mut Interpreter, v: Root<Any>) -> Root<Const> {
@@ -799,18 +759,13 @@ impl Const {
 // DoCont *****************************************************************************************
 
 /// The `$do` continuation.
-#[repr(C)]
-pub struct DoCont {
-    header: usize,
-    typ: ValuePtr,
-    parent: ValuePtr,
-    do_ast: ValuePtr,
-    index: ValuePtr
+ctr_struct!{
+    struct DoCont = docont_t {
+        parent: Any,
+        do_ast: Do,
+        index: UInt
+    }
 }
-
-impl CtrValue for DoCont {}
-
-impl_typ! { DoCont, docont_t }
 
 impl DoCont {
     pub fn new(itp: &mut Interpreter, parent: Root<Any>, do_ast: Root<Do>, i: usize)
@@ -831,18 +786,13 @@ impl DoCont {
 // ExprCont ***************************************************************************************
 
 /// A continuation for `Expr`.
-#[repr(C)]
-pub struct ExprCont {
-    header: usize,
-    typ: ValuePtr,
-    parent: ValuePtr,
-    ast: ValuePtr,
-    index: ValuePtr
+ctr_struct!{
+    struct ExprCont = exprcont_t {
+        parent: Any,
+        ast: Expr,
+        index: UInt
+    }
 }
-
-impl CtrValue for ExprCont {}
-
-impl_typ! { ExprCont, exprcont_t }
 
 impl UnsizedCtrValue for ExprCont {
     type Item = Root<Any>;
@@ -898,15 +848,9 @@ impl ExprCont {
 // Halt *******************************************************************************************
 
 /// The halt continuation.
-#[repr(C)]
-pub struct Halt {
-    header: usize,
-    typ: ValuePtr,
+ctr_struct!{
+    struct Halt = halt_t { }
 }
-
-impl CtrValue for Halt {}
-
-impl_typ! { Halt, halt_t }
 
 impl Halt {
     pub fn new(itp: &mut Interpreter) -> Root<Halt> {
