@@ -14,7 +14,7 @@ pub struct Collector {
     free_rec: ValuePtr,
 
     blobspace: *mut Blob,
-    blob_bytes_allocated: usize,
+    blob_bytes_allocated: usize
 }
 
 #[repr(C)]

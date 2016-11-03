@@ -321,6 +321,7 @@ impl UnsizedCtrValue for Symbol {
 }
 
 impl Symbol {
+    // TODO: hash-cons
     pub fn new(itp: &mut Interpreter, chars: &str) -> Root<Symbol> {
         let typ = itp.symbol_t.clone();
 
@@ -345,6 +346,12 @@ impl Symbol {
 
     pub fn to_string(&self) -> string::String {
         string::String::from_utf8(self.flex_iter().collect()).unwrap()
+    }
+
+    // TODO: remove this when hash-consing is implemented:
+    pub fn equal(&self, other: ValueHandle<Symbol>) -> bool {
+        // ATM this is just for Env so comparing the hash fields would be redundant
+        self.flex_iter().eq(other.flex_iter())
     }
 }
 
@@ -657,7 +664,8 @@ impl EnvBucket {
     fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> Option<Root<EnvBucket>> {
         let mut bucket = Some(self);
         while let Some(b) = bucket {
-            if b.key(itp).unwrap().borrow().identical(&key) {
+            // OPTIMIZE: when hash consing gets implemented, turn this into .identical()
+            if b.key(itp).unwrap().borrow().equal(key) {
                 return Some(unsafe { Root::new(mem::transmute(b)) });
             }
             bucket = b.next(itp).map(|b| unsafe{ mem::transmute(b.ptr()) });
