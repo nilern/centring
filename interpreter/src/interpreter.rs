@@ -1,6 +1,6 @@
 use gc::Collector;
 use value::{CtrValue, ConcreteType,
-            Any, Bits, Int, Bool, ListEmpty, Type, Symbol, Env,
+            Any, Bits, ListEmpty, Type, Symbol, Env,
             Def, Expr, Do, Var, Const, DefCont, ExprCont, DoCont, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
@@ -271,7 +271,7 @@ impl<'a> Eval for ValueHandle<'a, Var> {
 }
 
 impl<'a> Eval for ValueHandle<'a, Const> {
-    fn eval(self, _: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
+    fn eval(self, _: &mut Interpreter, _: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         Ok(State::Cont(self.val(), k))
     }
 }

@@ -1,7 +1,6 @@
 use refs::{ValuePtr, Root, ValueHandle};
 use interpreter::{Interpreter, CtrError};
 use primops::ExprFn;
-use ops::PtrEq;
 
 use std::iter;
 use std::slice;
@@ -85,6 +84,23 @@ macro_rules! ctr_struct {
         impl CtrValue for $name {}
 
         impl_typ! { $name, $itp_field }
+    }
+}
+
+macro_rules! constructor {
+    { () -> $t:ty = $itp_field:ident; rec } => {
+        pub fn new(itp: &mut Interpreter,) -> Root<$t> {
+            let typ = itp.$itp_field.clone();
+            itp.alloc_rec(typ.borrow(), iter::empty())
+        }
+    };
+
+    { ( $($field_name:ident : $field_type:ty),* ) -> $t:ty = $itp_field:ident; rec } => {
+        pub fn new(itp: &mut Interpreter, $($field_name: Root<$field_type>),*) -> Root<$t> {
+            let typ = itp.$itp_field.clone();
+            let fields = [$($field_name.as_any_ref()),*];
+            itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+        }
     }
 }
 
@@ -379,11 +395,7 @@ ctr_struct!{
 }
 
 impl ListPair {
-    pub fn new(itp: &mut Interpreter, head: Root<Any>, tail: Root<Any>) -> Root<ListPair> {
-        let typ = itp.pair_t.clone();
-        let fields = [head, tail];
-        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
-    }
+    constructor!{ (first: Any, rest: Any) -> ListPair = pair_t; rec }
 
     getter!{ first: Any }
 
@@ -426,10 +438,7 @@ ctr_struct!{
 }
 
 impl ListEmpty {
-    pub fn new(itp: &mut Interpreter) -> Root<ListEmpty> {
-        let typ = itp.nil_t.clone();
-        itp.alloc_rec(typ.borrow(), iter::empty())
-    }
+    constructor!{ () -> ListEmpty = nil_t; rec }
 }
 
 // ArrayMut ***************************************************************************************
@@ -494,10 +503,7 @@ ctr_struct!{
 
 impl Type {
     // TODO: hash cons
-    pub fn new(itp: &mut Interpreter) -> Root<Type> {
-        let typ = itp.type_t.clone();
-        itp.alloc_rec(typ.borrow(), iter::empty())
-    }
+    constructor!{ () -> Type = type_t; rec }
 }
 
 // Env ********************************************************************************************
@@ -684,11 +690,7 @@ ctr_struct!{
 }
 
 impl Def {
-    pub fn new(itp: &mut Interpreter, name: Root<Symbol>, value: Root<Any>) -> Root<Def> {
-        let typ = itp.def_t.clone();
-        let fields = [name.as_any_ref(), value];
-        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
-    }
+    constructor!{ (name: Symbol, value: Any) -> Def = def_t; rec }
 
     getter!{ name: Symbol }
 
@@ -777,11 +779,7 @@ ctr_struct!{
 }
 
 impl Var {
-    pub fn new(itp: &mut Interpreter, name: Root<Symbol>) -> Root<Var> {
-        let typ = itp.var_t.clone();
-        let fields = [name.as_any_ref()];
-        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
-    }
+    constructor!{ (name: Symbol) -> Var = var_t; rec }
 
     getter!{ name: Symbol }
 }
@@ -796,11 +794,7 @@ ctr_struct!{
 }
 
 impl Const {
-    pub fn new(itp: &mut Interpreter, v: Root<Any>) -> Root<Const> {
-        let typ = itp.const_t.clone();
-        let fields = [v];
-        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
-    }
+    constructor!{ (val: Any) -> Const = const_t; rec }
 
     getter!{ val: Any }
 }
@@ -846,12 +840,7 @@ ctr_struct!{
 }
 
 impl DefCont {
-    pub fn new(itp: &mut Interpreter, parent: Root<Any>, name: Root<Symbol>, env: Root<Env>)
-               -> Root<DefCont> {
-        let typ = itp.defcont_t.clone();
-        let fields = [parent, name.as_any_ref(), env.as_any_ref()];
-        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
-    }
+    constructor!{ (parent: Any, name: Symbol, env: Env) -> DefCont = defcont_t; rec }
 
     getter!{ parent: Any }
 
@@ -934,8 +923,5 @@ ctr_struct!{
 }
 
 impl Halt {
-    pub fn new(itp: &mut Interpreter) -> Root<Halt> {
-        let typ = itp.halt_t.clone();
-        itp.alloc_rec(typ.borrow(), iter::empty())
-    }
+    constructor!{ () -> Halt = halt_t; rec }
 }
