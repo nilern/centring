@@ -47,7 +47,8 @@ impl Args {
         } else if self.flag_sexp {
             Ok(sexp.root())
         } else {
-            analyze(itp, sexp).and_then(|ast| itp.interpret(ast.borrow()))
+            let env = itp.global_env.clone();
+            analyze(itp, sexp).and_then(|ast| itp.interpret(ast.borrow(), env))
         }
     }
 

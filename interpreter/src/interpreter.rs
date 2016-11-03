@@ -1,7 +1,7 @@
 use gc::Collector;
 use value::{CtrValue, ConcreteType,
-            Any, Bits, ListEmpty, Type, Symbol,
-            Def, Expr, Do, Const, DefCont, ExprCont, DoCont, Halt};
+            Any, Bits, Int, Bool, ListEmpty, Type, Symbol, Env,
+            Def, Expr, Do, Var, Const, DefCont, ExprCont, DoCont, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
@@ -11,7 +11,7 @@ use std::slice;
 use std::iter;
 
 trait Eval {
-    fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError>;
+    fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError>;
 }
 
 trait Continuation {
@@ -26,6 +26,7 @@ trait Primop {
 /// by `lua_State` in PUC Lua.
 pub struct Interpreter {
     gc: Collector,
+    pub global_env: Root<Env>,
     stack_roots: Vec<WeakRoot>,
     pub type_t: Root<Type>,
     pub pair_t: Root<Type>,
@@ -42,6 +43,7 @@ pub struct Interpreter {
     pub def_t: Root<Type>,
     pub expr_t: Root<Type>,
     pub do_t: Root<Type>,
+    pub var_t: Root<Type>,
     pub const_t: Root<Type>,
     pub defcont_t: Root<Type>,
     pub exprcont_t: Root<Type>,
@@ -50,7 +52,7 @@ pub struct Interpreter {
 }
 
 pub enum State {
-    Eval(Root<Any>, Root<Any>),
+    Eval(Root<Any>, Root<Env>, Root<Any>),
     Cont(Root<Any>, Root<Any>),
     Halt(Root<Any>),
 }
@@ -67,6 +69,7 @@ pub enum CtrError {
     Index(usize, usize),
     Type(Root<Type>),
     SetUnbound(Root<Symbol>),
+    GetUnbound(Root<Symbol>),
     DefArgs
 }
 
@@ -77,6 +80,7 @@ impl Interpreter {
     pub fn new() -> Interpreter {
         let mut itp = Interpreter {
             gc: Collector::new(1024),
+            global_env: unsafe { Root::new(ptr::null::<Env>() as ValuePtr) },
             stack_roots: vec![],
             type_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             pair_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
@@ -93,6 +97,7 @@ impl Interpreter {
             def_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             expr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             do_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            var_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             exprcont_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             defcont_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
@@ -117,6 +122,7 @@ impl Interpreter {
         itp.def_t = Type::new(&mut itp);
         itp.expr_t = Type::new(&mut itp);
         itp.do_t = Type::new(&mut itp);
+        itp.var_t = Type::new(&mut itp);
         itp.const_t = Type::new(&mut itp);
         itp.defcont_t = Type::new(&mut itp);
         itp.exprcont_t = Type::new(&mut itp);
@@ -125,31 +131,35 @@ impl Interpreter {
 
         itp.type_t.clone().as_any_ref().set_type(type_t.borrow());
 
+        itp.global_env = Env::new(&mut itp, None);
+
         itp
     }
 
-    pub fn interpret(&mut self, ast: ValueHandle<Any>) -> CtrResult<Any> {
-        let mut state = State::Eval(ast.root(), Halt::new(self).as_any_ref());
+    pub fn interpret(&mut self, ast: ValueHandle<Any>, env: Root<Env>) -> CtrResult<Any> {
+        let mut state = State::Eval(ast.root(), env, Halt::new(self).as_any_ref());
         loop {
             // Need to use a trampoline/state machine here for manual TCO.
             state = match state {
-                State::Eval(ctrl, k) => try!(self.eval(ctrl, k)),
+                State::Eval(ctrl, env, k) => try!(self.eval(ctrl, env, k)),
                 State::Cont(ctrl, k) => try!(self.cont(ctrl, k)),
                 State::Halt(v) => return Ok(v),
             };
         }
     }
 
-    fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
+    fn eval(&mut self, ctrl: Root<Any>, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         let ctrl = ctrl.borrow();
         if let Some(def) = ctrl.downcast::<Def>(self) {
-            def.eval(self, k)
+            def.eval(self, env, k)
         } else if let Some(expr) = ctrl.downcast::<Expr>(self) {
-            expr.eval(self, k)
+            expr.eval(self, env, k)
         } else if let Some(d) = ctrl.downcast::<Do>(self) {
-            d.eval(self, k)
+            d.eval(self, env, k)
+        } else if let Some(v) = ctrl.downcast::<Var>(self) {
+            v.eval(self, env, k)
         } else if let Some(c) = ctrl.downcast::<Const>(self) {
-            c.eval(self, k)
+            c.eval(self, env, k)
         } else {
             unimplemented!()
         }
@@ -218,28 +228,30 @@ impl Interpreter {
 }
 
 impl<'a> Eval for ValueHandle<'a, Def> {
-    fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+    fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         let name = self.name(itp).unwrap();
-        Ok(State::Eval(self.value(), DefCont::new(itp, k, name).as_any_ref()))
+        let l = DefCont::new(itp, k, name, env.clone());
+        Ok(State::Eval(self.value(), env, l.as_any_ref()))
     }
 }
 
 impl<'a> Eval for ValueHandle<'a, Expr> {
-    fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+    fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         if let Some(arg) = self.args(0) {
-            Ok(State::Eval(arg, ExprCont::new(itp, k, self.root(), 0, self.args_iter())
-                .as_any_ref()))
+            let l = ExprCont::new(itp, k, self.root(), 0, env.clone(), self.args_iter());
+            Ok(State::Eval(arg.clone(), env, l.as_any_ref()))
         } else {
-            let l = ExprCont::new(itp, k, self.root(), 0, iter::empty());
+            let l = ExprCont::new(itp, k, self.root(), 0, env, iter::empty());
             l.borrow().exec(itp)
         }
     }
 }
 
 impl<'a> Eval for ValueHandle<'a, Do> {
-    fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+    fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         if let Some(stmt) = self.stmts(0) {
-            Ok(State::Eval(stmt, DoCont::new(itp, k, self.root(), 0).as_any_ref()))
+            let l = DoCont::new(itp, k, self.root(), 0, env.clone());
+            Ok(State::Eval(stmt, env, l.as_any_ref()))
         } else {
             // TODO: continue with a tuple:
             Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), k))
@@ -247,15 +259,28 @@ impl<'a> Eval for ValueHandle<'a, Do> {
     }
 }
 
+impl<'a> Eval for ValueHandle<'a, Var> {
+    fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
+        let name = self.name(itp).unwrap();
+        if let Some(v) = env.lookup(itp, name.borrow()) {
+            Ok(State::Cont(v, k))
+        } else {
+            Err(CtrError::GetUnbound(name))
+        }
+    }
+}
+
 impl<'a> Eval for ValueHandle<'a, Const> {
-    fn eval(self, _: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+    fn eval(self, _: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         Ok(State::Cont(self.val(), k))
     }
 }
 
 impl<'a> Continuation for ValueHandle<'a, DefCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        // TODO: env.def(itp, self.name(itp).unwrap().borrow(), v.borrow());
+        let env = self.env(itp).unwrap();
+        let name = self.name(itp).unwrap();
+        env.borrow().def(itp, name.borrow(), v.borrow());
         // TODO: continue with a tuple:
         Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), self.parent()))
     }
@@ -266,10 +291,12 @@ impl<'a> Continuation for ValueHandle<'a, ExprCont> {
         if let Some(i) = self.index(itp) {
             let j = i + 1;
             if let Some(e) = self.ast(itp) {
-                let new_k = ExprCont::new(itp, self.parent(), e.clone(), j, self.args_iter());
+                let env = self.env(itp).unwrap();
+                let new_k = ExprCont::new(itp, self.parent(), e.clone(), j, env, self.args_iter());
                 try!(new_k.borrow().set_arg(i, v));
                 if let Some(arg) = e.borrow().args(j) {
-                    Ok(State::Eval(arg, new_k.as_any_ref()))
+                    let env = self.env(itp).unwrap();
+                    Ok(State::Eval(arg, env, new_k.as_any_ref()))
                 } else {
                     new_k.borrow().exec(itp)
                 }
@@ -288,8 +315,9 @@ impl<'a> Continuation for ValueHandle<'a, DoCont> {
             i += 1;
             if let Some(d) = self.do_ast(itp) {
                 if let Some(stmt) = d.borrow().stmts(i) {
-                    let new_k = DoCont::new(itp, self.parent(), d, i);
-                    Ok(State::Eval(stmt, new_k.as_any_ref()))
+                    let env = self.env(itp).unwrap();
+                    let new_k = DoCont::new(itp, self.parent(), d, i, env);
+                    Ok(State::Eval(stmt, self.env(itp).unwrap(), new_k.as_any_ref()))
                 } else {
                     Ok(State::Cont(v, self.parent()))
                 }

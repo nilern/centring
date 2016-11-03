@@ -486,6 +486,7 @@ ctr_struct!{
 }
 
 impl Type {
+    // TODO: hash cons
     pub fn new(itp: &mut Interpreter) -> Root<Type> {
         let typ = itp.type_t.clone();
         itp.alloc_rec(typ.borrow(), iter::empty())
@@ -758,6 +759,25 @@ impl Do {
     }
 }
 
+// Var ********************************************************************************************
+
+/// An AST node representing a variable reference.
+ctr_struct!{
+    struct Var = var_t {
+        name: Symbol
+    }
+}
+
+impl Var {
+    pub fn new(itp: &mut Interpreter, name: Root<Symbol>) -> Root<Var> {
+        let typ = itp.var_t.clone();
+        let fields = [name.as_any_ref()];
+        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+    }
+
+    getter!{ name: Symbol }
+}
+
 // Const ******************************************************************************************
 
 /// An AST node representing a constant.
@@ -784,16 +804,17 @@ ctr_struct!{
     struct DoCont = docont_t {
         parent: Any,
         do_ast: Do,
-        index: UInt
+        index: UInt,
+        env: Env
     }
 }
 
 impl DoCont {
-    pub fn new(itp: &mut Interpreter, parent: Root<Any>, do_ast: Root<Do>, i: usize)
-               -> Root<DoCont> {
+    pub fn new(itp: &mut Interpreter, parent: Root<Any>, do_ast: Root<Do>, i: usize,
+               env: Root<Env>) -> Root<DoCont> {
         let typ = itp.docont_t.clone();
         let i = UInt::new(itp, i);
-        let fields = [parent, do_ast.as_any_ref(), i.as_any_ref()];
+        let fields = [parent, do_ast.as_any_ref(), i.as_any_ref(), env.as_any_ref()];
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
@@ -802,6 +823,8 @@ impl DoCont {
     getter!{ do_ast: Do }
 
     getter!{ index: usize; unbox }
+
+    getter!{ env: Env }
 }
 
 // DefCont ****************************************************************************************
@@ -809,20 +832,24 @@ impl DoCont {
 ctr_struct!{
     struct DefCont = defcont_t {
         parent: Any,
-        name: Symbol
+        name: Symbol,
+        env: Env
     }
 }
 
 impl DefCont {
-    pub fn new(itp: &mut Interpreter, parent: Root<Any>, name: Root<Symbol>) -> Root<DefCont> {
+    pub fn new(itp: &mut Interpreter, parent: Root<Any>, name: Root<Symbol>, env: Root<Env>)
+               -> Root<DefCont> {
         let typ = itp.defcont_t.clone();
-        let fields = [parent, name.as_any_ref()];
+        let fields = [parent, name.as_any_ref(), env.as_any_ref()];
         itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
     }
 
     getter!{ parent: Any }
 
     getter!{ name: Symbol }
+
+    getter!{ env: Env }
 }
 
 // ExprCont ***************************************************************************************
@@ -832,7 +859,8 @@ ctr_struct!{
     struct ExprCont = exprcont_t {
         parent: Any,
         ast: Expr,
-        index: UInt
+        index: UInt,
+        env: Env
     }
 }
 
@@ -860,10 +888,11 @@ impl UnsizedCtrValueMut for ExprCont {
 
 impl ExprCont {
     pub fn new<I>(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Expr>, index: usize,
-               args: I) -> Root<ExprCont> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+                  env: Root<Env>, args: I)
+                  -> Root<ExprCont> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
         let typ = itp.exprcont_t.clone();
         let mut fields = vec![parent, expr_ast.clone().as_any_ref(),
-                              UInt::new(itp, index).as_any_ref()];
+                              UInt::new(itp, index).as_any_ref(), env.as_any_ref()];
         fields.extend(args);
         itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
@@ -873,6 +902,8 @@ impl ExprCont {
     getter!{ ast: Expr }
 
     getter!{ index: usize; unbox }
+
+    getter!{ env: Env }
 
     pub fn argc(&self) -> usize {
         self.flex_len()

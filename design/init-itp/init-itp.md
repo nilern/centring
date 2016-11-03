@@ -5,32 +5,32 @@
     (defbits Int ##sys#word-size)
 
     (defbits UInt ##sys#word-size)
-    
+
     (defbits UInt8 8)
-    
+
     (defbits VoidPtr ##sys#ptr-size)
-    
+
     (defrecord String
       (... (: bytes UInt8)))
-    
+
     (defrecord Symbol
       (... (: bytes UInt8)))
-    
+
     (defrecord ArrayMut
       (... (mut elems)))
-    
+
 ## Internal Types
 
     (defrecord Env
       parent
       (: count UInt)
       (: buckets ArrayMut))
-    
+
     (defrecord EnvBucket
       next
       (: key Symbol)
       value)
-             
+
     (defrecord SourceInfo
       (: line UInt)
       (: column UInt)
@@ -48,17 +48,17 @@
       (include SourceInfo)
       op
       (... args))
-      
+
     (defrecord Def
       (include SourceInfo)
       (: name Symbol)
       value)
-      
+
     (defrecord Expr
       (include SourceInfo)
       (: op VoidPtr)
       (... args))
-      
+
     (defrecord Stmt
       (include SourceInfo)
       (: op VoidPtr)
@@ -69,7 +69,7 @@
       (: op VoidPtr)
       determinant
       (... branches))
-      
+
     (defrecord Closure
       (include SourceInfo)
       (: env Env)
@@ -78,11 +78,11 @@
     (defrecord Do
       (include SourceInfo)
       (... statements))
-      
-    (defrecord Id
+
+    (defrecord Var
       (include SourceInfo)
       (: name Symbol))
-             
+
     (defrecord Const
       (include SourceInfo)
       value)
@@ -129,7 +129,7 @@
       (: ast Do)
       (: index UInt)
       (: env Env))
-    
+
     (defrecord HaltCont)
 
 # Special Forms

@@ -1,5 +1,5 @@
 use interpreter::{Interpreter, CtrResult, CtrError};
-use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Def, Expr, Do, Const};
+use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Def, Expr, Do, Var, Const};
 use refs::{Root, ValueHandle};
 use primops;
 
@@ -8,15 +8,17 @@ pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
         if let Some(op) = p.first().borrow().downcast::<Symbol>(itp) {
             let opstr = op.to_string();
             if opstr.starts_with("##sf#") {
-                analyze_sf(itp, &opstr[5..], p.rest().borrow())
+                return analyze_sf(itp, &opstr[5..], p.rest().borrow());
             } else if opstr.starts_with("##intr#") {
-                analyze_intr(itp, &opstr[7..], p.rest().borrow())
+                return analyze_intr(itp, &opstr[7..], p.rest().borrow());
             } else {
                 unimplemented!()
             }
         } else {
             unimplemented!()
         }
+    } if let Some(name) = v.downcast::<Symbol>(itp) {
+        Ok(Var::new(itp, name.root()).as_any_ref())
     } else {
         Ok(Const::new(itp, v.root()).as_any_ref())
     }
