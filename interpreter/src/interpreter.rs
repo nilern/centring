@@ -1,7 +1,7 @@
 use gc::Collector;
 use value::{CtrValue, ConcreteType,
             Any, Bits, ListEmpty, Type, Symbol,
-            Expr, Do, Const, ExprCont, DoCont, Halt};
+            Def, Expr, Do, Const, DefCont, ExprCont, DoCont, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 
 use std::cmp::Ordering;
@@ -39,9 +39,11 @@ pub struct Interpreter {
     pub string_t: Root<Type>,
     pub env_t: Root<Type>,
     pub env_bucket_t: Root<Type>,
+    pub def_t: Root<Type>,
     pub expr_t: Root<Type>,
     pub do_t: Root<Type>,
     pub const_t: Root<Type>,
+    pub defcont_t: Root<Type>,
     pub exprcont_t: Root<Type>,
     pub docont_t: Root<Type>,
     pub halt_t: Root<Type>,
@@ -64,7 +66,8 @@ pub enum CtrError {
     ImproperList(Root<Any>),
     Index(usize, usize),
     Type(Root<Type>),
-    SetUnbound(Root<Symbol>)
+    SetUnbound(Root<Symbol>),
+    DefArgs
 }
 
 pub type CtrResult<T> = Result<Root<T>, CtrError>;
@@ -87,10 +90,12 @@ impl Interpreter {
             string_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             env_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             env_bucket_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            def_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             expr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             do_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             exprcont_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            defcont_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             docont_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             halt_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
         };
@@ -109,9 +114,11 @@ impl Interpreter {
         itp.string_t = Type::new(&mut itp);
         itp.env_t = Type::new(&mut itp);
         itp.env_bucket_t = Type::new(&mut itp);
+        itp.def_t = Type::new(&mut itp);
         itp.expr_t = Type::new(&mut itp);
         itp.do_t = Type::new(&mut itp);
         itp.const_t = Type::new(&mut itp);
+        itp.defcont_t = Type::new(&mut itp);
         itp.exprcont_t = Type::new(&mut itp);
         itp.docont_t = Type::new(&mut itp);
         itp.halt_t = Type::new(&mut itp);
@@ -135,7 +142,9 @@ impl Interpreter {
 
     fn eval(&mut self, ctrl: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let ctrl = ctrl.borrow();
-        if let Some(expr) = ctrl.downcast::<Expr>(self) {
+        if let Some(def) = ctrl.downcast::<Def>(self) {
+            def.eval(self, k)
+        } else if let Some(expr) = ctrl.downcast::<Expr>(self) {
             expr.eval(self, k)
         } else if let Some(d) = ctrl.downcast::<Do>(self) {
             d.eval(self, k)
@@ -148,12 +157,14 @@ impl Interpreter {
 
     fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let k = k.borrow();
-        if let Some(halt) = k.downcast::<Halt>(self) {
-            halt.continu(self, v)
+        if let Some(dc) = k.downcast::<DefCont>(self) {
+            dc.continu(self, v)
         } else if let Some(ec) = k.downcast::<ExprCont>(self) {
             ec.continu(self, v)
         } else if let Some(dc) = k.downcast::<DoCont>(self) {
             dc.continu(self, v)
+        } else if let Some(halt) = k.downcast::<Halt>(self) {
+            halt.continu(self, v)
         } else {
             unimplemented!()
         }
@@ -206,6 +217,13 @@ impl Interpreter {
     }
 }
 
+impl<'a> Eval for ValueHandle<'a, Def> {
+    fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
+        let name = self.name(itp).unwrap();
+        Ok(State::Eval(self.value(), DefCont::new(itp, k, name).as_any_ref()))
+    }
+}
+
 impl<'a> Eval for ValueHandle<'a, Expr> {
     fn eval(self, itp: &mut Interpreter, k: Root<Any>) -> Result<State, CtrError> {
         if let Some(arg) = self.args(0) {
@@ -235,23 +253,11 @@ impl<'a> Eval for ValueHandle<'a, Const> {
     }
 }
 
-impl<'a> Continuation for ValueHandle<'a, DoCont> {
+impl<'a> Continuation for ValueHandle<'a, DefCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        if let Some(mut i) = self.index(itp) {
-            i += 1;
-            if let Some(d) = self.do_ast(itp) {
-                if let Some(stmt) = d.borrow().stmts(i) {
-                    let new_k = DoCont::new(itp, self.parent(), d, i);
-                    Ok(State::Eval(stmt, new_k.as_any_ref()))
-                } else {
-                    Ok(State::Cont(v, self.parent()))
-                }
-            } else {
-                panic!()
-            }
-        } else {
-            panic!()
-        }
+        // TODO: env.def(itp, self.name(itp).unwrap().borrow(), v.borrow());
+        // TODO: continue with a tuple:
+        Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), self.parent()))
     }
 }
 
@@ -266,6 +272,26 @@ impl<'a> Continuation for ValueHandle<'a, ExprCont> {
                     Ok(State::Eval(arg, new_k.as_any_ref()))
                 } else {
                     new_k.borrow().exec(itp)
+                }
+            } else {
+                panic!()
+            }
+        } else {
+            panic!()
+        }
+    }
+}
+
+impl<'a> Continuation for ValueHandle<'a, DoCont> {
+    fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
+        if let Some(mut i) = self.index(itp) {
+            i += 1;
+            if let Some(d) = self.do_ast(itp) {
+                if let Some(stmt) = d.borrow().stmts(i) {
+                    let new_k = DoCont::new(itp, self.parent(), d, i);
+                    Ok(State::Eval(stmt, new_k.as_any_ref()))
+                } else {
+                    Ok(State::Cont(v, self.parent()))
                 }
             } else {
                 panic!()

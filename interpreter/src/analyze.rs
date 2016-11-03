@@ -1,5 +1,5 @@
 use interpreter::{Interpreter, CtrResult, CtrError};
-use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Expr, Do, Const};
+use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Def, Expr, Do, Const};
 use refs::{Root, ValueHandle};
 use primops;
 
@@ -24,6 +24,26 @@ pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
 
 fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> CtrResult<Any> {
     match opstr {
+        "def" => {
+            if let Some(pair) = args.downcast::<ListPair>(itp) {
+                if let Some(name) = pair.first().borrow().downcast::<Symbol>(itp) {
+                    let rest = pair.rest().downcast::<ListPair>(itp);
+                    if let Some(value) = rest.clone().map(|ls| ls.first()) {
+                        if rest.map(|ls| ls.rest())
+                               .and_then(|ls| ls.downcast::<ListEmpty>(itp))
+                               .is_some() {
+                            let value_ast = try!(analyze(itp, value.borrow()));
+                            return Ok(Def::new(itp, name.root(), value_ast).as_any_ref());
+                        }
+                    }
+                }
+                Err(CtrError::DefArgs)
+            } else if args.instanceof(ListEmpty::typ(itp)) {
+                Err(CtrError::DefArgs)
+            } else {
+                Err(CtrError::ImproperList(args.root()))
+            }
+        },
         "do" => {
             if let Some(pair) = args.downcast::<ListPair>(itp) {
                 let mut argv: Vec<Root<Any>> = pair.iter(itp).collect();
@@ -34,7 +54,7 @@ fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> Ctr
             } else if args.instanceof(ListEmpty::typ(itp)) {
                 Ok(Do::new(itp, &[]).as_any_ref())
             } else {
-                return Err(CtrError::ImproperList(args.root()));
+                Err(CtrError::ImproperList(args.root()))
             }
         },
         sf => Err(CtrError::UnknownSf(String::from(sf)))

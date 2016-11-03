@@ -665,6 +665,27 @@ impl EnvBucket {
     }
 }
 
+// Def ********************************************************************************************
+
+ctr_struct!{
+    struct Def = def_t {
+        name: Symbol,
+        value: Any
+    }
+}
+
+impl Def {
+    pub fn new(itp: &mut Interpreter, name: Root<Symbol>, value: Root<Any>) -> Root<Def> {
+        let typ = itp.def_t.clone();
+        let fields = [name.as_any_ref(), value];
+        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+    }
+
+    getter!{ name: Symbol }
+
+    getter!{ value: Any }
+}
+
 // Expr *******************************************************************************************
 
 /// An AST node for expressions (such as `(%eq? a b)`).
@@ -781,6 +802,27 @@ impl DoCont {
     getter!{ do_ast: Do }
 
     getter!{ index: usize; unbox }
+}
+
+// DefCont ****************************************************************************************
+
+ctr_struct!{
+    struct DefCont = defcont_t {
+        parent: Any,
+        name: Symbol
+    }
+}
+
+impl DefCont {
+    pub fn new(itp: &mut Interpreter, parent: Root<Any>, name: Root<Symbol>) -> Root<DefCont> {
+        let typ = itp.defcont_t.clone();
+        let fields = [parent, name.as_any_ref()];
+        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+    }
+
+    getter!{ parent: Any }
+
+    getter!{ name: Symbol }
 }
 
 // ExprCont ***************************************************************************************
