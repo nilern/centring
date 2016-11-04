@@ -272,44 +272,33 @@ impl<'a> Continuation for ValueHandle<'a, DefCont> {
 
 impl<'a> Continuation for ValueHandle<'a, ExprCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        if let Some(i) = self.index(itp) {
-            let j = i + 1;
-            if let Some(e) = self.ast(itp) {
-                let env = self.env(itp).unwrap();
-                let new_k = ExprCont::new(itp, self.parent(), e.clone(), j, env, self.args_iter());
-                try!(new_k.borrow().set_arg(i, v));
-                if let Some(arg) = e.borrow().args(j) {
-                    let env = self.env(itp).unwrap();
-                    Ok(State::Eval(arg, env, new_k.as_any_ref()))
-                } else {
-                    new_k.borrow().exec(itp)
-                }
-            } else {
-                panic!()
-            }
+        let i = self.index(itp).unwrap(); // v is the value of the i:th argument.
+        let j = i + 1;                    // The index of the next argument to evaluate
+        let ast = self.ast(itp).unwrap();
+        let env = self.env(itp).unwrap();
+        let new_k =
+            ExprCont::new(itp, self.parent(), ast.clone(), j, env.clone(), self.args_iter());
+        try!(new_k.borrow().set_arg(i, v)); // The new continuation knows that args[i] => v.
+        if let Some(arg) = ast.borrow().args(j) {
+            Ok(State::Eval(arg, env, new_k.as_any_ref())) // Eval the next arg.
         } else {
-            panic!()
+            new_k.borrow().exec(itp) // Run primop.
         }
     }
 }
 
 impl<'a> Continuation for ValueHandle<'a, DoCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        if let Some(mut i) = self.index(itp) {
-            i += 1;
-            if let Some(d) = self.do_ast(itp) {
-                if let Some(stmt) = d.borrow().stmts(i) {
-                    let env = self.env(itp).unwrap();
-                    let new_k = DoCont::new(itp, self.parent(), d, i, env);
-                    Ok(State::Eval(stmt, self.env(itp).unwrap(), new_k.as_any_ref()))
-                } else {
-                    Ok(State::Cont(v, self.parent()))
-                }
-            } else {
-                panic!()
-            }
+        let i = self.index(itp).unwrap(); // v is the value of the i:th argument.
+        let j = i + 1;                    // The index of the next argument to evaluate.
+        let ast = self.do_ast(itp).unwrap();
+        if let Some(stmt) = ast.borrow().stmts(j) {
+            // Ignore v and move on to evaluate the next statement:
+            let env = self.env(itp).unwrap();
+            let new_k = DoCont::new(itp, self.parent(), ast, j, env);
+            Ok(State::Eval(stmt, self.env(itp).unwrap(), new_k.as_any_ref()))
         } else {
-            panic!()
+            Ok(State::Cont(v, self.parent())) // This was the last statement so continue with v.
         }
     }
 }
