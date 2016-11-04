@@ -5,10 +5,11 @@ extern crate rustc_serialize;
 extern crate docopt;
 extern crate rustyline;
 
+#[macro_use]
+pub mod value;
 pub mod ops;
 pub mod gc;
 pub mod primops;
-pub mod value;
 pub mod refs; // FIXME: all non-static methods should be on these
 pub mod read;
 pub mod analyze;

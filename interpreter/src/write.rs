@@ -21,26 +21,24 @@ impl<'a, T: CtrValue> ContextValue<'a, T> {
 
 impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
     fn fmt(&self, fmt: &mut Formatter) -> Result<(), fmt::Error> {
-        if let Some(sym) = self.val.downcast::<Symbol>(self.itp) {
-            write!(fmt, "{}", sym.to_string())
-        } else if let Some(n) = self.val.downcast::<Int>(self.itp) {
-            write!(fmt, "{}", n.unbox())
-        } else if let Some(pair) = self.val.downcast::<ListPair>(self.itp) {
-            try!(write!(fmt, "("));
-            let mut start = true;
-            for v in pair.iter(self.itp) {
-                if !start {
-                    try!(write!(fmt, " "));
-                } else {
-                    start = false;
+        typecase!(self.val, self.itp; {
+            sym: Symbol => { write!(fmt, "{}", sym.to_string()) },
+            n: Int => { write!(fmt, "{}", n.unbox()) },
+            pair: ListPair => {
+                try!(write!(fmt, "("));
+                let mut start = true;
+                for v in pair.iter(self.itp) {
+                    if !start {
+                        try!(write!(fmt, " "));
+                    } else {
+                        start = false;
+                    }
+                    try!(ContextValue::new(v.borrow(), self.itp).fmt(fmt));
                 }
-                try!(ContextValue::new(v.borrow(), self.itp).fmt(fmt));
-            }
-            write!(fmt, ")")
-        } else if self.val.instanceof(ListEmpty::typ(self.itp)) {
-            write!(fmt, "()")
-        } else {
-            unimplemented!()
-        }
+                write!(fmt, ")")
+            },
+            ListEmpty => { write!(fmt, "()") },
+            _ => { unimplemented!() }
+        })
     }
 }

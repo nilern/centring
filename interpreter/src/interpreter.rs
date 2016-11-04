@@ -150,34 +150,25 @@ impl Interpreter {
 
     fn eval(&mut self, ctrl: Root<Any>, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         let ctrl = ctrl.borrow();
-        if let Some(def) = ctrl.downcast::<Def>(self) {
-            def.eval(self, env, k)
-        } else if let Some(expr) = ctrl.downcast::<Expr>(self) {
-            expr.eval(self, env, k)
-        } else if let Some(d) = ctrl.downcast::<Do>(self) {
-            d.eval(self, env, k)
-        } else if let Some(v) = ctrl.downcast::<Var>(self) {
-            v.eval(self, env, k)
-        } else if let Some(c) = ctrl.downcast::<Const>(self) {
-            c.eval(self, env, k)
-        } else {
-            unimplemented!()
-        }
+        typecase!(ctrl, self; {
+            def: Def => { def.eval(self, env, k) },
+            expr: Expr => { expr.eval(self, env, k) },
+            d: Do => { d.eval(self, env, k) },
+            v: Var => { v.eval(self, env, k) },
+            c: Const => { c.eval(self, env, k) },
+            _ => { unimplemented!() }
+        })
     }
 
     fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let k = k.borrow();
-        if let Some(dc) = k.downcast::<DefCont>(self) {
-            dc.continu(self, v)
-        } else if let Some(ec) = k.downcast::<ExprCont>(self) {
-            ec.continu(self, v)
-        } else if let Some(dc) = k.downcast::<DoCont>(self) {
-            dc.continu(self, v)
-        } else if let Some(halt) = k.downcast::<Halt>(self) {
-            halt.continu(self, v)
-        } else {
-            unimplemented!()
-        }
+        typecase!(k, self; {
+            dc: DefCont => { dc.continu(self, v) },
+            ec: ExprCont => { ec.continu(self, v) },
+            dc: DoCont => { dc.continu(self, v) },
+            halt: Halt => { halt.continu(self, v) },
+            _ => { unimplemented!() }
+        })
     }
 
     pub fn alloc_rec<'a, T, I>(&mut self, typ: ValueHandle<Type>, fields: I)

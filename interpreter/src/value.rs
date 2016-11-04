@@ -170,6 +170,35 @@ macro_rules! impl_boxed_flex_get {
     }
 }
 
+macro_rules! typecase {
+    // 'else' case:
+    ( $e:expr, $itp:expr; { _ => $body:block } ) => {
+        $body
+    };
+
+    // don't need a casted value so `instanceof` suffices:
+    ( $e:expr, $itp:expr; { $typ:ty => $body:block , $($rest:tt)* } ) => {
+        if $e.instanceof(<$typ as ConcreteType>::typ($itp)) {
+            $body
+        } else {
+            typecase!($e, $itp; {
+                $($rest)*
+            })
+        }
+    };
+
+    // the normal case (try to cast):
+    ( $e:expr, $itp:expr; { $alias:ident : $typ:ty => $body:block , $($rest:tt)* } ) => {
+        if let Some($alias) = $e.downcast::<$typ>($itp) {
+            $body
+        } else {
+            typecase!($e, $itp; {
+                $($rest)*
+            })
+        }
+    };
+}
+
 // IndexedFields **********************************************************************************
 
 pub struct IndexedFields<T: UnsizedCtrValue> {
@@ -429,14 +458,14 @@ impl<'a> Iterator for ListIter<'a> {
 
     fn next(&mut self) -> Option<Root<Any>> {
         let ls = self.list.clone();
-        if let Some(pair) = ls.borrow().downcast::<ListPair>(self.itp) {
-            self.list = pair.rest();
-            Some(pair.first())
-        } else if ls.borrow().instanceof(ListEmpty::typ(self.itp)) {
-            None
-        } else {
-            panic!()
-        }
+        typecase!(ls.borrow(), self.itp; {
+            pair: ListPair => {
+                self.list = pair.rest();
+                Some(pair.first())
+            },
+            ListEmpty => { None },
+            _ => { panic!() }
+        })
     }
 }
 
@@ -724,11 +753,10 @@ impl Expr {
 
     pub fn op(&self, itp: &Interpreter) -> ExprFn {
         let op = unsafe { Root::<Any>::new(self.op) };
-        if let Some(f) = op.borrow().downcast::<VoidPtr>(itp) {
-            unsafe { mem::transmute(f.unbox()) }
-        } else {
-            panic!()
-        }
+        typecase!(op.borrow(), itp; {
+            f: VoidPtr => { unsafe { mem::transmute(f.unbox()) } },
+            _ => { panic!() }
+        })
     }
 
     pub fn argc(&self) -> usize {
