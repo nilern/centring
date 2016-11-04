@@ -73,6 +73,18 @@ macro_rules! impl_typ {
 }
 
 macro_rules! ctr_struct {
+    { struct $name:ident () = $itp_field:ident { $($field_name:ident : $field_type:ty),* } } => {
+        ctr_struct!{
+            struct $name = $itp_field {
+                $($field_name : $field_type),*
+            }
+        }
+
+        impl $name {
+            constructor!{ ($($field_name: $field_type),*) -> $name = $itp_field; rec }
+        }
+    };
+
     { struct $name:ident = $itp_field:ident { $($field_name:ident : $field_type:ty),* } } => {
         #[repr(C)]
         pub struct $name {
@@ -388,15 +400,13 @@ impl String {
 
 /// The good ol' cons cell.
 ctr_struct!{
-    struct ListPair = pair_t {
+    struct ListPair() = pair_t {
         first: Any,
         rest: Any
     }
 }
 
 impl ListPair {
-    constructor!{ (first: Any, rest: Any) -> ListPair = pair_t; rec }
-
     getter!{ first: Any }
 
     getter!{ rest: Any }
@@ -434,11 +444,7 @@ impl<'a> Iterator for ListIter<'a> {
 
 /// Plain old `'()`
 ctr_struct!{
-    struct ListEmpty = nil_t { }
-}
-
-impl ListEmpty {
-    constructor!{ () -> ListEmpty = nil_t; rec }
+    struct ListEmpty() = nil_t { }
 }
 
 // ArrayMut ***************************************************************************************
@@ -496,14 +502,10 @@ impl ArrayMut {
 
 // Type *******************************************************************************************
 
+// TODO: hash-cons
 /// A type.
 ctr_struct!{
-    struct Type = type_t { }
-}
-
-impl Type {
-    // TODO: hash cons
-    constructor!{ () -> Type = type_t; rec }
+    struct Type() = type_t { }
 }
 
 // Env ********************************************************************************************
@@ -683,15 +685,13 @@ impl EnvBucket {
 // Def ********************************************************************************************
 
 ctr_struct!{
-    struct Def = def_t {
+    struct Def() = def_t {
         name: Symbol,
         value: Any
     }
 }
 
 impl Def {
-    constructor!{ (name: Symbol, value: Any) -> Def = def_t; rec }
-
     getter!{ name: Symbol }
 
     getter!{ value: Any }
@@ -773,14 +773,12 @@ impl Do {
 
 /// An AST node representing a variable reference.
 ctr_struct!{
-    struct Var = var_t {
+    struct Var() = var_t {
         name: Symbol
     }
 }
 
 impl Var {
-    constructor!{ (name: Symbol) -> Var = var_t; rec }
-
     getter!{ name: Symbol }
 }
 
@@ -788,14 +786,12 @@ impl Var {
 
 /// An AST node representing a constant.
 ctr_struct!{
-    struct Const = const_t {
+    struct Const() = const_t {
         val: Any
     }
 }
 
 impl Const {
-    constructor!{ (val: Any) -> Const = const_t; rec }
-
     getter!{ val: Any }
 }
 
@@ -832,7 +828,7 @@ impl DoCont {
 // DefCont ****************************************************************************************
 
 ctr_struct!{
-    struct DefCont = defcont_t {
+    struct DefCont() = defcont_t {
         parent: Any,
         name: Symbol,
         env: Env
@@ -840,8 +836,6 @@ ctr_struct!{
 }
 
 impl DefCont {
-    constructor!{ (parent: Any, name: Symbol, env: Env) -> DefCont = defcont_t; rec }
-
     getter!{ parent: Any }
 
     getter!{ name: Symbol }
@@ -919,9 +913,5 @@ impl ExprCont {
 
 /// The halt continuation.
 ctr_struct!{
-    struct Halt = halt_t { }
-}
-
-impl Halt {
-    constructor!{ () -> Halt = halt_t; rec }
+    struct Halt() = halt_t { }
 }
