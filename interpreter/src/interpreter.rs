@@ -151,11 +151,7 @@ impl Interpreter {
     fn eval(&mut self, ctrl: Root<Any>, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         let ctrl = ctrl.borrow();
         typecase!(ctrl, self; {
-            def: Def => { def.eval(self, env, k) },
-            expr: Expr => { expr.eval(self, env, k) },
-            d: Do => { d.eval(self, env, k) },
-            v: Var => { v.eval(self, env, k) },
-            c: Const => { c.eval(self, env, k) },
+            ctrl: Def | Expr | Do | Var | Const => { ctrl.eval(self, env, k) },
             _ => { unimplemented!() }
         })
     }
@@ -163,10 +159,7 @@ impl Interpreter {
     fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
         let k = k.borrow();
         typecase!(k, self; {
-            dc: DefCont => { dc.continu(self, v) },
-            ec: ExprCont => { ec.continu(self, v) },
-            dc: DoCont => { dc.continu(self, v) },
-            halt: Halt => { halt.continu(self, v) },
+            k: DefCont | ExprCont | DoCont | Halt => { k.continu(self, v) },
             _ => { unimplemented!() }
         })
     }

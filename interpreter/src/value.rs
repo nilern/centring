@@ -197,6 +197,20 @@ macro_rules! typecase {
             })
         }
     };
+
+    // logic-duplicating versions:
+    ( $e:expr, $itp:expr; { $($typ:ty)|+ => $body:block , $($rest:tt)* } ) => {
+        typecase!($e, $itp; {
+            $($typ => $body),+,
+            $($rest)*
+        })
+    };
+    ( $e:expr, $itp:expr; { $alias:ident : $($typ:ty)|+ => $body:block , $($rest:tt)* } ) => {
+        typecase!($e, $itp; {
+            $($alias: $typ => $body),+,
+            $($rest)*
+        })
+    };
 }
 
 // IndexedFields **********************************************************************************
