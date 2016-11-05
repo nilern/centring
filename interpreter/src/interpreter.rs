@@ -68,7 +68,7 @@ pub enum State {
     Halt(Root<Any>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CtrError {
     Argc {
         expected: (Ordering, usize),
@@ -240,7 +240,7 @@ impl Interpreter {
 
 impl<'a> Eval for ValueHandle<'a, Def> {
     fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
-        let name = self.name(itp).unwrap();
+        let name = try!(self.name(itp));
         let l = DefCont::new(itp, k, name, env.clone());
         Ok(State::Eval(self.value(), env, l.as_any_ref()))
     }
@@ -291,7 +291,7 @@ impl<'a> Eval for ValueHandle<'a, Do> {
 
 impl<'a> Eval for ValueHandle<'a, Var> {
     fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
-        let name = self.name(itp).unwrap();
+        let name = try!(self.name(itp));
         if let Some(v) = env.lookup(itp, name.borrow()) {
             Ok(State::Cont(v, k))
         } else {
@@ -308,8 +308,8 @@ impl<'a> Eval for ValueHandle<'a, Const> {
 
 impl<'a> Continuation for ValueHandle<'a, DefCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        let env = self.env(itp).unwrap();
-        let name = self.name(itp).unwrap();
+        let env = try!(self.env(itp));
+        let name = try!(self.name(itp));
         env.borrow().def(itp, name.borrow(), v.borrow());
         // TODO: continue with a tuple:
         Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), self.parent()))
@@ -318,10 +318,10 @@ impl<'a> Continuation for ValueHandle<'a, DefCont> {
 
 impl<'a> Continuation for ValueHandle<'a, ExprCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        let i = self.index(itp).unwrap(); // v is the value of the i:th argument.
-        let j = i + 1;                    // The index of the next argument to evaluate
-        let ast = self.ast(itp).unwrap();
-        let env = self.env(itp).unwrap();
+        let i = try!(self.index(itp)); // v is the value of the i:th argument.
+        let j = i + 1;                 // The index of the next argument to evaluate
+        let ast = try!(self.ast(itp));
+        let env = try!(self.env(itp));
         let new_k =
             ExprCont::new(itp, self.parent(), ast.clone(), j, env.clone(), self.args_iter());
         try!(new_k.borrow().set_arg(i, v)); // The new continuation knows that args[i] => v.
@@ -335,10 +335,10 @@ impl<'a> Continuation for ValueHandle<'a, ExprCont> {
 
 impl<'a> Continuation for ValueHandle<'a, StmtCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        let i = self.index(itp).unwrap(); // v is the value of the i:th argument.
+        let i = try!(self.index(itp)); // v is the value of the i:th argument.
         let j = i + 1;                    // The index of the next argument to evaluate
-        let ast = self.ast(itp).unwrap();
-        let env = self.env(itp).unwrap();
+        let ast = try!(self.ast(itp));
+        let env = try!(self.env(itp));
         let new_k =
             StmtCont::new(itp, self.parent(), ast.clone(), j, env.clone(), self.args_iter());
         try!(new_k.borrow().set_arg(i, v)); // The new continuation knows that args[i] => v.
@@ -352,9 +352,9 @@ impl<'a> Continuation for ValueHandle<'a, StmtCont> {
 
 impl<'a> Continuation for ValueHandle<'a, CtrlCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        if let Some(ctrl) = self.ast(itp) {
+        if let Ok(ctrl) = self.ast(itp) {
             let branch = try!(ctrl.borrow().op(itp)(itp, v.borrow(), ctrl.args_iter()));
-            Ok(State::Eval(branch, self.env(itp).unwrap(), self.parent()))
+            Ok(State::Eval(branch, try!(self.env(itp)), self.parent()))
         } else {
             Err(CtrError::Type(Ctrl::typ(itp).root()))
         }
@@ -363,14 +363,14 @@ impl<'a> Continuation for ValueHandle<'a, CtrlCont> {
 
 impl<'a> Continuation for ValueHandle<'a, DoCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        let i = self.index(itp).unwrap(); // v is the value of the i:th argument.
+        let i = try!(self.index(itp)); // v is the value of the i:th argument.
         let j = i + 1;                    // The index of the next argument to evaluate.
-        let ast = self.do_ast(itp).unwrap();
+        let ast = try!(self.do_ast(itp));
         if let Some(stmt) = ast.borrow().stmts(j) {
             // Ignore v and move on to evaluate the next statement:
-            let env = self.env(itp).unwrap();
+            let env = try!(self.env(itp));
             let new_k = DoCont::new(itp, self.parent(), ast, j, env);
-            Ok(State::Eval(stmt, self.env(itp).unwrap(), new_k.as_any_ref()))
+            Ok(State::Eval(stmt, try!(self.env(itp)), new_k.as_any_ref()))
         } else {
             Ok(State::Cont(v, self.parent())) // This was the last statement so continue with v.
         }
@@ -385,7 +385,7 @@ impl<'a> Continuation for ValueHandle<'a, Halt> {
 
 impl<'a> Primop for ValueHandle<'a, ExprCont> {
     fn exec(self, itp: &mut Interpreter) -> Result<State, CtrError> {
-        if let Some(expr) = self.ast(itp) {
+        if let Ok(expr) = self.ast(itp) {
             let res = try!(expr.borrow().op(itp)(itp, self.args_iter()));
             Ok(State::Cont(res, self.parent()))
         } else {
@@ -396,7 +396,7 @@ impl<'a> Primop for ValueHandle<'a, ExprCont> {
 
 impl<'a> Primop for ValueHandle<'a, StmtCont> {
     fn exec(self, itp: &mut Interpreter) -> Result<State, CtrError> {
-        if let Some(expr) = self.ast(itp) {
+        if let Ok(expr) = self.ast(itp) {
             try!(expr.borrow().op(itp)(itp, self.args_iter()));
             // TODO: continue with a tuple:
             Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), self.parent()))

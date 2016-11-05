@@ -1,5 +1,5 @@
 use refs::{ValuePtr, Root, ValueHandle};
-use interpreter::{Interpreter, CtrError};
+use interpreter::{Interpreter, CtrError, CtrResult};
 use primops::{ExprFn, StmtFn, CtrlFn};
 
 use std::iter;
@@ -124,14 +124,14 @@ macro_rules! getter {
     };
 
     { $field:ident : $t:ty } => {
-        pub fn $field(&self, itp: &Interpreter) -> Option<Root<$t>> {
+        pub fn $field(&self, itp: &Interpreter) -> CtrResult<$t> {
             let res = unsafe { Root::<Any>::new(self.$field) };
             res.downcast::<$t>(itp)
         }
     };
 
     { $field:ident : $t:ty ; unbox } => {
-        pub fn $field(&self, itp: &Interpreter) -> Option<$t> {
+        pub fn $field(&self, itp: &Interpreter) -> Result<$t, CtrError> {
             let res = unsafe { Root::<Any>::new(self.$field) };
             res.downcast::<Bits<$t>>(itp).map(|res| res.unbox())
         }
@@ -189,7 +189,7 @@ macro_rules! typecase {
 
     // the normal case (try to cast):
     ( $e:expr, $itp:expr; { $alias:ident : $typ:ty => $body:block , $($rest:tt)* } ) => {
-        if let Some($alias) = $e.downcast::<$typ>($itp) {
+        if let Ok($alias) = $e.downcast::<$typ>($itp) {
             $body
         } else {
             typecase!($e, $itp; {
@@ -604,11 +604,11 @@ impl Env {
 
     fn lookup_bucket(&self, itp: &Interpreter, key: ValueHandle<Symbol>)
                      -> Option<Root<EnvBucket>> {
-        let mut frame = Some(self);
-        while let Some(env) = frame {
+        let mut frame = Ok(self);
+        while let Ok(env) = frame {
             let buckets = self.buckets(itp).unwrap();
             let index = key.hash() as usize % buckets.len();
-            if let Some(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
+            if let Ok(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
                 if let Some(bucket) = start_bucket.lookup(itp, key) {
                     return Some(bucket);
                 }
@@ -630,7 +630,7 @@ impl<'a> ValueHandle<'a, Env> {
         // first we need to see whether the variable already exists in this frame:
         let buckets = self.buckets(itp).unwrap();
         let index = key.hash() as usize % buckets.len();
-        if let Some(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
+        if let Ok(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
             // there was a bucket chain at the index
             if let Some(mut bucket) = start_bucket.lookup(itp, key) {
                 // the chain has a bucket with the key; replace the value
@@ -651,7 +651,7 @@ impl<'a> ValueHandle<'a, Env> {
     fn _assoc(self, itp: &mut Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
         let buckets = self.buckets(itp).unwrap();
         let index = key.hash() as usize % buckets.len();
-        let old_buckets = buckets.get(index).unwrap().downcast::<EnvBucket>(itp);
+        let old_buckets = buckets.get(index).unwrap().downcast::<EnvBucket>(itp).ok();
         let new_bucket = EnvBucket::new(itp, old_buckets, key.root(), value.root());
         buckets.set(index, new_bucket.as_any_ref()).unwrap();
         self.inc_count(itp);
@@ -663,7 +663,7 @@ impl<'a> ValueHandle<'a, Env> {
         self.set_count(itp, 0);
         for bucket_list in old_buckets.iter() {
             let mut bucket = bucket_list.downcast::<EnvBucket>(itp);
-            while let Some(b) = bucket {
+            while let Ok(b) = bucket {
                 let k = b.key(itp).unwrap();
                 let v = b.value();
                 self._assoc(itp, k.borrow(), v.borrow());
@@ -713,8 +713,8 @@ impl EnvBucket {
     }
 
     fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> Option<Root<EnvBucket>> {
-        let mut bucket = Some(self);
-        while let Some(b) = bucket {
+        let mut bucket = Ok(self);
+        while let Ok(b) = bucket {
             // OPTIMIZE: when hash consing gets implemented, turn this into .identical()
             if b.key(itp).unwrap().borrow().equal(key) {
                 return Some(unsafe { Root::new(mem::transmute(b)) });

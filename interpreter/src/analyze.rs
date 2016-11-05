@@ -1,7 +1,6 @@
 use interpreter::{Interpreter, CtrResult, CtrError};
 use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Def, Expr, Stmt, Ctrl, Do, Var, Const};
 use refs::{Root, ValueHandle};
-use primops;
 
 use std::cmp::Ordering::Greater;
 
@@ -38,12 +37,12 @@ fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> Ctr
         "def" => {
             typecase!(args, itp; {
                 pair: ListPair => {
-                    if let Some(name) = pair.first().borrow().downcast::<Symbol>(itp) {
+                    if let Ok(name) = pair.first().borrow().downcast::<Symbol>(itp) {
                         let rest = pair.rest().downcast::<ListPair>(itp);
-                        if let Some(value) = rest.clone().map(|ls| ls.first()) {
+                        if let Ok(value) = rest.clone().map(|ls| ls.first()) {
                             if rest.map(|ls| ls.rest())
                                    .and_then(|ls| ls.downcast::<ListEmpty>(itp))
-                                   .is_some() {
+                                   .is_ok() {
                                 let value_ast = try!(analyze(itp, value.borrow()));
                                 return Ok(Def::new(itp, name.root(), value_ast).as_any_ref());
                             }
