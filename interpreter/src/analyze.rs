@@ -1,7 +1,9 @@
 use interpreter::{Interpreter, CtrResult, CtrError};
-use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Def, Expr, Do, Var, Const};
+use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Def, Expr, Stmt, Ctrl, Do, Var, Const};
 use refs::{Root, ValueHandle};
 use primops;
+
+use std::cmp::Ordering::Greater;
 
 pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
     typecase!(v, itp; {
@@ -79,26 +81,57 @@ fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> Ctr
 }
 
 fn analyze_intr(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> CtrResult<Any> {
-    let op = match opstr {
-        "iadd" => primops::iadd,
-        intr => return Err(CtrError::UnknownIntr(String::from(intr)))
-    };
-    typecase!(args, itp; {
-        pair: ListPair => {
-            let mut argv: Vec<Root<Any>> = pair.iter(itp).collect();
-            for stmt in argv.iter_mut() {
-                *stmt = try!(analyze(itp, (*stmt).borrow()));
-            }
-            Ok(Expr::new(itp, op, argv.into_iter()).as_any_ref())
-        },
-        ListEmpty => {
-            let argv = Vec::new();
-            Ok(Expr::new(itp, op, argv.into_iter()).as_any_ref())
-        },
-        _ => {
-            return Err(CtrError::ImproperList(args.root()));
-        }
-    })
+    if let Some(&op) = itp.exprfns.get(opstr) {
+        typecase!(args, itp; {
+            pair: ListPair => {
+                let mut argv: Vec<Root<Any>> = pair.iter(itp).collect();
+                for stmt in argv.iter_mut() {
+                    *stmt = try!(analyze(itp, (*stmt).borrow()));
+                }
+                Ok(Expr::new(itp, op, argv.into_iter()).as_any_ref())
+            },
+            ListEmpty => {
+                let argv = Vec::new();
+                Ok(Expr::new(itp, op, argv.into_iter()).as_any_ref())
+            },
+            _ => { Err(CtrError::ImproperList(args.root())) }
+        })
+    } else if let Some(&op) = itp.stmtfns.get(opstr) {
+        typecase!(args, itp; {
+            pair: ListPair => {
+                let mut argv: Vec<Root<Any>> = pair.iter(itp).collect();
+                for stmt in argv.iter_mut() {
+                    *stmt = try!(analyze(itp, (*stmt).borrow()));
+                }
+                Ok(Stmt::new(itp, op, argv.into_iter()).as_any_ref())
+            },
+            ListEmpty => {
+                let argv = Vec::new();
+                Ok(Stmt::new(itp, op, argv.into_iter()).as_any_ref())
+            },
+            _ => { Err(CtrError::ImproperList(args.root())) }
+        })
+    } else if let Some(&op) = itp.ctrlfns.get(opstr) {
+        typecase!(args, itp; {
+            pair: ListPair => {
+                let mut argv: Vec<Root<Any>> = pair.iter(itp).collect();
+                for stmt in argv.iter_mut() {
+                    *stmt = try!(analyze(itp, (*stmt).borrow()));
+                }
+                let mut it = argv.into_iter();
+                Ok(Ctrl::new(itp, op, it.next().unwrap(), it).as_any_ref())
+            },
+            ListEmpty => {
+                Err(CtrError::Argc {
+                    expected: (Greater, 0),
+                    received: 0,
+                })
+            },
+            _ => { Err(CtrError::ImproperList(args.root())) }
+        })
+    } else {
+        Err(CtrError::UnknownIntr(String::from(opstr)))
+    }
 }
 
 pub fn ast_to_sexpr(itp: &mut Interpreter, ast: ValueHandle<Any>) -> CtrResult<Any> {

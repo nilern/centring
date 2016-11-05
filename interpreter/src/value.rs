@@ -1,6 +1,6 @@
 use refs::{ValuePtr, Root, ValueHandle};
 use interpreter::{Interpreter, CtrError};
-use primops::ExprFn;
+use primops::{ExprFn, StmtFn, CtrlFn};
 
 use std::iter;
 use std::slice;
@@ -786,6 +786,101 @@ impl Expr {
     }
 }
 
+// Stmt *******************************************************************************************
+
+/// An AST node for statements (such as `(%rset! arr 0 3#t)`).
+ctr_struct!{
+    struct Stmt = stmt_t {
+        op: VoidPtr
+    }
+}
+
+impl UnsizedCtrValue for Stmt {
+    type Item = Root<Any>;
+    type Storage = ValuePtr;
+
+    impl_boxed_flex_get! { }
+}
+
+impl Stmt {
+    pub fn new<I>(itp: &mut Interpreter, op: StmtFn, args: I) -> Root<Stmt>
+        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        let typ = itp.stmt_t.clone();
+        let mut fields = vec![VoidPtr::new(itp, op as *mut ()).as_any_ref()];
+        fields.extend(args);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
+    }
+
+    pub fn op(&self, itp: &Interpreter) -> StmtFn {
+        let op = unsafe { Root::<Any>::new(self.op) };
+        typecase!(op.borrow(), itp; {
+            f: VoidPtr => { unsafe { mem::transmute(f.unbox()) } },
+            _ => { panic!() }
+        })
+    }
+
+    pub fn argc(&self) -> usize {
+        self.flex_len()
+    }
+
+    pub fn args(&self, i: usize) -> Option<Root<Any>> {
+        self.flex_get(i)
+    }
+
+    pub fn args_iter(&self) -> IndexedFields<Stmt> {
+        self.flex_iter()
+    }
+}
+
+// Ctrl *******************************************************************************************
+
+/// An AST node for control flow (such as `(%brf foo 3 4)`).
+ctr_struct!{
+    struct Ctrl = ctrl_t {
+        op: VoidPtr,
+        determinant: Any
+    }
+}
+
+impl UnsizedCtrValue for Ctrl {
+    type Item = Root<Any>;
+    type Storage = ValuePtr;
+
+    impl_boxed_flex_get! { }
+}
+
+impl Ctrl {
+    pub fn new<I>(itp: &mut Interpreter, op: CtrlFn, determinant: Root<Any>, args: I) -> Root<Ctrl>
+        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        let typ = itp.ctrl_t.clone();
+        let mut fields = vec![VoidPtr::new(itp, op as *mut ()).as_any_ref(), determinant];
+        fields.extend(args);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
+    }
+
+    pub fn op(&self, itp: &Interpreter) -> CtrlFn {
+        let op = unsafe { Root::<Any>::new(self.op) };
+        typecase!(op.borrow(), itp; {
+            f: VoidPtr => { unsafe { mem::transmute(f.unbox()) } },
+            _ => { panic!() }
+        })
+    }
+
+    getter!{ determinant: Any }
+
+    pub fn argc(&self) -> usize {
+        self.flex_len()
+    }
+
+    pub fn args(&self, i: usize) -> Option<Root<Any>> {
+        self.flex_get(i)
+    }
+
+    pub fn args_iter(&self) -> IndexedFields<Ctrl> {
+        self.flex_iter()
+    }
+}
+
 // Do *********************************************************************************************
 
 /// An AST node for `$do`.
@@ -949,6 +1044,91 @@ impl ExprCont {
     pub fn args_iter(&self) -> IndexedFields<ExprCont> {
         self.flex_iter()
     }
+}
+
+// StmtCont ***************************************************************************************
+
+/// A continuation for `Stmt`.
+ctr_struct!{
+    struct StmtCont = stmtcont_t {
+        parent: Any,
+        ast: Stmt,
+        index: UInt,
+        env: Env
+    }
+}
+
+impl UnsizedCtrValue for StmtCont {
+    type Item = Root<Any>;
+    type Storage = ValuePtr;
+
+    impl_boxed_flex_get! { }
+}
+
+impl UnsizedCtrValueMut for StmtCont {
+    fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Storage;
+                *fields.offset(i as isize) = v.ptr();
+                Ok(())
+            } else {
+                Err(CtrError::Index(i, self.flex_len()))
+            }
+        }
+    }
+}
+
+impl StmtCont {
+    pub fn new<I>(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Stmt>, index: usize,
+                  env: Root<Env>, args: I)
+                  -> Root<StmtCont> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        let typ = itp.stmtcont_t.clone();
+        let mut fields = vec![parent, expr_ast.clone().as_any_ref(),
+                              UInt::new(itp, index).as_any_ref(), env.as_any_ref()];
+        fields.extend(args);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
+    }
+
+    getter!{ parent: Any }
+
+    getter!{ ast: Stmt }
+
+    getter!{ index: usize; unbox }
+
+    getter!{ env: Env }
+
+    pub fn argc(&self) -> usize {
+        self.flex_len()
+    }
+
+    pub fn set_arg(&self, i: usize, arg: Root<Any>) -> Result<(), CtrError> {
+        self.flex_set(i, arg)
+    }
+
+    pub fn args_iter(&self) -> IndexedFields<StmtCont> {
+        self.flex_iter()
+    }
+}
+
+// CtrlCont ***************************************************************************************
+
+/// A continuation for `Ctrl`.
+ctr_struct!{
+    struct CtrlCont() = ctrlcont_t {
+        parent: Any,
+        ast: Ctrl,
+        env: Env
+    }
+}
+
+impl CtrlCont {
+    getter!{ parent: Any }
+
+    getter!{ ast: Ctrl }
+
+    getter!{ env: Env }
 }
 
 // Halt *******************************************************************************************

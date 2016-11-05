@@ -1,5 +1,5 @@
 use interpreter::Interpreter;
-use value::{Any, Int, Symbol, ListPair, ListEmpty};
+use value::{Any, Int, Bool, Symbol, ListPair, ListEmpty};
 use refs::Root;
 
 pub struct ParseState {
@@ -226,6 +226,14 @@ fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
                     Some('#') => {
                         let _ = st.pop();
                         return qualified_symbol(itp, st).map(|ov| ov.map(Root::as_any_ref))
+                    },
+                    Some('t') => {
+                        let _ = st.pop();
+                        return Ok(Some(Bool::new(itp, true).as_any_ref()));
+                    },
+                    Some('f') => {
+                        let _ = st.pop();
+                        return Ok(Some(Bool::new(itp, false).as_any_ref()));
                     },
                     Some(c) => return Err(st.place_error(NonSharp(c))),
                     None => return Err(st.place_error(EOF))

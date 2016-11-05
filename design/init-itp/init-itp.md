@@ -121,7 +121,6 @@
     (defrecord CtrlCont
       parent
       (: ast Ctrl)
-      (: index UInt)
       (: env Env))
 
     (defrecord DoCont

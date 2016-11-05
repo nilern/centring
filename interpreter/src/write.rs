@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use refs::ValueHandle;
-use value::{CtrValue, ConcreteType, Unbox, Int, Symbol, ListPair, ListEmpty};
+use value::{CtrValue, ConcreteType, Unbox, Int, Bool, Symbol, ListPair, ListEmpty};
 
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -24,6 +24,7 @@ impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
         typecase!(self.val, self.itp; {
             sym: Symbol => { write!(fmt, "{}", sym.to_string()) },
             n: Int => { write!(fmt, "{}", n.unbox()) },
+            b: Bool => { if b.unbox() { write!(fmt, "#t") } else { write!(fmt, "#t") } },
             pair: ListPair => {
                 try!(write!(fmt, "("));
                 let mut start = true;
