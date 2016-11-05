@@ -588,18 +588,18 @@ impl Env {
     }
 
     /// Look up the value of a variable by going up the environment frame stack.
-    pub fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> Option<Root<Any>> {
-        self.lookup_bucket(itp, key).map(|b| b.value())
+    pub fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> CtrResult<Any> {
+        self.lookup_bucket(itp, key)
+            .map(|b| b.value())
+            .ok_or_else(|| CtrError::GetUnbound(key.root()))
     }
 
     /// Set the value of a (pre-existing) variable by going up the environment frame stack.
     pub fn set(&self, itp: &Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>)
         -> Result<(), CtrError> {
-        if let Some(mut b) = self.lookup_bucket(itp, key) {
-            Ok(b.set_value(value))
-        } else {
-            Err(CtrError::SetUnbound(key.root()))
-        }
+        self.lookup_bucket(itp, key)
+            .map(|mut b| b.set_value(value))
+            .ok_or_else(|| CtrError::SetUnbound(key.root()))
     }
 
     fn lookup_bucket(&self, itp: &Interpreter, key: ValueHandle<Symbol>)
@@ -626,19 +626,19 @@ impl Env {
 impl<'a> ValueHandle<'a, Env> {
     /// Initialize (or overwrite) a variable in the topmost environment frame.
     pub fn def(self, itp: &mut Interpreter,
-               key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
+               key: ValueHandle<Symbol>, value: ValueHandle<Any>) -> Result<(), CtrError> {
         // first we need to see whether the variable already exists in this frame:
-        let buckets = self.buckets(itp).unwrap();
+        let buckets = try!(self.buckets(itp));
         let index = key.hash() as usize % buckets.len();
         if let Ok(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
             // there was a bucket chain at the index
             if let Some(mut bucket) = start_bucket.lookup(itp, key) {
                 // the chain has a bucket with the key; replace the value
-                return bucket.set_value(value);
+                return Ok(bucket.set_value(value));
             }
         }
         // didn't exist, so we create it here:
-        self.assoc(itp, key, value);
+        Ok(self.assoc(itp, key, value))
     }
 
     fn assoc(self, itp: &mut Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {

@@ -90,6 +90,7 @@ pub type CtrResult<T> = Result<Root<T>, CtrError>;
 impl Interpreter {
     /// Make a new `Interpreter` to execute Centring with.
     pub fn new() -> Interpreter {
+        // FIXME: Should be possible to avoid all these nulls. They crash the collector...
         let mut itp = Interpreter {
             gc: Collector::new(1024),
             global_env: unsafe { Root::new(ptr::null::<Env>() as ValuePtr) },
@@ -291,12 +292,8 @@ impl<'a> Eval for ValueHandle<'a, Do> {
 
 impl<'a> Eval for ValueHandle<'a, Var> {
     fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
-        let name = try!(self.name(itp));
-        if let Some(v) = env.lookup(itp, name.borrow()) {
-            Ok(State::Cont(v, k))
-        } else {
-            Err(CtrError::GetUnbound(name))
-        }
+        env.lookup(itp, try!(self.name(itp)).borrow())
+           .map(|v| State::Cont(v, k))
     }
 }
 
@@ -308,9 +305,10 @@ impl<'a> Eval for ValueHandle<'a, Const> {
 
 impl<'a> Continuation for ValueHandle<'a, DefCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        let env = try!(self.env(itp));
-        let name = try!(self.name(itp));
-        env.borrow().def(itp, name.borrow(), v.borrow());
+        try!(self.env(itp).and_then(|env| {
+            let name = try!(self.name(itp));
+            env.borrow().def(itp, name.borrow(), v.borrow())
+        }));
         // TODO: continue with a tuple:
         Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), self.parent()))
     }
@@ -352,12 +350,9 @@ impl<'a> Continuation for ValueHandle<'a, StmtCont> {
 
 impl<'a> Continuation for ValueHandle<'a, CtrlCont> {
     fn continu(self, itp: &mut Interpreter, v: Root<Any>) -> Result<State, CtrError> {
-        if let Ok(ctrl) = self.ast(itp) {
-            let branch = try!(ctrl.borrow().op(itp)(itp, v.borrow(), ctrl.args_iter()));
-            Ok(State::Eval(branch, try!(self.env(itp)), self.parent()))
-        } else {
-            Err(CtrError::Type(Ctrl::typ(itp).root()))
-        }
+        let branch = try!(self.ast(itp).and_then(|ctrl|
+            ctrl.borrow().op(itp)(itp, v.borrow(), ctrl.args_iter())));
+        Ok(State::Eval(branch, try!(self.env(itp)), self.parent()))
     }
 }
 
@@ -369,8 +364,8 @@ impl<'a> Continuation for ValueHandle<'a, DoCont> {
         if let Some(stmt) = ast.borrow().stmts(j) {
             // Ignore v and move on to evaluate the next statement:
             let env = try!(self.env(itp));
-            let new_k = DoCont::new(itp, self.parent(), ast, j, env);
-            Ok(State::Eval(stmt, try!(self.env(itp)), new_k.as_any_ref()))
+            let new_k = DoCont::new(itp, self.parent(), ast, j, env.clone());
+            Ok(State::Eval(stmt, env, new_k.as_any_ref()))
         } else {
             Ok(State::Cont(v, self.parent())) // This was the last statement so continue with v.
         }
@@ -385,24 +380,17 @@ impl<'a> Continuation for ValueHandle<'a, Halt> {
 
 impl<'a> Primop for ValueHandle<'a, ExprCont> {
     fn exec(self, itp: &mut Interpreter) -> Result<State, CtrError> {
-        if let Ok(expr) = self.ast(itp) {
-            let res = try!(expr.borrow().op(itp)(itp, self.args_iter()));
-            Ok(State::Cont(res, self.parent()))
-        } else {
-            Err(CtrError::Type(Expr::typ(itp).root()))
-        }
+        let res = try!(self.ast(itp).and_then(|expr|
+            expr.borrow().op(itp)(itp, self.args_iter())));
+        Ok(State::Cont(res, self.parent()))
     }
 }
 
 impl<'a> Primop for ValueHandle<'a, StmtCont> {
     fn exec(self, itp: &mut Interpreter) -> Result<State, CtrError> {
-        if let Ok(expr) = self.ast(itp) {
-            try!(expr.borrow().op(itp)(itp, self.args_iter()));
-            // TODO: continue with a tuple:
-            Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), self.parent()))
-        } else {
-            Err(CtrError::Type(Expr::typ(itp).root()))
-        }
+        try!(self.ast(itp).and_then(|expr| expr.borrow().op(itp)(itp, self.args_iter())));
+        // TODO: continue with a tuple:
+        Ok(State::Cont(ListEmpty::new(itp).as_any_ref(), self.parent()))
     }
 }
 
