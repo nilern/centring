@@ -171,6 +171,23 @@ macro_rules! impl_boxed_flex_get {
     }
 }
 
+macro_rules! impl_boxed_flex_set {
+    {} => {
+        fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError> {
+            unsafe {
+                let ptr: *mut Self = mem::transmute(self);
+                if i < self.flex_len() {
+                    let fields = ptr.offset(1) as *mut Self::Storage;
+                    *fields.offset(i as isize) = v.ptr();
+                    Ok(())
+                } else {
+                    Err(CtrError::Index(i, self.flex_len()))
+                }
+            }
+        }
+    }
+}
+
 macro_rules! typecase {
     // 'else' case:
     ( $e:expr, $itp:expr; { _ => $body:block } ) => {
@@ -502,22 +519,11 @@ impl UnsizedCtrValue for ArrayMut {
     type Item = Root<Any>;
     type Storage = ValuePtr;
 
-    impl_boxed_flex_get! { }
+    impl_boxed_flex_get!{ }
 }
 
 impl UnsizedCtrValueMut for ArrayMut {
-    fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError> {
-        unsafe {
-            let ptr: *mut Self = mem::transmute(self);
-            if i < self.flex_len() {
-                let fields = ptr.offset(1) as *mut Self::Storage;
-                *fields.offset(i as isize) = v.ptr();
-                Ok(())
-            } else {
-                Err(CtrError::Index(i, self.flex_len()))
-            }
-        }
-    }
+    impl_boxed_flex_set!{ }
 }
 
 impl ArrayMut {
@@ -1002,18 +1008,7 @@ impl UnsizedCtrValue for ExprCont {
 }
 
 impl UnsizedCtrValueMut for ExprCont {
-    fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError> {
-        unsafe {
-            let ptr: *mut Self = mem::transmute(self);
-            if i < self.flex_len() {
-                let fields = ptr.offset(1) as *mut Self::Storage;
-                *fields.offset(i as isize) = v.ptr();
-                Ok(())
-            } else {
-                Err(CtrError::Index(i, self.flex_len()))
-            }
-        }
-    }
+    impl_boxed_flex_set!{ }
 }
 
 impl ExprCont {
@@ -1064,22 +1059,11 @@ impl UnsizedCtrValue for StmtCont {
     type Item = Root<Any>;
     type Storage = ValuePtr;
 
-    impl_boxed_flex_get! { }
+    impl_boxed_flex_get!{ }
 }
 
 impl UnsizedCtrValueMut for StmtCont {
-    fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError> {
-        unsafe {
-            let ptr: *mut Self = mem::transmute(self);
-            if i < self.flex_len() {
-                let fields = ptr.offset(1) as *mut Self::Storage;
-                *fields.offset(i as isize) = v.ptr();
-                Ok(())
-            } else {
-                Err(CtrError::Index(i, self.flex_len()))
-            }
-        }
-    }
+    impl_boxed_flex_set!{ }
 }
 
 impl StmtCont {

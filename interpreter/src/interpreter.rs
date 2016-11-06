@@ -1,5 +1,5 @@
 use gc::Collector;
-use value::{CtrValue, ConcreteType,
+use value::{CtrValue,
             Any, Bits, ListEmpty, Type, Symbol, Env,
             Def, Expr, Stmt, Ctrl, Do, Var, Const,
             DefCont, ExprCont, StmtCont, CtrlCont, DoCont, Halt};
