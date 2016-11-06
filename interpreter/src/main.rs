@@ -4,6 +4,7 @@ extern crate alloc;
 extern crate rustc_serialize;
 extern crate docopt;
 extern crate rustyline;
+extern crate arrayvec;
 
 #[macro_use]
 pub mod value;

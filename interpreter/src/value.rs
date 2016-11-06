@@ -8,6 +8,7 @@ use std::string;
 use std::mem;
 use std::hash::{Hash, Hasher};
 use std::collections::hash_map::DefaultHasher;
+use arrayvec::ArrayVec;
 
 // Traits *****************************************************************************************
 
@@ -110,8 +111,8 @@ macro_rules! constructor {
     { ( $($field_name:ident : $field_type:ty),* ) -> $t:ty = $itp_field:ident; rec } => {
         pub fn new(itp: &mut Interpreter, $($field_name: Root<$field_type>),*) -> Root<$t> {
             let typ = itp.$itp_field.clone();
-            let fields = [$($field_name.as_any_ref()),*];
-            itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+            let fields = ArrayVec::from([$($field_name.as_any_ref()),*]);
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
         }
     }
 }
@@ -566,11 +567,11 @@ impl Env {
     /// Create a fresh environment frame, optionally prepending it to a pre-existing frame chain.
     pub fn new(itp: &mut Interpreter, parent: Option<Root<Env>>) -> Root<Env> {
         let typ = itp.env_t.clone();
-        let fields = [parent.map(Root::as_any_ref)
-                      .unwrap_or_else(|| Bool::new(itp, false).as_any_ref()),
-                      UInt::new(itp, 0).as_any_ref(),
-                      Env::new_bucket_array(itp, 4).as_any_ref()];
-        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+        let fields = ArrayVec::from([parent.map(Root::as_any_ref)
+                                     .unwrap_or_else(|| Bool::new(itp, false).as_any_ref()),
+                                     UInt::new(itp, 0).as_any_ref(),
+                                     Env::new_bucket_array(itp, 4).as_any_ref()]);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
 
     fn new_bucket_array(itp: &mut Interpreter, len: usize) -> Root<ArrayMut> {
@@ -698,8 +699,8 @@ impl EnvBucket {
         let typ = itp.env_bucket_t.clone();
         let next = next.map(Root::as_any_ref)
                        .unwrap_or_else(|| Bool::new(itp, false).as_any_ref());
-        let fields = [next, key.as_any_ref(), value];
-        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+        let fields = ArrayVec::from([next, key.as_any_ref(), value]);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
 
     getter!{ next: EnvBucket }
@@ -896,9 +897,10 @@ impl UnsizedCtrValue for Do {
 }
 
 impl Do {
-    pub fn new(itp: &mut Interpreter, stmts: &[Root<Any>]) -> Root<Do> {
+    pub fn new<I>(itp: &mut Interpreter, stmts: I) -> Root<Do>
+        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
         let typ = itp.do_t.clone();
-        itp.alloc_rec(typ.borrow(), stmts.into_iter().cloned())
+        itp.alloc_rec(typ.borrow(), stmts)
     }
 
     pub fn stmts(&self, i: usize) -> Option<Root<Any>> {
@@ -948,9 +950,9 @@ impl DoCont {
     pub fn new(itp: &mut Interpreter, parent: Root<Any>, do_ast: Root<Do>, i: usize,
                env: Root<Env>) -> Root<DoCont> {
         let typ = itp.docont_t.clone();
-        let i = UInt::new(itp, i);
-        let fields = [parent, do_ast.as_any_ref(), i.as_any_ref(), env.as_any_ref()];
-        itp.alloc_rec(typ.borrow(), fields.into_iter().cloned())
+        let fields = ArrayVec::from([parent, do_ast.as_any_ref(),
+                                     UInt::new(itp, i).as_any_ref(), env.as_any_ref()]);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
 
     getter!{ parent: Any }

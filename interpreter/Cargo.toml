@@ -7,3 +7,4 @@ authors = ["Pauli Jaakkola <pauli.jaakkola@iki.fi>"]
 rustyline = "1.0.0"
 docopt = "0.6"
 rustc-serialize = "0.3"
+arrayvec = "0.3.20"

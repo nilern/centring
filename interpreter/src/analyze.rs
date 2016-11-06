@@ -3,6 +3,7 @@ use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Def, Expr, Stmt, Ctr
 use refs::{Root, ValueHandle};
 
 use std::cmp::Ordering::Greater;
+use std::iter;
 
 pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
     typecase!(v, itp; {
@@ -65,10 +66,10 @@ fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> Ctr
                     for stmt in argv.iter_mut() {
                         *stmt = try!(analyze(itp, (*stmt).borrow()));
                     }
-                    Ok(Do::new(itp, &argv).as_any_ref())
+                    Ok(Do::new(itp, argv.into_iter()).as_any_ref())
                 },
                 ListEmpty => {
-                    Ok(Do::new(itp, &[]).as_any_ref())
+                    Ok(Do::new(itp, iter::empty()).as_any_ref())
                 },
                 _ => {
                     Err(CtrError::ImproperList(args.root()))
