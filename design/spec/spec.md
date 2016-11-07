@@ -1,4 +1,37 @@
-# Functions
+# Fundamentals
+
+## Syntax
+
+S-expressions:
+
+* A `Seq` of S-expressions
+* Or an atom
+
+## Special Forms
+
+* fn        -- create function
+* do        -- treat expressions as statements
+* def       -- add a binding to the enclosing scope
+* defsyntax -- add a macro binding to the enclosing scope
+* meta      -- do things at expansion time
+* syntax    -- prevent evaluation, leave in syntax object
+* quote     -- prevent evaluation, leave in contents of syntax object
+
+## Operations
+
+* Functions
+    * Application (`apply`)
+* Data
+    * Construction (`new`)
+    * Field access and mutation (`.x`, `.x-set!`, `set!`, `.`)
+    * Iteration (`first`, `rest`)
+* I/O (file, user input, threads)
+    * Send and receive (`>!`, `<!`)
+* (Intrinsics for addition, fn merging etc., hidden; implementation-dependent)
+
+# Special Forms
+
+## fn
 
     (fn name : <symbol>?
         cases : <case>+)
@@ -6,8 +39,29 @@
     <case> : (<pattern> <condition>
               body : <expr>*)
 
-    (ctr.sf/fn name : <symbol>? arg : <symbol>
-      cases : (<condition> body : <expr>*))
+## do
+
+    (do <stmts:expr*>)
+
+## def
+
+    (def <name:symbol> <value:expr>)
+
+## defsyntax
+
+    (defsyntax <name:symbol> <value:expr>)
+
+## meta
+
+    (meta <stmts:expr*>)
+
+## syntax
+
+    (syntax <expr>)
+
+## quote
+
+    (quote <expr>)
 
 # Callables
 
@@ -23,11 +77,18 @@
 
 # Data
 
-# Types
+## Fundamental Operations
+
+* Construction (`new`, constructor functions)
+* Selection (`.x`, selector functions)
+* Mutation (`.x-set!`, `set!`)
+* Destruction (garbage collection)
+
+## Types
 
 There are two kinds of types: **bits types** and **aggregate types**.
 
-## Bits Types
+### Bits Types
 
 Bits types have no internal structure; they are just bags of bits.
 
@@ -42,9 +103,7 @@ Each bits type has
   that are not multiples of 8 (one byte).
 * An alignment : UInt
 
-## Record Types
-
-<!-- TODO: parametrics -->
+### Record Types
 
 Record types contain values of other types which may be atomic or aggregate.
 
@@ -121,7 +180,7 @@ Note that field inheritance creates no subtype relationship and functions
 dispatching by type will be oblivious to this inheritance. The fields are simply
 copied so there is also no diamond inheritance problem.
 
-## Memory Representation
+#### Memory Representation
 
 A type is said to be **flat** when its values contains no value references^[that
 is, runtime-managed pointers]. A flat type should be stored as a contiguous byte
@@ -141,6 +200,20 @@ memory representation and a simple array of value references is sufficient.
 Note that a flat record type can include mutable fields -- those fields just
 can't store mutable values. C/C++/Rust structs that contain other structs can be
 modelled by using field inheritance.
+
+### Type Constructors
+
+<!-- Here it is assumed that (= (: #()) Array), not ... Tuple) -->
+
+A **type constructor** is a function that returns a type on `apply`:
+
+    (Tuple Int Bool) ; => ~ (isize, bool)
+
+Many type constructors also support type inference and `new`:
+
+    (: (new Some 2) (Some Int))
+
+# Type Classes / Capabilities
 
 # Modules
 
