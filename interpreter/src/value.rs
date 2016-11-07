@@ -17,23 +17,65 @@ pub trait CtrValue: Sized {
     fn as_any(&self) -> &Any {
         unsafe { mem::transmute(self) }
     }
+
+    fn as_any_mut(&mut self) -> &mut Any {
+        unsafe { mem::transmute(self) }
+    }
+
+    /// Does this Value contain references to other values (besides the type)?
+    fn pointy(&self) -> bool;
+
+    /// Get the size of the payload in words if `self.pointy()` and in bytes
+    /// otherwise.
+    fn alloc_len(&self) -> usize {
+        self.as_any().header >> 2
+    }
+
+    /// Is the mark bit of this Value on?
+    fn marked(&self) -> bool {
+        self.as_any().header & 1 == 1
+    }
+
+    /// Set the mark bit on.
+    fn set_mark_bit(&mut self) {
+        self.as_any_mut().header = self.as_any().header | 1;
+    }
+
+    /// Turn the mark bit off.
+    fn unset_mark_bit(&mut self) {
+        self.as_any_mut().header = self.as_any().header & !1;
+    }
+
+    /// Get the type reference of this Value.
+    fn get_type(&self) -> Root<Type> {
+        unsafe { Root::new(self.as_any().typ) }
+    }
+
+    /// Set the type reference of this Value.
+    fn set_type(&mut self, t: ValueHandle<Type>) {
+        self.as_any_mut().typ = t.ptr()
+    }
 }
 
 pub trait UnsizedCtrValue: CtrValue {
-    type Item;
-    type Storage;
+    type Item: CtrValue;
 
     fn flex_len(&self) -> usize {
-        let self_any = self.as_any();
-        let nonflex_size = mem::size_of::<Self>() - mem::size_of::<Any>();
-        if self_any.pointy() {
-            self_any.alloc_len() - nonflex_size / mem::size_of::<ValuePtr>()
-        } else {
-            (self_any.alloc_len() - nonflex_size) / mem::size_of::<Self::Storage>()
-        }
+        self.alloc_len()
+        - (mem::size_of::<Self>() - mem::size_of::<Any>()) / mem::size_of::<ValuePtr>()
     }
 
-    fn flex_get(&self, i: usize) -> Option<Self::Item>;
+    fn flex_get(&self, i: usize) -> Option<Root<Self::Item>> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut ValuePtr;
+                Some(Root::new(*fields.offset(i as isize)))
+            } else {
+                None
+            }
+        }
+    }
 
     fn flex_iter(&self) -> IndexedFields<Self> {
         IndexedFields {
@@ -44,8 +86,48 @@ pub trait UnsizedCtrValue: CtrValue {
     }
 }
 
+pub trait UnsizedFlatCtrValue: CtrValue {
+    type Item: Copy;
+
+    fn flex_len(&self) -> usize {
+        (self.alloc_len() - (mem::size_of::<Self>() - mem::size_of::<Any>()))
+        / mem::size_of::<Self::Item>()
+    }
+
+    fn flex_get(&self, i: usize) -> Option<Self::Item> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut Self::Item;
+                Some(*fields.offset(i as isize))
+            } else {
+                None
+            }
+        }
+    }
+
+    fn flex_iter(&self) -> IndexedFlatFields<Self> {
+        IndexedFlatFields {
+            rec: unsafe { Root::new(mem::transmute::<&Self, ValuePtr>(self)) },
+            index: 0,
+            len: self.flex_len()
+        }
+    }
+}
+
 pub trait UnsizedCtrValueMut: UnsizedCtrValue {
-    fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError>;
+    fn flex_set(&self, i: usize, v: Root<Self::Item>) -> Result<(), CtrError> {
+        unsafe {
+            let ptr: *mut Self = mem::transmute(self);
+            if i < self.flex_len() {
+                let fields = ptr.offset(1) as *mut ValuePtr;
+                *fields.offset(i as isize) = v.ptr();
+                Ok(())
+            } else {
+                Err(CtrError::Index(i, self.flex_len()))
+            }
+        }
+    }
 }
 
 /// A trait for getting the raw data out of 'boxes' like `Int` etc.
@@ -59,6 +141,60 @@ pub trait Unbox: CtrValue {
 pub trait ConcreteType: CtrValue {
     /// Get a reference to the corresponding runtime type.
     fn typ(itp: &Interpreter) -> ValueHandle<Type>;
+}
+
+// IndexedFields **********************************************************************************
+
+pub struct IndexedFields<T: UnsizedCtrValue> {
+    rec: Root<T>,
+    index: usize,
+    len: usize
+}
+
+impl<T: UnsizedCtrValue> Iterator for IndexedFields<T> {
+    type Item = Root<T::Item>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.len {
+            let res = self.rec.flex_get(self.index);
+            self.index += 1;
+            res
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: UnsizedCtrValue> ExactSizeIterator for IndexedFields<T> {
+    fn len(&self) -> usize {
+        self.len
+    }
+}
+
+pub struct IndexedFlatFields<T: UnsizedFlatCtrValue> {
+    rec: Root<T>,
+    index: usize,
+    len: usize
+}
+
+impl<T: UnsizedFlatCtrValue> Iterator for IndexedFlatFields<T> {
+    type Item = T::Item;
+
+    fn next(&mut self) -> Option<T::Item> {
+        if self.index < self.len {
+            let res = self.rec.flex_get(self.index);
+            self.index += 1;
+            res
+        } else {
+            None
+        }
+    }
+}
+
+impl<T: UnsizedFlatCtrValue> ExactSizeIterator for IndexedFlatFields<T> {
+    fn len(&self) -> usize {
+        self.len
+    }
 }
 
 // Macros *****************************************************************************************
@@ -94,7 +230,11 @@ macro_rules! ctr_struct {
             $($field_name: ValuePtr),*
         }
 
-        impl CtrValue for $name {}
+        impl CtrValue for $name {
+            fn pointy(&self) -> bool {
+                true
+            }
+        }
 
         impl_typ! { $name, $itp_field }
     }
@@ -137,55 +277,6 @@ macro_rules! getter {
             res.downcast::<Bits<$t>>(itp).map(|res| res.unbox())
         }
     };
-}
-
-macro_rules! impl_unboxed_flex_get {
-    {} => {
-        fn flex_get(&self, i: usize) -> Option<Self::Item> {
-            unsafe {
-                let ptr: *mut Self = mem::transmute(self);
-                if i < self.flex_len() {
-                    let fields = ptr.offset(1) as *mut Self::Storage;
-                    Some(*fields.offset(i as isize))
-                } else {
-                    None
-                }
-            }
-        }
-    }
-}
-
-macro_rules! impl_boxed_flex_get {
-    {} => {
-        fn flex_get(&self, i: usize) -> Option<Root<Any>> {
-            unsafe {
-                let ptr: *mut Self = mem::transmute(self);
-                if i < self.flex_len() {
-                    let fields = ptr.offset(1) as *mut Self::Storage;
-                    Some(Root::new(*fields.offset(i as isize)))
-                } else {
-                    None
-                }
-            }
-        }
-    }
-}
-
-macro_rules! impl_boxed_flex_set {
-    {} => {
-        fn flex_set(&self, i: usize, v: Self::Item) -> Result<(), CtrError> {
-            unsafe {
-                let ptr: *mut Self = mem::transmute(self);
-                if i < self.flex_len() {
-                    let fields = ptr.offset(1) as *mut Self::Storage;
-                    *fields.offset(i as isize) = v.ptr();
-                    Ok(())
-                } else {
-                    Err(CtrError::Index(i, self.flex_len()))
-                }
-            }
-        }
-    }
 }
 
 macro_rules! typecase {
@@ -231,34 +322,6 @@ macro_rules! typecase {
     };
 }
 
-// IndexedFields **********************************************************************************
-
-pub struct IndexedFields<T: UnsizedCtrValue> {
-    rec: Root<T>,
-    index: usize,
-    len: usize
-}
-
-impl<T: UnsizedCtrValue> Iterator for IndexedFields<T> {
-    type Item = T::Item;
-
-    fn next(&mut self) -> Option<T::Item> {
-        if self.index < self.len {
-            let res = self.rec.flex_get(self.index);
-            self.index += 1;
-            res
-        } else {
-            None
-        }
-    }
-}
-
-impl<T: UnsizedCtrValue> ExactSizeIterator for IndexedFields<T> {
-    fn len(&self) -> usize {
-        self.len
-    }
-}
-
 // Any ********************************************************************************************
 
 /// The layout of every Centring Value on the GC heap starts with the fields
@@ -280,45 +343,13 @@ impl Any {
     pub unsafe fn header(alloc_len: usize, pointy: bool) -> usize {
         alloc_len << 2 | (pointy as usize) << 1
     }
-
-    /// Get the size of the payload in words if `self.pointy()` and in bytes
-    /// otherwise.
-    pub fn alloc_len(&self) -> usize {
-        self.header >> 2
-    }
-
-    /// Does this Value contain references to other values (besides the type)?
-    pub fn pointy(&self) -> bool {
-        self.header >> 1 & 1 == 1
-    }
-
-    /// Is the mark bit of this Value on?
-    pub fn marked(&self) -> bool {
-        self.header & 1 == 1
-    }
-
-    /// Set the mark bit on.
-    pub fn set_mark_bit(&mut self) {
-        self.header = self.header | 1;
-    }
-
-    /// Turn the mark bit off.
-    pub fn unset_mark_bit(&mut self) {
-        self.header = self.header & !1;
-    }
-
-    /// Get the type reference of this Value.
-    pub fn get_type(&self) -> Root<Type> {
-        unsafe { Root::new(self.typ) }
-    }
-
-    /// Set the type reference of this Value.
-    pub fn set_type(&mut self, t: ValueHandle<Type>) {
-        self.typ = t.ptr()
-    }
 }
 
-impl CtrValue for Any {}
+impl CtrValue for Any {
+    fn pointy(&self) -> bool {
+        self.header >> 1 & 1 == 1
+    }
+}
 
 // Bits *******************************************************************************************
 
@@ -331,7 +362,11 @@ pub struct Bits<T: Copy> {
     data: T,
 }
 
-impl<T: Copy> CtrValue for Bits<T> {}
+impl<T: Copy> CtrValue for Bits<T> {
+    fn pointy(&self) -> bool {
+        false
+    }
+}
 
 impl<T: Copy> Unbox for Bits<T> {
     type Prim = T;
@@ -398,15 +433,16 @@ pub struct Symbol {
     hash: u64
 }
 
-impl CtrValue for Symbol {}
+impl CtrValue for Symbol {
+    fn pointy(&self) -> bool {
+        false
+    }
+}
 
 impl_typ! { Symbol, symbol_t }
 
-impl UnsizedCtrValue for Symbol {
+impl UnsizedFlatCtrValue for Symbol {
     type Item = u8;
-    type Storage = u8;
-
-    impl_unboxed_flex_get! { }
 }
 
 impl Symbol {
@@ -516,15 +552,10 @@ ctr_struct!{
 }
 
 impl UnsizedCtrValue for ArrayMut {
-    type Item = Root<Any>;
-    type Storage = ValuePtr;
-
-    impl_boxed_flex_get!{ }
+    type Item = Any;
 }
 
-impl UnsizedCtrValueMut for ArrayMut {
-    impl_boxed_flex_set!{ }
-}
+impl UnsizedCtrValueMut for ArrayMut { }
 
 impl ArrayMut {
     pub fn new<I>(itp: &mut Interpreter, elems: I) -> Root<ArrayMut>
@@ -757,10 +788,7 @@ ctr_struct!{
 }
 
 impl UnsizedCtrValue for Expr {
-    type Item = Root<Any>;
-    type Storage = ValuePtr;
-
-    impl_boxed_flex_get! { }
+    type Item = Any;
 }
 
 impl Expr {
@@ -803,10 +831,7 @@ ctr_struct!{
 }
 
 impl UnsizedCtrValue for Stmt {
-    type Item = Root<Any>;
-    type Storage = ValuePtr;
-
-    impl_boxed_flex_get! { }
+    type Item = Any;
 }
 
 impl Stmt {
@@ -850,10 +875,7 @@ ctr_struct!{
 }
 
 impl UnsizedCtrValue for Ctrl {
-    type Item = Root<Any>;
-    type Storage = ValuePtr;
-
-    impl_boxed_flex_get! { }
+    type Item = Any;
 }
 
 impl Ctrl {
@@ -896,10 +918,7 @@ ctr_struct!{
 }
 
 impl UnsizedCtrValue for Do {
-    type Item = Root<Any>;
-    type Storage = ValuePtr;
-
-    impl_boxed_flex_get! { }
+    type Item = Any;
 }
 
 impl Do {
@@ -1001,15 +1020,10 @@ ctr_struct!{
 }
 
 impl UnsizedCtrValue for ExprCont {
-    type Item = Root<Any>;
-    type Storage = ValuePtr;
-
-    impl_boxed_flex_get! { }
+    type Item = Any;
 }
 
-impl UnsizedCtrValueMut for ExprCont {
-    impl_boxed_flex_set!{ }
-}
+impl UnsizedCtrValueMut for ExprCont { }
 
 impl ExprCont {
     pub fn new<I>(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Expr>, index: usize,
@@ -1056,15 +1070,10 @@ ctr_struct!{
 }
 
 impl UnsizedCtrValue for StmtCont {
-    type Item = Root<Any>;
-    type Storage = ValuePtr;
-
-    impl_boxed_flex_get!{ }
+    type Item = Any;
 }
 
-impl UnsizedCtrValueMut for StmtCont {
-    impl_boxed_flex_set!{ }
-}
+impl UnsizedCtrValueMut for StmtCont { }
 
 impl StmtCont {
     pub fn new<I>(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Stmt>, index: usize,

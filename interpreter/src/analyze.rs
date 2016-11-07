@@ -1,5 +1,6 @@
 use interpreter::{Interpreter, CtrResult, CtrError};
-use value::{ConcreteType, Any, ListPair, ListEmpty, Symbol, Def, Expr, Stmt, Ctrl, Do, Var, Const};
+use value::{CtrValue, ConcreteType, Any,
+            ListPair, ListEmpty, Symbol, Def, Expr, Stmt, Ctrl, Do, Var, Const};
 use refs::{Root, ValueHandle};
 
 use std::cmp::Ordering::Greater;
