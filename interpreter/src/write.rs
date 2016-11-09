@@ -1,6 +1,6 @@
 use interpreter::Interpreter;
 use refs::ValueHandle;
-use value::{CtrValue, ConcreteType, Unbox, Int, Bool, Symbol, ListPair, ListEmpty};
+use value::{CtrValue, ConcreteType, Unbox, Int, Bool, Symbol, ListPair, ListEmpty, FnClosure};
 
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -39,6 +39,7 @@ impl<'a, T: CtrValue> Display for ContextValue<'a, T> {
                 write!(fmt, ")")
             },
             ListEmpty => { write!(fmt, "()") },
+            FnClosure => { write!(fmt, "#<Fn>") },
             _ => { unimplemented!() }
         })
     }

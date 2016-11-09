@@ -79,6 +79,7 @@ impl Args {
                 let line = ed.readline("ctr> ");
                 match line {
                     Ok(estr) => {
+                        ed.add_history_entry(&estr);
                         self.act_and_print(&mut itp, estr);
                     }
                     Err(ReadlineError::Interrupted) |

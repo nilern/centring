@@ -1,7 +1,7 @@
 use gc::Collector;
 use value::{CtrValue,
-            Any, Bits, ListEmpty, Type, Symbol, Env,
-            Def, Expr, Stmt, Ctrl, Do, Var, Const,
+            Any, Bits, ListEmpty, Array, Type, Symbol, FnClosure, Env,
+            FnNode, Def, Expr, Stmt, Ctrl, Closure, Do, Var, Const,
             DefCont, ExprCont, StmtCont, CtrlCont, DoCont, Halt};
 use refs::{Root, WeakRoot, ValueHandle, ValuePtr};
 use primops;
@@ -35,6 +35,7 @@ pub struct Interpreter {
     pub type_t: Root<Type>,
     pub pair_t: Root<Type>,
     pub nil_t: Root<Type>,
+    pub array_t: Root<Type>,
     pub array_mut_t: Root<Type>,
     pub int_t: Root<Type>,
     pub uint_t: Root<Type>,
@@ -42,12 +43,15 @@ pub struct Interpreter {
     pub voidptr_t: Root<Type>,
     pub symbol_t: Root<Type>,
     pub string_t: Root<Type>,
+    pub fn_t: Root<Type>,
     pub env_t: Root<Type>,
     pub env_bucket_t: Root<Type>,
+    pub fn_node_t: Root<Type>,
     pub def_t: Root<Type>,
     pub expr_t: Root<Type>,
     pub stmt_t: Root<Type>,
     pub ctrl_t: Root<Type>,
+    pub closure_t: Root<Type>,
     pub do_t: Root<Type>,
     pub var_t: Root<Type>,
     pub const_t: Root<Type>,
@@ -82,6 +86,8 @@ pub enum CtrError {
     SetUnbound(Root<Symbol>),
     GetUnbound(Root<Symbol>),
     DefArgs,
+    FnArgs,
+    FnCase,
     ErrIntr(Root<Any>, Root<Any>)
 }
 
@@ -97,6 +103,7 @@ impl Interpreter {
             stack_roots: vec![],
             type_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             pair_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            array_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             array_mut_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             nil_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             int_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
@@ -105,12 +112,15 @@ impl Interpreter {
             voidptr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             symbol_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             string_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            fn_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             env_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             env_bucket_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            fn_node_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             def_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             expr_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             stmt_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             ctrl_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
+            closure_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             do_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             var_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
             const_t: unsafe { Root::new(ptr::null::<Any>() as ValuePtr) },
@@ -129,6 +139,7 @@ impl Interpreter {
         let type_t = Type::new(&mut itp);
         itp.type_t = type_t.clone();
         itp.pair_t = Type::new(&mut itp);
+        itp.array_t = Type::new(&mut itp);
         itp.array_mut_t = Type::new(&mut itp);
         itp.nil_t = Type::new(&mut itp);
         itp.int_t = Type::new(&mut itp);
@@ -137,12 +148,15 @@ impl Interpreter {
         itp.voidptr_t = Type::new(&mut itp);
         itp.symbol_t = Type::new(&mut itp);
         itp.string_t = Type::new(&mut itp);
+        itp.fn_t = Type::new(&mut itp);
         itp.env_t = Type::new(&mut itp);
         itp.env_bucket_t = Type::new(&mut itp);
+        itp.fn_node_t = Type::new(&mut itp);
         itp.def_t = Type::new(&mut itp);
         itp.expr_t = Type::new(&mut itp);
         itp.stmt_t = Type::new(&mut itp);
         itp.ctrl_t = Type::new(&mut itp);
+        itp.closure_t = Type::new(&mut itp);
         itp.do_t = Type::new(&mut itp);
         itp.var_t = Type::new(&mut itp);
         itp.const_t = Type::new(&mut itp);
@@ -179,7 +193,9 @@ impl Interpreter {
     fn eval(&mut self, ctrl: Root<Any>, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
         let ctrl = ctrl.borrow();
         typecase!(ctrl, self; {
-            ctrl: Def | Expr | Stmt | Ctrl | Do | Var | Const => { ctrl.eval(self, env, k) },
+            ctrl: FnNode | Def | Expr | Stmt | Ctrl | Do | Var | Const => {
+                ctrl.eval(self, env, k)
+            },
             _ => { unimplemented!() }
         })
     }
@@ -236,6 +252,24 @@ impl Interpreter {
                 false
             }
         });
+    }
+}
+
+impl<'a> Eval for ValueHandle<'a, FnNode> {
+    fn eval(self, itp: &mut Interpreter, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
+        let name = try!(self.name(itp));
+        let formal = try!(self.formal(itp));
+        let body = Closure::new(itp, env.clone(), // TODO: only do this for mono-fns
+                                     self.case(0).unwrap().get(1).unwrap()).as_any_ref();
+        let cases = self.case_iter()
+                        .map(|case| {
+                            assert_eq!(case.len(), 2);
+                            let cond = case.get(0).unwrap();
+                            let body = case.get(1).unwrap();
+                            Array::new(itp, vec![cond, body, env.clone().as_any_ref()].into_iter())
+                        })
+                        .collect::<Vec<_>>();
+        Ok(State::Cont(FnClosure::new(itp, name, formal, body, cases.into_iter()).as_any_ref(), k))
     }
 }
 

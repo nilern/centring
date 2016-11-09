@@ -66,6 +66,7 @@ pub trait UnsizedCtrValue: CtrValue {
     }
 
     fn flex_get(&self, i: usize) -> Option<Root<Self::Item>> {
+        // don't need to .downcast() because constructor and setter statically enforce type (?)
         unsafe {
             let ptr: *mut Self = mem::transmute(self);
             if i < self.flex_len() {
@@ -544,6 +545,37 @@ ctr_struct!{
     struct ListEmpty() = nil_t { }
 }
 
+// Array ******************************************************************************************
+
+/// An immutable array
+ctr_struct!{
+    struct Array = array_t { }
+}
+
+impl UnsizedCtrValue for Array {
+    type Item = Any;
+}
+
+impl Array {
+    pub fn new<I>(itp: &mut Interpreter, elems: I) -> Root<Array>
+        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        let typ = itp.array_t.clone();
+        itp.alloc_rec(typ.borrow(), elems)
+    }
+
+    pub fn len(&self) -> usize {
+        self.flex_len()
+    }
+
+    pub fn get(&self, i: usize) -> Option<Root<Any>> {
+        self.flex_get(i)
+    }
+
+    pub fn iter(&self) -> IndexedFields<Array> {
+        self.flex_iter()
+    }
+}
+
 // ArrayMut ***************************************************************************************
 
 /// A mutable array
@@ -587,6 +619,31 @@ impl ArrayMut {
 /// A type.
 ctr_struct!{
     struct Type() = type_t { }
+}
+
+// Fn *********************************************************************************************
+
+ctr_struct!{
+    struct FnClosure = fn_t {
+        name: Symbol,
+        formal: Symbol,
+        body: Any
+    }
+}
+
+impl UnsizedCtrValue for FnClosure {
+    type Item = Array;
+}
+
+impl FnClosure {
+    pub fn new<I>(itp: &mut Interpreter, name: Root<Symbol>, formal: Root<Symbol>, body: Root<Any>,
+                  cases: I) -> Root<FnClosure>
+        where I: Iterator<Item=Root<Array>> + ExactSizeIterator {
+        let typ = itp.fn_t.clone();
+        let mut fields = vec![name.as_any_ref(), formal.as_any_ref(), body];
+        fields.extend(cases.map(|case| case.as_any_ref()));
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
+    }
 }
 
 // Env ********************************************************************************************
@@ -763,6 +820,41 @@ impl EnvBucket {
     }
 }
 
+// FnNode *****************************************************************************************
+
+ctr_struct!{
+    struct FnNode = fn_node_t {
+        name: Symbol,
+        formal: Symbol
+    }
+}
+
+impl UnsizedCtrValue for FnNode {
+    type Item = Array;
+}
+
+impl FnNode {
+    pub fn new<I>(itp: &mut Interpreter, name: Root<Symbol>, formal: Root<Symbol>, cases: I)
+                  -> Root<Expr> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        let typ = itp.fn_node_t.clone();
+        let mut fields = vec![name.as_any_ref(), formal.as_any_ref()];
+        fields.extend(cases);
+        itp.alloc_rec(typ.borrow(), fields.into_iter())
+    }
+
+    getter!{ name: Symbol }
+
+    getter!{ formal: Symbol }
+
+    pub fn case(&self, i: usize) -> Option<Root<Array>> {
+        self.flex_get(i)
+    }
+
+    pub fn case_iter(&self) -> IndexedFields<FnNode> {
+        self.flex_iter()
+    }
+}
+
 // Def ********************************************************************************************
 
 ctr_struct!{
@@ -908,6 +1000,21 @@ impl Ctrl {
     pub fn args_iter(&self) -> IndexedFields<Ctrl> {
         self.flex_iter()
     }
+}
+
+// Closure ****************************************************************************************
+
+ctr_struct!{
+    struct Closure() = closure_t {
+        env: Env,
+        expr: Any
+    }
+}
+
+impl Closure {
+    getter!{ env: Env }
+
+    getter!{ expr: Any }
 }
 
 // Do *********************************************************************************************
