@@ -135,17 +135,21 @@
 
 (Prefixed by ##sf#):
 
-* fn    -- create Fn (a predicate-dispatching closure)
-* apply -- call functions (or other things, e.g. types as constructors)
-* do    -- treat expressions as statements
-* def   -- add a binding to the current environment frame
-* meta  -- do things at expansion time
-* syntax -- prevent evaluation, leave in syntax object
-* quote -- prevent evaluation, leave in contents of syntax object
+* fn        -- create function
+* do        -- treat expressions as statements
+* def       -- add a binding to the enclosing scope
+* defsyntax -- add a macro binding to the enclosing scope
+* module    -- create an applicative module functor
+* module*   -- create a generative module functor
+* import    -- import from modules
+* meta      -- do things at expansion time
+* syntax    -- prevent evaluation, leave in syntax object
+* quote     -- prevent evaluation, leave in contents of syntax object
 
-## Fn
+## `fn`
 
-    (##sf#fn name : <symbol> formal : <symbol> cases : (condition body)*)
+    (##sf#fn <name: Symbol> <formal: Symbol>
+      <cases: (<condition: expr> <body: expr>)+>)
 
 ### Expansion time
 
@@ -163,7 +167,7 @@ where `analyze_case` turns `[condition; body]` into
 
 Create a Fn.
 
-## Apply
+## `apply`
 
     (##sf#apply callee arg)
 
@@ -179,9 +183,9 @@ Just recursively expanded.
 
 Perform call.
 
-## Do
+## `do`
 
-    (##sf#do stmts*)
+    (##sf#do <stmts:expr*>)
 
 ### Expansion time
 
@@ -195,9 +199,9 @@ Just recursively expanded.
 
 Execute `stmts` in sequence.
 
-## Def
+## `def`
 
-    (##sf#def name : <symbol> expr)
+    (##sf#def <name:symbol> <value:expr>)
 
 ### Expansion time
 
@@ -212,9 +216,31 @@ Expand `name` and `expr`. Remove any use-site scopes from `name`.
 Evaluate `expr` and associate the result with `name` in the current environment
 frame.
 
-## Meta
+## `defsyntax`
 
-    (##sf#meta expr)
+    (##sf#defsyntax <name:symbol> <value:expr>)
+
+## `module` and `module*`
+
+    (##sf#module <name: Symbol> (<deps: Symbol*>)
+      <body: expr>)
+
+    (##sf#module* <name: Symbol> (<deps: Symbol*>)
+      <body: expr>)
+
+## `import`
+
+    (##sf#import <import-spec*>)
+
+    <import-spec> : <mod-kind>
+                  | (prefix <import-spec> <name: Symbol>)
+                  | (only <import-spec> <Symbol*>)
+                  | (except <import-spec> <Symbol*>)
+                  | (rename <import-spec> (<old-name: Symbol> <new-name: Symbol>)*)
+
+## `meta`
+
+    (##sf#meta <stmt:expr>)
 
 ### Expansion time
 
@@ -230,9 +256,9 @@ It is an error if this occurs at analysis time.
 Since `expr` was executed at expansion time there is nothing left to do but
 return `#()`.
 
-## Syntax
+## `syntax`
 
-    (##sf#syntax expr)
+    (##sf#syntax <expr>)
 
 ### Expansion time
 
@@ -246,9 +272,9 @@ Return the form unchanged.
 
 Return the constant.
 
-## Quote
+## `quote`
 
-    (##sf#quote expr)
+    (##sf#quote <expr>)
 
 ### Expansion time
 

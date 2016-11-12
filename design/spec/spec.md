@@ -13,6 +13,9 @@ S-expressions:
 * do        -- treat expressions as statements
 * def       -- add a binding to the enclosing scope
 * defsyntax -- add a macro binding to the enclosing scope
+* module    -- create an applicative module functor
+* module*   -- create a generative module functor
+* import    -- import from modules
 * meta      -- do things at expansion time
 * syntax    -- prevent evaluation, leave in syntax object
 * quote     -- prevent evaluation, leave in contents of syntax object
@@ -31,7 +34,7 @@ S-expressions:
 
 # Special Forms
 
-## fn
+## `fn`
 
     (fn name : <symbol>?
         cases : <case>+)
@@ -39,27 +42,46 @@ S-expressions:
     <case> : (<pattern> <condition>
               body : <expr>*)
 
-## do
+## `do`
 
     (do <stmts:expr*>)
 
-## def
+## `def`
 
     (def <name:symbol> <value:expr>)
 
-## defsyntax
+## `defsyntax`
 
     (defsyntax <name:symbol> <value:expr>)
 
-## meta
+## `module` and `module*`
+
+    (module <mod-kind> <body: expr*>)
+
+    (module* <mod-kind> <body: expr*>)
+
+    <mod-kind> : (<Symbol> <dependencies: Symbol*>)
+               | <Symbol>
+
+## `import`
+
+    (import <import-spec*>)
+
+    <import-spec> : <mod-kind>
+                  | (prefix <import-spec> <name: Symbol>)
+                  | (only <import-spec> <Symbol*>)
+                  | (except <import-spec> <Symbol*>)
+                  | (rename <import-spec> (<old-name: Symbol> <new-name: Symbol>)*)
+
+## `meta`
 
     (meta <stmts:expr*>)
 
-## syntax
+## `syntax`
 
     (syntax <expr>)
 
-## quote
+## `quote`
 
     (quote <expr>)
 
@@ -205,9 +227,13 @@ modelled by using field inheritance.
 
 <!-- Here it is assumed that (= (: #()) Array), not ... Tuple) -->
 
-A **type constructor** is a function that returns a type on `apply`:
+A **type constructor** is a function that takes some types and returns a type on
+`apply`:
 
     (Tuple Int Bool) ; => ~ (isize, bool)
+
+<!-- Would be useful to also take `mut`, `...` and numbers. Maybe we could have
+     special type constructors Mut and Splat..? -->
 
 Many type constructors also support type inference and `new`:
 
@@ -215,64 +241,35 @@ Many type constructors also support type inference and `new`:
 
 # Type Classes / Capabilities
 
-# Modules
+# Code Organization
 
-    (module mname : <type-spec>
-      (require rspecs : (<symbol> | <require-spec>)*)?
-      body : <expr>*)
+## `include`
 
-Parametric and non-parametric modules can be turned into singleton record types.
-`require` will check if an instance of the module already exists. If it does,
-that will be used. If not, it will
+The simplest and most low-level option is `include`, which just copies and
+pastes a file. It does use the `$CTR_PATH` mechanism to locate the file.
 
-1. locate the source file of the corresponding module (in an
-   implementation-specific manner)
-2. `include` it
-3. parameterize it (if applicable)
-4. instantiate it
+If the file and read function haven't changed it is of course unnecessary to
+re-read the file so implementations might perform caching of S-expressions in
+this case.
 
-After an instance of the module has been created, it is fairly straightforward to
-handle the import operations in the `require-spec`:s.
+## Modules
+
+The `module` and `module*` forms are used to define module functors. A module
+functor can be *instantiated* to obtain a module by giving it the required
+number of other module names or instantiations as arguments. The parentheses can
+be omitted for zero-argument module functors.
+
+<!-- Would be nice to be able to give non-module arguments but there might not
+     be a clean way to do that -->
+
+The difference between the `module` and `module*` forms is that `module` creates
+applicative functors and `module*` creates generative functors. Thus `module` is
+more efficient to instantiate and generates less code. Sometimes it is desirable
+to use `module*`, for instance if multiple instantiations of stateful modules
+are required.
 
 # Syntax Derivations
 
 ## begin
 
-    (begin stmts : <expr>*)
-
-becomes
-
-    ((fn (_ #t ,@stmts)))
-
-## module
-
-    (module foo.bar
-      (require (only foo.baz quux))
-      (define a 3)
-      (define b 5))
-
-becomes
-
-    (do
-      (def foo.baz (ctr.intr/require! 'foo.baz))
-      (def quux (. foo.baz quux))
-      (def a 3)
-      (def b 5)
-      (defrecord (foo.bar a b)
-        (new foo.bar a b)))
-
-and
-
-    (module (foo.bar baz)
-      (require (only baz quux))
-      (define a 3)
-      (define b 5))
-
-becomes
-
-    (fn (baz)
-      (def quux (. baz quux))
-      (def a 3)
-      (def b 5)
-      (defrecord (foo.bar a b)
-        (new foo.bar a b)))
+    (begin stmts : <expr>*) --> ((fn (_ #t ,@stmts)))
