@@ -1,6 +1,6 @@
 use interpreter::{Interpreter, CtrResult, CtrError};
 use value::{CtrValue, ConcreteType, Any,
-            ListPair, ListEmpty, Symbol, Array, FnNode, Def, Expr, Stmt, Ctrl, Do, Var, Const};
+            ListPair, ListEmpty, Symbol, Array, FnNode, App, Def, Expr, Stmt, Ctrl, Do, Var, Const};
 use refs::{Root, ValueHandle};
 
 use std::cmp::Ordering::Greater;
@@ -8,25 +8,40 @@ use std::cmp::Ordering::Greater;
 pub fn analyze(itp: &mut Interpreter, v: ValueHandle<Any>) -> CtrResult<Any> {
     typecase!(v, itp; {
         p: ListPair => {
-            typecase!(p.first().borrow(), itp; {
+            let op = p.first();
+            typecase!(op.borrow(), itp; {
                 op: Symbol => {
                     let opstr = op.to_string();
                     if opstr.starts_with("##sf#") {
-                        return analyze_sf(itp, &opstr[5..], p.rest().borrow());
+                        analyze_sf(itp, &opstr[5..], p.rest().borrow())
                     } else if opstr.starts_with("##intr#") {
-                        return analyze_intr(itp, &opstr[7..], p.rest().borrow());
+                        analyze_intr(itp, &opstr[7..], p.rest().borrow())
                     } else {
-                        unimplemented!()
+                        analyze_call(itp, op.as_any_ref(), p.rest().borrow())
                     }
                 },
                 _ => {
-                    unimplemented!()
+                    analyze_call(itp, op.borrow(), p.rest().borrow())
                 }
             })
         },
         name: Symbol => { Ok(Var::new(itp, name.root()).as_any_ref()) },
         _ => { Ok(Const::new(itp, v.root()).as_any_ref()) }
     })
+}
+
+fn analyze_call(itp: &mut Interpreter, callee: ValueHandle<Any>, args: ValueHandle<Any>)
+                -> CtrResult<Any> {
+    let callee = try!(analyze(itp, callee));
+    let arg = try!(analyze_list(itp, args).map(|args| {
+        let rec = *itp.exprfns.get("rec").unwrap();
+        let array_t = itp.array_t.clone().as_any_ref();
+        let array_t_ast = Const::new(itp, array_t).as_any_ref();
+        let mut argv = vec![array_t_ast];
+        argv.extend(args.into_iter());
+        Expr::new(itp, rec, argv.into_iter()).as_any_ref()
+    }));
+    Ok(App::new(itp, callee, arg).as_any_ref())
 }
 
 fn analyze_sf(itp: &mut Interpreter, opstr: &str, args: ValueHandle<Any>) -> CtrResult<Any> {

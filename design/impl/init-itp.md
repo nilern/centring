@@ -96,7 +96,7 @@
 
     (defrecord ArgCont
       parent
-      (: ast App)
+      callee
       (: env Env))
 
     (defrecord DefCont

@@ -281,7 +281,7 @@ macro_rules! getter {
 }
 
 macro_rules! typecase {
-    // 'else' case:
+    // 'else' cases:
     ( $e:expr, $itp:expr; { _ => $body:block } ) => {
         $body
     };
@@ -644,6 +644,12 @@ impl FnClosure {
         fields.extend(cases.map(|case| case.as_any_ref()));
         itp.alloc_rec(typ.borrow(), fields.into_iter())
     }
+
+    getter!{ name: Symbol }
+
+    getter!{ formal: Symbol }
+
+    getter!{ body: Any }
 }
 
 // Env ********************************************************************************************
@@ -686,7 +692,7 @@ impl Env {
     pub fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> CtrResult<Any> {
         self.lookup_bucket(itp, key)
             .map(|b| b.value())
-            .ok_or_else(|| CtrError::GetUnbound(key.root()))
+            .ok_or_else(|| CtrError::GetUnbound(key.to_string()))
     }
 
     /// Set the value of a (pre-existing) variable by going up the environment frame stack.
@@ -694,7 +700,7 @@ impl Env {
         -> Result<(), CtrError> {
         self.lookup_bucket(itp, key)
             .map(|mut b| b.set_value(value))
-            .ok_or_else(|| CtrError::SetUnbound(key.root()))
+            .ok_or_else(|| CtrError::SetUnbound(key.to_string()))
     }
 
     fn lookup_bucket(&self, itp: &Interpreter, key: ValueHandle<Symbol>)
@@ -736,6 +742,24 @@ impl<'a> ValueHandle<'a, Env> {
         Ok(self.assoc(itp, key, value))
     }
 
+    pub fn concat(self, itp: &mut Interpreter, parent: ValueHandle<Env>) -> CtrResult<Env> {
+        fn concat_(itp: &mut Interpreter, env: CtrResult<Env>, parent: ValueHandle<Env>)
+                   -> CtrResult<Env> {
+            match env {
+                Ok(env) => {
+                    let parent_ = env.parent(itp);
+                    let parent__ = try!(concat_(itp, parent_, parent));
+                    let res = Env::new(itp, Some(parent__));
+                    let buckets = env.buckets(itp).unwrap();
+                    res.borrow().extend(itp, buckets);
+                    Ok(res)
+                },
+                _ => Ok(parent.root())
+            }
+        }
+        concat_(itp, Ok(self.root()), parent)
+    }
+
     fn assoc(self, itp: &mut Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
         if self.load_factor(itp) >= 0.75 {
             self.rehash(itp);
@@ -752,8 +776,12 @@ impl<'a> ValueHandle<'a, Env> {
         self.inc_count(itp);
     }
 
-    fn rehash(mut self, itp: &mut Interpreter) {
-        let old_buckets = self.buckets(itp).unwrap();
+    fn rehash(self, itp: &mut Interpreter) {
+        let buckets = self.buckets(itp).unwrap();
+        self.extend(itp, buckets);
+    }
+
+    fn extend(mut self, itp: &mut Interpreter, old_buckets: Root<ArrayMut>) {
         self.set_buckets(Env::new_bucket_array(itp, 2 * old_buckets.len()).borrow());
         self.set_count(itp, 0);
         for bucket_list in old_buckets.iter() {
@@ -853,6 +881,21 @@ impl FnNode {
     pub fn case_iter(&self) -> IndexedFields<FnNode> {
         self.flex_iter()
     }
+}
+
+// App ********************************************************************************************
+
+ctr_struct!{
+    struct App() = app_t {
+        callee: Any,
+        arg: Any
+    }
+}
+
+impl App {
+    getter!{ callee: Any }
+
+    getter!{ arg: Any }
 }
 
 // Def ********************************************************************************************
@@ -1064,6 +1107,40 @@ ctr_struct!{
 
 impl Const {
     getter!{ val: Any }
+}
+
+// FnCont *****************************************************************************************
+
+ctr_struct!{
+    struct FnCont() = fncont_t {
+        parent: Any,
+        ast: App,
+        env: Env
+    }
+}
+
+impl FnCont {
+    getter!{ parent: Any }
+
+    getter!{ ast: App }
+
+    getter!{ env: Env }
+}
+
+// ArgCont ****************************************************************************************
+
+ctr_struct!{
+    struct ArgCont() = argcont_t {
+        parent: Any,
+        callee: Any,
+        env: Env
+    }
+}
+
+impl ArgCont {
+    getter!{ parent: Any }
+
+    getter!{ callee: Any }
 }
 
 // DoCont *****************************************************************************************
