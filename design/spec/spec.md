@@ -1,11 +1,83 @@
-# Fundamentals
-
-## Syntax
+# Syntax
 
 S-expressions:
 
 * A `Seq` of S-expressions
 * Or an atom
+
+## Data
+
+## Expressions
+
+    <expr> : <literal>
+           | <fn>
+           | <do>
+           | <includer>
+
+    <statement> : <expr>
+
+### Literals
+
+    <literal> : <self-quoting>
+              | <quotation>
+              | <syntax-quotation>
+
+#### Data
+
+#### `quote`
+
+    <quotation> : (quote <expr>)
+
+#### `syntax`
+
+    <syntax-quotation> : (syntax <expr>)
+
+### Variable References
+
+### `fn`
+
+    (fn name : <symbol>?
+        cases : <case>+)
+
+    <case> : (<pattern> <condition>
+              body : <expr>*)
+
+### `do`
+
+    <do> : (do <stmts:expr*>)
+
+### `include`
+
+    <includer> : (include <include-directive*>)
+
+## Modules
+
+    <module> : (module <mod-kind>
+                 <module-declaration*>)
+             | (module* <mod-kind>
+                 <module-declaration*>)
+
+    <mod-kind> : (<mod-path> <dependencies: Symbol*>)
+               | <mod-path>
+
+    <module-declaration> : <import>
+                         | <export>
+                         | <module>
+                         | <definition>
+                         | <statement>
+                         | (do <module-declaration*>)
+
+    <import> : (import <import-spec*>)
+
+    <import-spec> : <mod-kind>
+                  | (prefix <import-spec> <name: Symbol>)
+                  | (only <import-spec> <Symbol*>)
+                  | (except <import-spec> <Symbol*>)
+                  | (rename <import-spec> (<old-name: Symbol> <new-name: Symbol>)*)
+
+    <export> : (export <Symbol*>)
+
+# Fundamentals
 
 ## Special Forms
 
@@ -34,60 +106,17 @@ S-expressions:
 
 # Special Forms
 
-## `fn`
-
-    (fn name : <symbol>?
-        cases : <case>+)
-
-    <case> : (<pattern> <condition>
-              body : <expr>*)
-
-## `do`
-
-    (do <stmts:expr*>)
-
 ## `def`
 
-    (def <name:symbol> <value:expr>)
+    <definition> : (def <name:symbol> <value:expr>)
 
 ## `defsyntax`
 
-    (defsyntax <name:symbol> <value:expr>)
-
-## `module` and `module*`
-
-    (module <mod-kind>
-      (<exports: Symbol*>)
-      <body: expr*>)
-
-    (module* <mod-kind>
-      (<exports: Symbol*>)
-      <body: expr*>)
-
-    <mod-kind> : (<Symbol> <dependencies: Symbol*>)
-               | <Symbol>
-
-## `import`
-
-    (import <import-spec*>)
-
-    <import-spec> : <mod-kind>
-                  | (prefix <import-spec> <name: Symbol>)
-                  | (only <import-spec> <Symbol*>)
-                  | (except <import-spec> <Symbol*>)
-                  | (rename <import-spec> (<old-name: Symbol> <new-name: Symbol>)*)
+    <syntax-definition> : (defsyntax <name:symbol> <value:expr>)
 
 ## `meta`
 
-    (meta <stmts:expr*>)
-
-## `syntax`
-
-    (syntax <expr>)
-
-## `quote`
-
-    (quote <expr>)
+    <meta> : (meta <stmts:expr*>)
 
 # Callables
 
@@ -257,6 +286,19 @@ re-read the file so implementations might perform caching of S-expressions in
 this case.
 
 ## Modules
+
+Each functor has
+
+* a pathname
+* a parameter list
+
+Each module has
+
+* dependencies
+* imports
+* exports
+* definitions
+* initforms
 
 The `module` and `module*` forms are used to define module functors. A module
 functor can be *instantiated* to obtain a module by giving it the required
