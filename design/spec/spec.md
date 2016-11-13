@@ -56,9 +56,13 @@ S-expressions:
 
 ## `module` and `module*`
 
-    (module <mod-kind> <body: expr*>)
+    (module <mod-kind>
+      (<exports: Symbol*>)
+      <body: expr*>)
 
-    (module* <mod-kind> <body: expr*>)
+    (module* <mod-kind>
+      (<exports: Symbol*>)
+      <body: expr*>)
 
     <mod-kind> : (<Symbol> <dependencies: Symbol*>)
                | <Symbol>
@@ -239,7 +243,7 @@ Many type constructors also support type inference and `new`:
 
     (: (new Some 2) (Some Int))
 
-# Type Classes / Capabilities
+# Type Classes / Capabilities / Kinds
 
 # Code Organization
 

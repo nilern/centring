@@ -222,11 +222,15 @@ frame.
 
 ## `module` and `module*`
 
-    (##sf#module <name: Symbol> (<deps: Symbol*>)
-      <body: expr>)
+    (##sf#module <name: Symbol>
+      (<deps: Symbol*>)
+      (<exports: Symbol*>)
+      <body: expr*>)
 
-    (##sf#module* <name: Symbol> (<deps: Symbol*>)
-      <body: expr>)
+    (##sf#module* <name: Symbol>
+      (<deps: Symbol*>)
+      (<exports: Symbol*>)
+      <body: expr*>)
 
 ## `import`
 
