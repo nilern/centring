@@ -52,30 +52,37 @@ S-expressions:
 
 ## Modules
 
-    <module> : (module <mod-kind>
-                 <module-declaration*>)
-             | (module* <mod-kind>
-                 <module-declaration*>)
+    <module-file> : <module-declaration*>
 
-    <mod-kind> : (<mod-path> <dependencies: Symbol*>)
-               | <mod-path>
-
-    <module-declaration> : <import>
+    <module-declaration> : <module-definition>
+                         | <import>
                          | <export>
-                         | <module>
-                         | <definition>
+                         | <value-definition>
+                         | <syntax-definition>
                          | <statement>
                          | (do <module-declaration*>)
 
+    <module-definition> : (defmodule <mod-path> <module-expr>)
+                        | (defmodule (<mod-path> <Symbol*>) <module-expr>)
+
+    <module-expr> : (struct <module-declaration*>)
+                  | (functor (<Symbol*>) <module-expr>)            # applicative
+                  | (functor* (<Symbol*>) <module-expr>)           # generative
+                  | (<module-expr> <(module-expr | functor-expr)*>)
+                  | <mod-path>
+                  | (<functor-expr> <(module-expr | functor-expr)*>)
+
     <import> : (import <import-spec*>)
 
-    <import-spec> : <mod-kind>
+    <import-spec> : <module-expr>
                   | (prefix <import-spec> <name: Symbol>)
                   | (only <import-spec> <Symbol*>)
                   | (except <import-spec> <Symbol*>)
                   | (rename <import-spec> (<old-name: Symbol> <new-name: Symbol>)*)
 
     <export> : (export <Symbol*>)
+
+<!-- Basically we got structures, functors, naming and application -->
 
 # Fundamentals
 
@@ -108,7 +115,7 @@ S-expressions:
 
 ## `def`
 
-    <definition> : (def <name:symbol> <value:expr>)
+    <value-definition> : (def <name:symbol> <value:expr>)
 
 ## `defsyntax`
 
