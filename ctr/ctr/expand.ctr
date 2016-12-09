@@ -1,0 +1,22 @@
+
+(defn expand
+  ((phase env stx) (pair? (stx-expr stx))
+   (def op (stx-expr (first (stx-expr stx))))
+   (if (symbol? op)
+     (if (starts-with? '##sf# op)
+       (expand-sf phase env op stx)
+       (begin
+         (def v (lookup env op))
+         (if (macro? v)
+
+           (fmap #_(map expand _) stx))))
+     (fmap #_(map expand _) stx)))
+  ((phase env stx) (symbol? (stx-expr stx))
+   )
+  ((_ _ stx) #t
+   stx))
+
+(defn expand-sf
+  ((phase env op stx) (= op '##sf#include)
+   (>>= (-> (stx-expr (first (stx-expr stx))) resolve-path file read-all)
+        #_(expand phase env _)))
