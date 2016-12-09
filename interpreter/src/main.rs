@@ -18,7 +18,7 @@ pub mod interpreter;
 pub mod write;
 
 use interpreter::{Interpreter, CtrResult};
-use value::Any;
+use value::{Any, Env};
 use refs::ValueHandle;
 use write::ContextValue;
 use analyze::{analyze, ast_to_sexpr};
@@ -26,8 +26,6 @@ use analyze::{analyze, ast_to_sexpr};
 use docopt::Docopt;
 use rustyline::Editor;
 use rustyline::error::ReadlineError;
-
-
 
 const USAGE: &'static str = "
 Usage: ctri [--help | --sexp | --ana] -e <expr>
@@ -49,7 +47,7 @@ impl Args {
         } else if self.flag_sexp {
             Ok(sexp.root())
         } else {
-            let env = itp.global_env.clone();
+            let env = Env::new(itp, None);
             analyze(itp, sexp).and_then(|ast| itp.interpret(ast.borrow(), env))
         }
     }
