@@ -1,5 +1,5 @@
 use refs::{ValuePtr, Root, ValueHandle};
-use interpreter::{Interpreter, CtrError, CtrResult};
+use interpreter::{ITP, CtrError, CtrResult};
 use primops::{ExprFn, StmtFn, CtrlFn};
 
 use std::iter;
@@ -141,7 +141,7 @@ pub trait Unbox: CtrValue {
 
 pub trait ConcreteType: CtrValue {
     /// Get a reference to the corresponding runtime type.
-    fn typ(itp: &Interpreter) -> ValueHandle<Type>;
+    fn typ() -> Root<Type>;
 }
 
 // IndexedFields **********************************************************************************
@@ -203,8 +203,8 @@ impl<T: UnsizedFlatCtrValue> ExactSizeIterator for IndexedFlatFields<T> {
 macro_rules! impl_typ {
     { $rs_typ: ident, $itp_field: ident } => {
         impl ConcreteType for $rs_typ {
-            fn typ(itp: &Interpreter) -> ValueHandle<Type> {
-                itp.$itp_field.borrow()
+            fn typ() -> Root<Type> {
+                ITP.with(|itp| itp.borrow().$itp_field.clone())
             }
         }
     }
@@ -243,17 +243,23 @@ macro_rules! ctr_struct {
 
 macro_rules! constructor {
     { () -> $t:ty = $itp_field:ident; rec } => {
-        pub fn new(itp: &mut Interpreter,) -> Root<$t> {
-            let typ = itp.$itp_field.clone();
-            itp.alloc_rec(typ.borrow(), iter::empty())
+        pub fn new() -> Root<$t> {
+            ITP.with(|itp| {
+                let mut itp = itp.borrow_mut();
+                let typ = itp.$itp_field.clone();
+                itp.alloc_rec(typ.borrow(), iter::empty())
+            })
         }
     };
 
     { ( $($field_name:ident : $field_type:ty),* ) -> $t:ty = $itp_field:ident; rec } => {
-        pub fn new(itp: &mut Interpreter, $($field_name: Root<$field_type>),*) -> Root<$t> {
-            let typ = itp.$itp_field.clone();
-            let fields = ArrayVec::from([$($field_name.as_any_ref()),*]);
-            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        pub fn new($($field_name: Root<$field_type>),*) -> Root<$t> {
+            ITP.with(|itp| {
+                let mut itp = itp.borrow_mut();
+                let typ = itp.$itp_field.clone();
+                let fields = ArrayVec::from([$($field_name.as_any_ref()),*]);
+                itp.alloc_rec(typ.borrow(), fields.into_iter())
+            })
         }
     }
 }
@@ -266,57 +272,57 @@ macro_rules! getter {
     };
 
     { $field:ident : $t:ty } => {
-        pub fn $field(&self, itp: &Interpreter) -> CtrResult<$t> {
+        pub fn $field(&self) -> CtrResult<$t> {
             let res = unsafe { Root::<Any>::new(self.$field) };
-            res.downcast::<$t>(itp)
+            res.downcast::<$t>()
         }
     };
 
     { $field:ident : $t:ty ; unbox } => {
-        pub fn $field(&self, itp: &Interpreter) -> Result<$t, CtrError> {
+        pub fn $field(&self) -> Result<$t, CtrError> {
             let res = unsafe { Root::<Any>::new(self.$field) };
-            res.downcast::<Bits<$t>>(itp).map(|res| res.unbox())
+            res.downcast::<Bits<$t>>().map(|res| res.unbox())
         }
     };
 }
 
 macro_rules! typecase {
     // 'else' cases:
-    ( $e:expr, $itp:expr; { _ => $body:block } ) => {
+    ( $e:expr; { _ => $body:block } ) => {
         $body
     };
 
     // don't need a casted value so `instanceof` suffices:
-    ( $e:expr, $itp:expr; { $typ:ty => $body:block , $($rest:tt)* } ) => {
-        if $e.instanceof(<$typ as ConcreteType>::typ($itp)) {
+    ( $e:expr; { $typ:ty => $body:block , $($rest:tt)* } ) => {
+        if $e.instanceof(<$typ as ConcreteType>::typ().borrow()) {
             $body
         } else {
-            typecase!($e, $itp; {
+            typecase!($e; {
                 $($rest)*
             })
         }
     };
 
     // the normal case (try to cast):
-    ( $e:expr, $itp:expr; { $alias:ident : $typ:ty => $body:block , $($rest:tt)* } ) => {
-        if let Ok($alias) = $e.downcast::<$typ>($itp) {
+    ( $e:expr; { $alias:ident : $typ:ty => $body:block , $($rest:tt)* } ) => {
+        if let Ok($alias) = $e.downcast::<$typ>() {
             $body
         } else {
-            typecase!($e, $itp; {
+            typecase!($e; {
                 $($rest)*
             })
         }
     };
 
     // logic-duplicating versions:
-    ( $e:expr, $itp:expr; { $($typ:ty)|+ => $body:block , $($rest:tt)* } ) => {
-        typecase!($e, $itp; {
+    ( $e:expr; { $($typ:ty)|+ => $body:block , $($rest:tt)* } ) => {
+        typecase!($e; {
             $($typ => $body),+,
             $($rest)*
         })
     };
-    ( $e:expr, $itp:expr; { $alias:ident : $($typ:ty)|+ => $body:block , $($rest:tt)* } ) => {
-        typecase!($e, $itp; {
+    ( $e:expr; { $alias:ident : $($typ:ty)|+ => $body:block , $($rest:tt)* } ) => {
+        typecase!($e; {
             $($alias: $typ => $body),+,
             $($rest)*
         })
@@ -383,9 +389,12 @@ pub type Int = Bits<isize>;
 impl_typ! { Int, int_t }
 
 impl Int {
-    pub fn new(itp: &mut Interpreter, n: isize) -> Root<Int> {
-        let typ = itp.int_t.clone();
-        itp.alloc_bits(typ.borrow(), n)
+    pub fn new(n: isize) -> Root<Int> {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.int_t.clone();
+            itp.alloc_bits(typ.borrow(), n)
+        })
     }
 }
 
@@ -395,9 +404,12 @@ pub type UInt = Bits<usize>;
 impl_typ! { UInt, uint_t }
 
 impl UInt {
-    pub fn new(itp: &mut Interpreter, n: usize) -> Root<UInt> {
-        let typ = itp.uint_t.clone();
-        itp.alloc_bits(typ.borrow(), n)
+    pub fn new(n: usize) -> Root<UInt> {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.uint_t.clone();
+            itp.alloc_bits(typ.borrow(), n)
+        })
     }
 }
 
@@ -407,9 +419,12 @@ pub type Bool = Bits<bool>;
 impl_typ! { Bool, bool_t }
 
 impl Bool {
-    pub fn new(itp: &mut Interpreter, v: bool) -> Root<Bool> {
-        let typ = itp.bool_t.clone();
-        itp.alloc_bits(typ.borrow(), v)
+    pub fn new(v: bool) -> Root<Bool> {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.bool_t.clone();
+            itp.alloc_bits(typ.borrow(), v)
+        })
     }
 }
 
@@ -419,9 +434,12 @@ pub type VoidPtr = Bits<*mut ()>;
 impl_typ! { VoidPtr, voidptr_t }
 
 impl VoidPtr {
-    pub fn new(itp: &mut Interpreter, ptr: *mut ()) -> Root<VoidPtr> {
-        let typ = itp.voidptr_t.clone();
-        itp.alloc_bits(typ.borrow(), ptr)
+    pub fn new(ptr: *mut ()) -> Root<VoidPtr> {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.voidptr_t.clone();
+            itp.alloc_bits(typ.borrow(), ptr)
+        })
     }
 }
 
@@ -448,22 +466,25 @@ impl UnsizedFlatCtrValue for Symbol {
 
 impl Symbol {
     // TODO: hash-cons
-    pub fn new(itp: &mut Interpreter, chars: &str) -> Root<Symbol> {
-        let typ = itp.symbol_t.clone();
+    pub fn new(chars: &str) -> Root<Symbol> {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.symbol_t.clone();
 
-        // Precompute hash:
-        let mut hasher = DefaultHasher::new();
-        chars.hash(&mut hasher);
-        let hash = hasher.finish();
+            // Precompute hash:
+            let mut hasher = DefaultHasher::new();
+            chars.hash(&mut hasher);
+            let hash = hasher.finish();
 
-        // (Awkwardly) join the bytes of the hash and the chars:
-        let mut bytes = Vec::new();
-        let hash_bytes = unsafe { slice::from_raw_parts(mem::transmute::<&u64, *mut u8>(&hash),
-                                                        mem::size_of::<u64>()) };
-        bytes.extend_from_slice(hash_bytes);
-        bytes.extend_from_slice(chars.as_bytes());
+            // (Awkwardly) join the bytes of the hash and the chars:
+            let mut bytes = Vec::new();
+            let hash_bytes = unsafe { slice::from_raw_parts(mem::transmute::<&u64, *mut u8>(&hash),
+                                                            mem::size_of::<u64>()) };
+            bytes.extend_from_slice(hash_bytes);
+            bytes.extend_from_slice(chars.as_bytes());
 
-        itp.alloc_bytes(typ.borrow(), &bytes)
+            itp.alloc_bytes(typ.borrow(), &bytes)
+        })
     }
 
     pub fn hash(&self) -> u64 {
@@ -488,9 +509,12 @@ ctr_struct!{
 }
 
 impl String {
-    fn new(itp: &mut Interpreter, chars: &str) -> Root<String> {
-        let typ = itp.string_t.clone();
-        itp.alloc_bytes(typ.borrow(), chars.as_bytes())
+    fn new(chars: &str) -> Root<String> {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.string_t.clone();
+            itp.alloc_bytes(typ.borrow(), chars.as_bytes())
+        })
     }
 }
 
@@ -509,25 +533,23 @@ impl ListPair {
 
     getter!{ rest: Any }
 
-    pub fn iter<'a>(&self, itp: &'a Interpreter) -> ListIter<'a> {
+    pub fn iter(&self) -> ListIter {
         ListIter {
-            list: unsafe { Root::new(mem::transmute(self)) },
-            itp: itp
+            list: unsafe { Root::new(mem::transmute(self)) }
         }
     }
 }
 
-pub struct ListIter<'a> {
-    list: Root<Any>,
-    itp: &'a Interpreter
+pub struct ListIter {
+    list: Root<Any>
 }
 
-impl<'a> Iterator for ListIter<'a> {
+impl Iterator for ListIter {
     type Item = Root<Any>;
 
     fn next(&mut self) -> Option<Root<Any>> {
         let ls = self.list.clone();
-        typecase!(ls.borrow(), self.itp; {
+        typecase!(ls.borrow(); {
             pair: ListPair => {
                 self.list = pair.rest();
                 Some(pair.first())
@@ -557,10 +579,12 @@ impl UnsizedCtrValue for Array {
 }
 
 impl Array {
-    pub fn new<I>(itp: &mut Interpreter, elems: I) -> Root<Array>
-        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.array_t.clone();
-        itp.alloc_rec(typ.borrow(), elems)
+    pub fn new<I>(elems: I) -> Root<Array> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.array_t.clone();
+            itp.alloc_rec(typ.borrow(), elems)
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -590,10 +614,13 @@ impl UnsizedCtrValue for ArrayMut {
 impl UnsizedCtrValueMut for ArrayMut { }
 
 impl ArrayMut {
-    pub fn new<I>(itp: &mut Interpreter, elems: I) -> Root<ArrayMut>
+    pub fn new<I>(elems: I) -> Root<ArrayMut>
         where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.array_mut_t.clone();
-        itp.alloc_rec(typ.borrow(), elems)
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.array_mut_t.clone();
+            itp.alloc_rec(typ.borrow(), elems)
+        })
     }
 
     pub fn len(&self) -> usize {
@@ -636,13 +663,15 @@ impl UnsizedCtrValue for FnClosure {
 }
 
 impl FnClosure {
-    pub fn new<I>(itp: &mut Interpreter, name: Root<Symbol>, formal: Root<Symbol>, body: Root<Any>,
-                  cases: I) -> Root<FnClosure>
-        where I: Iterator<Item=Root<Array>> + ExactSizeIterator {
-        let typ = itp.fn_t.clone();
-        let mut fields = vec![name.as_any_ref(), formal.as_any_ref(), body];
-        fields.extend(cases.map(|case| case.as_any_ref()));
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+    pub fn new<I>(name: Root<Symbol>, formal: Root<Symbol>, body: Root<Any>, cases: I)
+                  -> Root<FnClosure> where I: Iterator<Item=Root<Array>> + ExactSizeIterator {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.fn_t.clone();
+            let mut fields = vec![name.as_any_ref(), formal.as_any_ref(), body];
+            fields.extend(cases.map(|case| case.as_any_ref()));
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
     getter!{ name: Symbol }
@@ -665,18 +694,21 @@ ctr_struct!{
 
 impl Env {
     /// Create a fresh environment frame, optionally prepending it to a pre-existing frame chain.
-    pub fn new(itp: &mut Interpreter, parent: Option<Root<Env>>) -> Root<Env> {
-        let typ = itp.env_t.clone();
+    pub fn new(parent: Option<Root<Env>>) -> Root<Env> {
         let fields = ArrayVec::from([parent.map(Root::as_any_ref)
-                                     .unwrap_or_else(|| Bool::new(itp, false).as_any_ref()),
-                                     UInt::new(itp, 0).as_any_ref(),
-                                     Env::new_bucket_array(itp, 4).as_any_ref()]);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+                                     .unwrap_or_else(|| Bool::new(false).as_any_ref()),
+                                     UInt::new(0).as_any_ref(),
+                                     Env::new_bucket_array(4).as_any_ref()]);
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.env_t.clone();
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
-    fn new_bucket_array(itp: &mut Interpreter, len: usize) -> Root<ArrayMut> {
-        let elems: Vec<_> = iter::repeat(Bool::new(itp, false).as_any_ref()).take(len).collect();
-        ArrayMut::new(itp, elems.into_iter())
+    fn new_bucket_array(len: usize) -> Root<ArrayMut> {
+        let elems: Vec<_> = iter::repeat(Bool::new(false).as_any_ref()).take(len).collect();
+        ArrayMut::new(elems.into_iter())
     }
 
     // TODO: these shouldn't be public
@@ -689,120 +721,117 @@ impl Env {
     }
 
     /// Look up the value of a variable by going up the environment frame stack.
-    pub fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> CtrResult<Any> {
-        self.lookup_bucket(itp, key)
+    pub fn lookup(&self, key: ValueHandle<Symbol>) -> CtrResult<Any> {
+        self.lookup_bucket(key)
             .map(|b| b.value())
             .ok_or_else(|| CtrError::GetUnbound(key.to_string()))
     }
 
     /// Set the value of a (pre-existing) variable by going up the environment frame stack.
-    pub fn set(&self, itp: &Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>)
+    pub fn set(&self, key: ValueHandle<Symbol>, value: ValueHandle<Any>)
         -> Result<(), CtrError> {
-        self.lookup_bucket(itp, key)
+        self.lookup_bucket(key)
             .map(|mut b| b.set_value(value))
             .ok_or_else(|| CtrError::SetUnbound(key.to_string()))
     }
 
-    fn lookup_bucket(&self, itp: &Interpreter, key: ValueHandle<Symbol>)
-                     -> Option<Root<EnvBucket>> {
+    fn lookup_bucket(&self, key: ValueHandle<Symbol>) -> Option<Root<EnvBucket>> {
         let mut frame = Ok(self);
         while let Ok(env) = frame {
-            let buckets = self.buckets(itp).unwrap();
+            let buckets = self.buckets().unwrap();
             let index = key.hash() as usize % buckets.len();
-            if let Ok(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
-                if let Some(bucket) = start_bucket.lookup(itp, key) {
+            if let Ok(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>() {
+                if let Some(bucket) = start_bucket.lookup(key) {
                     return Some(bucket);
                 }
             }
-            frame = env.parent(itp).map(|env| unsafe { mem::transmute(env.ptr()) });
+            frame = env.parent().map(|env| unsafe { mem::transmute(env.ptr()) });
         }
         None
     }
 
-    fn load_factor(&self, itp: &Interpreter) -> f64 {
-        self.count(itp).unwrap() as f64 / self.buckets(itp).unwrap().len() as f64
+    fn load_factor(&self) -> f64 {
+        self.count().unwrap() as f64 / self.buckets().unwrap().len() as f64
     }
 }
 
 impl<'a> ValueHandle<'a, Env> {
     /// Initialize (or overwrite) a variable in the topmost environment frame.
-    pub fn def(self, itp: &mut Interpreter,
-               key: ValueHandle<Symbol>, value: ValueHandle<Any>) -> Result<(), CtrError> {
+    pub fn def(self, key: ValueHandle<Symbol>, value: ValueHandle<Any>) -> Result<(), CtrError> {
         // first we need to see whether the variable already exists in this frame:
-        let buckets = try!(self.buckets(itp));
+        let buckets = try!(self.buckets());
         let index = key.hash() as usize % buckets.len();
-        if let Ok(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>(itp) {
+        if let Ok(start_bucket) = buckets.get(index).unwrap().downcast::<EnvBucket>() {
             // there was a bucket chain at the index
-            if let Some(mut bucket) = start_bucket.lookup(itp, key) {
+            if let Some(mut bucket) = start_bucket.lookup(key) {
                 // the chain has a bucket with the key; replace the value
                 return Ok(bucket.set_value(value));
             }
         }
         // didn't exist, so we create it here:
-        Ok(self.assoc(itp, key, value))
+        Ok(self.assoc(key, value))
     }
 
-    pub fn concat(self, itp: &mut Interpreter, parent: ValueHandle<Env>) -> CtrResult<Env> {
-        fn concat_(itp: &mut Interpreter, env: CtrResult<Env>, parent: ValueHandle<Env>)
-                   -> CtrResult<Env> {
+    pub fn concat(self, parent: ValueHandle<Env>) -> CtrResult<Env> {
+        fn concat_(env: CtrResult<Env>, parent: ValueHandle<Env>) -> CtrResult<Env> {
             match env {
                 Ok(env) => {
-                    let parent_ = env.parent(itp);
-                    let parent__ = try!(concat_(itp, parent_, parent));
-                    let res = Env::new(itp, Some(parent__));
-                    let buckets = env.buckets(itp).unwrap();
-                    res.borrow().extend(itp, buckets);
+                    let parent_ = env.parent();
+                    let parent__ = try!(concat_(parent_, parent));
+                    let res = Env::new(Some(parent__));
+                    let buckets = env.buckets().unwrap();
+                    res.borrow().extend(buckets);
                     Ok(res)
                 },
                 _ => Ok(parent.root())
             }
         }
-        concat_(itp, Ok(self.root()), parent)
+        concat_(Ok(self.root()), parent)
     }
 
-    fn assoc(self, itp: &mut Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
-        if self.load_factor(itp) >= 0.75 {
-            self.rehash(itp);
+    fn assoc(self, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
+        if self.load_factor() >= 0.75 {
+            self.rehash();
         }
-        self._assoc(itp, key, value);
+        self._assoc(key, value);
     }
 
-    fn _assoc(self, itp: &mut Interpreter, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
-        let buckets = self.buckets(itp).unwrap();
+    fn _assoc(self, key: ValueHandle<Symbol>, value: ValueHandle<Any>) {
+        let buckets = self.buckets().unwrap();
         let index = key.hash() as usize % buckets.len();
-        let old_buckets = buckets.get(index).unwrap().downcast::<EnvBucket>(itp).ok();
-        let new_bucket = EnvBucket::new(itp, old_buckets, key.root(), value.root());
+        let old_buckets = buckets.get(index).unwrap().downcast::<EnvBucket>().ok();
+        let new_bucket = EnvBucket::new(old_buckets, key.root(), value.root());
         buckets.set(index, new_bucket.as_any_ref()).unwrap();
-        self.inc_count(itp);
+        self.inc_count();
     }
 
-    fn rehash(self, itp: &mut Interpreter) {
-        let buckets = self.buckets(itp).unwrap();
-        self.extend(itp, buckets);
+    fn rehash(self) {
+        let buckets = self.buckets().unwrap();
+        self.extend(buckets);
     }
 
-    fn extend(mut self, itp: &mut Interpreter, old_buckets: Root<ArrayMut>) {
-        self.set_buckets(Env::new_bucket_array(itp, 2 * old_buckets.len()).borrow());
-        self.set_count(itp, 0);
+    fn extend(mut self, old_buckets: Root<ArrayMut>) {
+        self.set_buckets(Env::new_bucket_array(2 * old_buckets.len()).borrow());
+        self.set_count(0);
         for bucket_list in old_buckets.iter() {
-            let mut bucket = bucket_list.downcast::<EnvBucket>(itp);
+            let mut bucket = bucket_list.downcast::<EnvBucket>();
             while let Ok(b) = bucket {
-                let k = b.key(itp).unwrap();
+                let k = b.key().unwrap();
                 let v = b.value();
-                self._assoc(itp, k.borrow(), v.borrow());
-                bucket = b.next(itp).and_then(|bucket| bucket.downcast::<EnvBucket>(itp));
+                self._assoc(k.borrow(), v.borrow());
+                bucket = b.next().and_then(|bucket| bucket.downcast::<EnvBucket>());
             }
         }
     }
 
-    fn set_count(mut self, itp: &mut Interpreter, count: usize) {
-        let count = UInt::new(itp, count);
+    fn set_count(mut self, count: usize) {
+        let count = UInt::new(count);
         self.count = count.ptr();
     }
 
-    fn inc_count(self, itp: &mut Interpreter) {
-        let old_count = self.count(itp).unwrap();
-        self.set_count(itp, old_count + 1);
+    fn inc_count(self) {
+        let old_count = self.count().unwrap();
+        self.set_count(old_count + 1);
     }
 }
 
@@ -816,13 +845,15 @@ ctr_struct!{
 }
 
 impl EnvBucket {
-    fn new(itp: &mut Interpreter, next: Option<Root<EnvBucket>>, key: Root<Symbol>,
-               value: Root<Any>) -> Root<EnvBucket> {
-        let typ = itp.env_bucket_t.clone();
+    fn new(next: Option<Root<EnvBucket>>, key: Root<Symbol>, value: Root<Any>) -> Root<EnvBucket> {
         let next = next.map(Root::as_any_ref)
-                       .unwrap_or_else(|| Bool::new(itp, false).as_any_ref());
-        let fields = ArrayVec::from([next, key.as_any_ref(), value]);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+                       .unwrap_or_else(|| Bool::new(false).as_any_ref());
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.env_bucket_t.clone();
+            let fields = ArrayVec::from([next, key.as_any_ref(), value]);
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
     getter!{ next: EnvBucket }
@@ -835,14 +866,14 @@ impl EnvBucket {
         self.value = value.ptr()
     }
 
-    fn lookup(&self, itp: &Interpreter, key: ValueHandle<Symbol>) -> Option<Root<EnvBucket>> {
+    fn lookup(&self, key: ValueHandle<Symbol>) -> Option<Root<EnvBucket>> {
         let mut bucket = Ok(self);
         while let Ok(b) = bucket {
             // OPTIMIZE: when hash consing gets implemented, turn this into .identical()
-            if b.key(itp).unwrap().borrow().equal(key) {
+            if b.key().unwrap().borrow().equal(key) {
                 return Some(unsafe { Root::new(mem::transmute(b)) });
             }
-            bucket = b.next(itp).map(|b| unsafe{ mem::transmute(b.ptr()) });
+            bucket = b.next().map(|b| unsafe{ mem::transmute(b.ptr()) });
         }
         None
     }
@@ -862,12 +893,15 @@ impl UnsizedCtrValue for FnNode {
 }
 
 impl FnNode {
-    pub fn new<I>(itp: &mut Interpreter, name: Root<Symbol>, formal: Root<Symbol>, cases: I)
+    pub fn new<I>(name: Root<Symbol>, formal: Root<Symbol>, cases: I)
                   -> Root<Expr> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.fn_node_t.clone();
-        let mut fields = vec![name.as_any_ref(), formal.as_any_ref()];
-        fields.extend(cases);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.fn_node_t.clone();
+            let mut fields = vec![name.as_any_ref(), formal.as_any_ref()];
+            fields.extend(cases);
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
     getter!{ name: Symbol }
@@ -927,17 +961,20 @@ impl UnsizedCtrValue for Expr {
 }
 
 impl Expr {
-    pub fn new<I>(itp: &mut Interpreter, op: ExprFn, args: I) -> Root<Expr>
+    pub fn new<I>(op: ExprFn, args: I) -> Root<Expr>
         where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.expr_t.clone();
-        let mut fields = vec![VoidPtr::new(itp, op as *mut ()).as_any_ref()];
-        fields.extend(args);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+        let mut fields = vec![VoidPtr::new(op as *mut ()).as_any_ref()];
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.expr_t.clone();
+            fields.extend(args);
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
-    pub fn op(&self, itp: &Interpreter) -> ExprFn {
+    pub fn op(&self) -> ExprFn {
         let op = unsafe { Root::<Any>::new(self.op) };
-        typecase!(op.borrow(), itp; {
+        typecase!(op.borrow(); {
             f: VoidPtr => { unsafe { mem::transmute(f.unbox()) } },
             _ => { panic!() }
         })
@@ -970,17 +1007,20 @@ impl UnsizedCtrValue for Stmt {
 }
 
 impl Stmt {
-    pub fn new<I>(itp: &mut Interpreter, op: StmtFn, args: I) -> Root<Stmt>
+    pub fn new<I>(op: StmtFn, args: I) -> Root<Stmt>
         where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.stmt_t.clone();
-        let mut fields = vec![VoidPtr::new(itp, op as *mut ()).as_any_ref()];
-        fields.extend(args);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+        let mut fields = vec![VoidPtr::new(op as *mut ()).as_any_ref()];
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.stmt_t.clone();
+            fields.extend(args);
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
-    pub fn op(&self, itp: &Interpreter) -> StmtFn {
+    pub fn op(&self) -> StmtFn {
         let op = unsafe { Root::<Any>::new(self.op) };
-        typecase!(op.borrow(), itp; {
+        typecase!(op.borrow(); {
             f: VoidPtr => { unsafe { mem::transmute(f.unbox()) } },
             _ => { panic!() }
         })
@@ -1014,17 +1054,20 @@ impl UnsizedCtrValue for Ctrl {
 }
 
 impl Ctrl {
-    pub fn new<I>(itp: &mut Interpreter, op: CtrlFn, determinant: Root<Any>, args: I) -> Root<Ctrl>
+    pub fn new<I>(op: CtrlFn, determinant: Root<Any>, args: I) -> Root<Ctrl>
         where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.ctrl_t.clone();
-        let mut fields = vec![VoidPtr::new(itp, op as *mut ()).as_any_ref(), determinant];
-        fields.extend(args);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+        let mut fields = vec![VoidPtr::new(op as *mut ()).as_any_ref(), determinant];
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.ctrl_t.clone();
+            fields.extend(args);
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
-    pub fn op(&self, itp: &Interpreter) -> CtrlFn {
+    pub fn op(&self) -> CtrlFn {
         let op = unsafe { Root::<Any>::new(self.op) };
-        typecase!(op.borrow(), itp; {
+        typecase!(op.borrow(); {
             f: VoidPtr => { unsafe { mem::transmute(f.unbox()) } },
             _ => { panic!() }
         })
@@ -1072,10 +1115,12 @@ impl UnsizedCtrValue for Do {
 }
 
 impl Do {
-    pub fn new<I>(itp: &mut Interpreter, stmts: I) -> Root<Do>
-        where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.do_t.clone();
-        itp.alloc_rec(typ.borrow(), stmts)
+    pub fn new<I>(stmts: I) -> Root<Do> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.do_t.clone();
+            itp.alloc_rec(typ.borrow(), stmts)
+        })
     }
 
     pub fn stmts(&self, i: usize) -> Option<Root<Any>> {
@@ -1156,12 +1201,15 @@ ctr_struct!{
 }
 
 impl DoCont {
-    pub fn new(itp: &mut Interpreter, parent: Root<Any>, do_ast: Root<Do>, i: usize,
+    pub fn new(parent: Root<Any>, do_ast: Root<Do>, i: usize,
                env: Root<Env>) -> Root<DoCont> {
-        let typ = itp.docont_t.clone();
         let fields = ArrayVec::from([parent, do_ast.as_any_ref(),
-                                     UInt::new(itp, i).as_any_ref(), env.as_any_ref()]);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+                                     UInt::new(i).as_any_ref(), env.as_any_ref()]);
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.docont_t.clone();
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
     getter!{ parent: Any }
@@ -1210,14 +1258,16 @@ impl UnsizedCtrValue for ExprCont {
 impl UnsizedCtrValueMut for ExprCont { }
 
 impl ExprCont {
-    pub fn new<I>(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Expr>, index: usize,
-                  env: Root<Env>, args: I)
+    pub fn new<I>(parent: Root<Any>, expr_ast: Root<Expr>, index: usize, env: Root<Env>, args: I)
                   -> Root<ExprCont> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.exprcont_t.clone();
         let mut fields = vec![parent, expr_ast.clone().as_any_ref(),
-                              UInt::new(itp, index).as_any_ref(), env.as_any_ref()];
-        fields.extend(args);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+                              UInt::new(index).as_any_ref(), env.as_any_ref()];
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.exprcont_t.clone();
+            fields.extend(args);
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
     getter!{ parent: Any }
@@ -1260,14 +1310,16 @@ impl UnsizedCtrValue for StmtCont {
 impl UnsizedCtrValueMut for StmtCont { }
 
 impl StmtCont {
-    pub fn new<I>(itp: &mut Interpreter, parent: Root<Any>, expr_ast: Root<Stmt>, index: usize,
-                  env: Root<Env>, args: I)
+    pub fn new<I>(parent: Root<Any>, expr_ast: Root<Stmt>, index: usize, env: Root<Env>, args: I)
                   -> Root<StmtCont> where I: Iterator<Item=Root<Any>> + ExactSizeIterator {
-        let typ = itp.stmtcont_t.clone();
         let mut fields = vec![parent, expr_ast.clone().as_any_ref(),
-                              UInt::new(itp, index).as_any_ref(), env.as_any_ref()];
-        fields.extend(args);
-        itp.alloc_rec(typ.borrow(), fields.into_iter())
+                              UInt::new(index).as_any_ref(), env.as_any_ref()];
+        ITP.with(|itp| {
+            let mut itp = itp.borrow_mut();
+            let typ = itp.stmtcont_t.clone();
+            fields.extend(args);
+            itp.alloc_rec(typ.borrow(), fields.into_iter())
+        })
     }
 
     getter!{ parent: Any }

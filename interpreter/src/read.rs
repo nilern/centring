@@ -1,4 +1,3 @@
-use interpreter::Interpreter;
 use value::{Any, Int, Bool, Symbol, ListPair, ListEmpty};
 use refs::Root;
 
@@ -155,12 +154,12 @@ fn digit(st: &mut ParseState) -> ParseResult<usize> {
     sat(|c| c.is_digit(10), st).map(|c| c.to_digit(10).unwrap() as usize)
 }
 
-fn int(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Int> {
+fn int(st: &mut ParseState) -> ReadResult<Int> {
     let mut n = try!(digit(st)) as isize;
     while let Ok(d) = digit(st) {
         n = n * 10 + d as isize;
     }
-    Ok(Some(Int::new(itp, n)))
+    Ok(Some(Int::new(n)))
 }
 
 fn symbol_char(st: &mut ParseState) -> ParseResult<char> {
@@ -179,24 +178,24 @@ fn symbol_string(st: &mut ParseState, mut chars: String) -> ParseResult<String> 
     Ok(chars)
 }
 
-fn symbol(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Symbol> {
-    symbol_string(st, String::new()).map(|cs| Some(Symbol::new(itp, &cs)))
+fn symbol(st: &mut ParseState) -> ReadResult<Symbol> {
+    symbol_string(st, String::new()).map(|cs| Some(Symbol::new(&cs)))
 }
 
-fn qualified_symbol(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Symbol> {
-    symbol_string(st, String::from("##")).map(|cs| Some(Symbol::new(itp, &cs)))
+fn qualified_symbol(st: &mut ParseState) -> ReadResult<Symbol> {
+    symbol_string(st, String::from("##")).map(|cs| Some(Symbol::new(&cs)))
 }
 
-fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
+fn list(st: &mut ParseState) -> ReadResult<Any> {
     if let Some(')') = st.peek() {
         let _ = st.pop();
-        Ok(Some(ListEmpty::new(itp).as_any_ref()))
+        Ok(Some(ListEmpty::new().as_any_ref()))
     } else {
-        match expr(itp, st) {
+        match expr(st) {
             Ok(Some(head)) => {
-                match list(itp, st) {
+                match list(st) {
                     Ok(Some(tail)) => {
-                        let ls = ListPair::new(itp, head, tail);
+                        let ls = ListPair::new(head, tail);
                         Ok(Some(ls.as_any_ref()))
                     }
                     Ok(None) => Err(st.place_error(NonTerminating(')'))),
@@ -209,12 +208,12 @@ fn list(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
     }
 }
 
-fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
+fn expr(st: &mut ParseState) -> ReadResult<Any> {
     loop {
         match st.peek().map(CharKind::new) {
             Some(Macro { char: '(', terminating: true }) => {
                 let _ = st.pop();
-                return list(itp, st);
+                return list(st);
             }
             Some(Macro { char: ';', terminating: true }) => {
                 let _ = st.pop();
@@ -225,15 +224,15 @@ fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
                 match st.peek() {
                     Some('#') => {
                         let _ = st.pop();
-                        return qualified_symbol(itp, st).map(|ov| ov.map(Root::as_any_ref))
+                        return qualified_symbol(st).map(|ov| ov.map(Root::as_any_ref))
                     },
                     Some('t') => {
                         let _ = st.pop();
-                        return Ok(Some(Bool::new(itp, true).as_any_ref()));
+                        return Ok(Some(Bool::new(true).as_any_ref()));
                     },
                     Some('f') => {
                         let _ = st.pop();
-                        return Ok(Some(Bool::new(itp, false).as_any_ref()));
+                        return Ok(Some(Bool::new(false).as_any_ref()));
                     },
                     Some(c) => return Err(st.place_error(NonSharp(c))),
                     None => return Err(st.place_error(EOF))
@@ -245,9 +244,9 @@ fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
                 let _ = st.pop();
             }
             Some(Constituent(_)) => {
-                return int(itp, st)
+                return int(st)
                     .map(|ov| ov.map(Root::as_any_ref))
-                    .or_else(|_| symbol(itp, st).map(|ov| ov.map(Root::as_any_ref)))
+                    .or_else(|_| symbol(st).map(|ov| ov.map(Root::as_any_ref)))
             }
             None => return Ok(None),
         }
@@ -258,9 +257,9 @@ fn expr(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
 /// surrounded by whitespace and comments), return `Ok(Some(_))`, if it just
 /// contains whitespace and comments return `Ok(None)`, else return
 /// a `ParseError`.
-pub fn read(itp: &mut Interpreter, st: &mut ParseState) -> ReadResult<Any> {
-    let res = expr(itp, st);
-    if let Ok(None) = expr(itp, st) {
+pub fn read(st: &mut ParseState) -> ReadResult<Any> {
+    let res = expr(st);
+    if let Ok(None) = expr(st) {
         res
     } else {
         Err(st.place_error(Extraneous))

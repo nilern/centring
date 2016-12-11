@@ -6,7 +6,7 @@
 //! (including `self`!). Since we need a `&mut Interpreter` for allocation, functions and methods
 //! that take one of those are the ones that potentially must take `ValueHandle`:s or `Root`:s.
 
-use interpreter::{Interpreter, CtrResult, CtrError};
+use interpreter::{CtrResult, CtrError};
 use gc::Collector;
 use value::{CtrValue, ConcreteType, Any, Type};
 use ops::PtrEq;
@@ -66,12 +66,12 @@ impl<T: CtrValue> Root<T> {
         Root(self.0, Default::default())
     }
 
-    pub fn downcast<U: ConcreteType>(self, itp: &Interpreter) -> CtrResult<U> {
-        let typ = U::typ(itp);
-        if self.borrow().instanceof(typ) {
+    pub fn downcast<U: ConcreteType>(self) -> CtrResult<U> {
+        let typ = U::typ();
+        if self.borrow().instanceof(typ.borrow()) {
             Ok(Root(self.0, Default::default()))
         } else {
-            Err(CtrError::Type(typ.root()))
+            Err(CtrError::Type(typ))
         }
     }
 }
@@ -123,13 +123,12 @@ impl<'a, T: CtrValue> ValueHandle<'a, T> {
         ValueHandle(self.0, Default::default())
     }
 
-    pub fn downcast<U: ConcreteType>(&self, itp: &Interpreter)
-                                     -> Result<ValueHandle<'a, U>, CtrError> {
-        let typ = U::typ(itp);
-        if self.instanceof(typ) {
+    pub fn downcast<U: ConcreteType>(&self) -> Result<ValueHandle<'a, U>, CtrError> {
+        let typ = U::typ();
+        if self.instanceof(typ.borrow()) {
             Ok(ValueHandle(self.0, Default::default()))
         } else {
-            Err(CtrError::Type(typ.root()))
+            Err(CtrError::Type(typ))
         }
     }
 

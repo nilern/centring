@@ -17,10 +17,9 @@ pub mod analyze;
 pub mod interpreter;
 pub mod write;
 
-use interpreter::{Interpreter, CtrResult};
+use interpreter::{CtrResult, interpret};
 use value::{Any, Env};
 use refs::ValueHandle;
-use write::ContextValue;
 use analyze::{analyze, ast_to_sexpr};
 
 use docopt::Docopt;
@@ -41,23 +40,23 @@ struct Args {
 }
 
 impl Args {
-    fn act(&self, itp: &mut Interpreter, sexp: ValueHandle<Any>) -> CtrResult<Any> {
+    fn act(&self, sexp: ValueHandle<Any>) -> CtrResult<Any> {
         if self.flag_ana {
-            analyze(itp, sexp).and_then(|ast| ast_to_sexpr(itp, ast.borrow()))
+            analyze(sexp).and_then(|ast| ast_to_sexpr(ast.borrow()))
         } else if self.flag_sexp {
             Ok(sexp.root())
         } else {
-            let env = Env::new(itp, None);
-            analyze(itp, sexp).and_then(|ast| itp.interpret(ast.borrow(), env))
+            let env = Env::new(None);
+            analyze(sexp).and_then(|ast| interpret(ast.borrow(), env))
         }
     }
 
-    fn act_and_print(&self, itp: &mut Interpreter, estr: String) {
+    fn act_and_print(&self, estr: String) {
         let mut st = read::ParseState::new(estr);
-        match read::read(itp, &mut st) {
+        match read::read(&mut st) {
             Ok(Some(v)) => {
-                match self.act(itp, v.borrow()) {
-                    Ok(sexp) => println!("{}", ContextValue::new(sexp.borrow(), itp)),
+                match self.act(v.borrow()) {
+                    Ok(sexp) => println!("{}", sexp.borrow()),
                     Err(e) => println!("{:?}", e)
                 }
             }
@@ -67,10 +66,8 @@ impl Args {
     }
 
     fn run(&self) {
-        let mut itp = Interpreter::new();
-
         if let Some(ref estr) = self.arg_expr {
-            self.act_and_print(&mut itp, estr.clone());
+            self.act_and_print(estr.clone());
         } else {
             let mut ed = Editor::<()>::new();
             loop {
@@ -78,7 +75,7 @@ impl Args {
                 match line {
                     Ok(estr) => {
                         ed.add_history_entry(&estr);
-                        self.act_and_print(&mut itp, estr);
+                        self.act_and_print(estr);
                     }
                     Err(ReadlineError::Interrupted) |
                     Err(ReadlineError::Eof) => {

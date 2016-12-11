@@ -1,5 +1,5 @@
 use gc::Collector;
-use value::{CtrValue,
+use value::{CtrValue, ConcreteType,
             Any, Bits, ListEmpty, Array, Type, FnClosure, Env,
             FnNode, App, Def, Expr, Stmt, Ctrl, Closure, Do, Var, Const,
             FnCont, ArgCont, DefCont, ExprCont, StmtCont, CtrlCont, DoCont, Halt};
@@ -13,9 +13,12 @@ use std::ptr;
 use std::mem;
 use std::slice;
 use std::iter;
+use std::cell::RefCell;
 
-trait Primop<T: CtrValue> {
-    fn apply_primop<'a>(&mut self, k: ValueHandle<'a, T>) -> Result<State, CtrError>;
+thread_local!(pub static ITP: RefCell<Interpreter> = RefCell::new(Interpreter::new()));
+
+trait Primop where Self: CtrValue {
+    fn apply_primop<'a>(k: ValueHandle<'a, Self>) -> Result<State, CtrError>;
 }
 
 /// An `Interpreter` holds all the Centring state. This arrangement is inspired
@@ -132,39 +135,40 @@ impl Interpreter {
         };
 
         // TODO: structure for the types
-        let type_t = Type::new(&mut itp);
-        itp.type_t = type_t.clone();
-        itp.pair_t = Type::new(&mut itp);
-        itp.array_t = Type::new(&mut itp);
-        itp.array_mut_t = Type::new(&mut itp);
-        itp.nil_t = Type::new(&mut itp);
-        itp.int_t = Type::new(&mut itp);
-        itp.uint_t = Type::new(&mut itp);
-        itp.bool_t = Type::new(&mut itp);
-        itp.voidptr_t = Type::new(&mut itp);
-        itp.symbol_t = Type::new(&mut itp);
-        itp.string_t = Type::new(&mut itp);
-        itp.fn_t = Type::new(&mut itp);
-        itp.env_t = Type::new(&mut itp);
-        itp.env_bucket_t = Type::new(&mut itp);
-        itp.fn_node_t = Type::new(&mut itp);
-        itp.app_t = Type::new(&mut itp);
-        itp.def_t = Type::new(&mut itp);
-        itp.expr_t = Type::new(&mut itp);
-        itp.stmt_t = Type::new(&mut itp);
-        itp.ctrl_t = Type::new(&mut itp);
-        itp.closure_t = Type::new(&mut itp);
-        itp.do_t = Type::new(&mut itp);
-        itp.var_t = Type::new(&mut itp);
-        itp.const_t = Type::new(&mut itp);
-        itp.fncont_t = Type::new(&mut itp);
-        itp.argcont_t = Type::new(&mut itp);
-        itp.defcont_t = Type::new(&mut itp);
-        itp.exprcont_t = Type::new(&mut itp);
-        itp.stmtcont_t = Type::new(&mut itp);
-        itp.ctrlcont_t = Type::new(&mut itp);
-        itp.docont_t = Type::new(&mut itp);
-        itp.halt_t = Type::new(&mut itp);
+        let null_type_t = itp.type_t.clone();
+        let type_t: Root<Type> = itp.alloc_rec(null_type_t.borrow(), iter::empty());
+        itp.type_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.pair_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.array_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.array_mut_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.nil_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.int_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.uint_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.bool_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.voidptr_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.symbol_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.string_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.fn_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.env_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.env_bucket_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.fn_node_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.app_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.def_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.expr_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.stmt_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.ctrl_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.closure_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.do_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.var_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.const_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.fncont_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.argcont_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.defcont_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.exprcont_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.stmtcont_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.ctrlcont_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.docont_t = itp.alloc_rec(type_t.borrow(), iter::empty());
+        itp.halt_t = itp.alloc_rec(type_t.borrow(), iter::empty());
 
         itp.type_t.clone().as_any_ref().set_type(type_t.borrow());
 
@@ -175,177 +179,6 @@ impl Interpreter {
         itp.ctrlfns.insert("brf", primops::brf);
 
         itp
-    }
-
-    pub fn interpret(&mut self, ast: ValueHandle<Any>, env: Root<Env>) -> CtrResult<Any> {
-        let mut state = State::Eval(ast.root(), env, Halt::new(self).as_any_ref());
-        loop {
-            // Need to use a trampoline/state machine here for manual TCO.
-            state = match state {
-                State::Eval(ctrl, env, k) => try!(self.eval(ctrl, env, k)),
-                State::Cont(ctrl, k) => try!(self.cont(ctrl, k)),
-                State::Halt(v) => return Ok(v),
-            };
-        }
-    }
-
-    fn eval(&mut self, ctrl: Root<Any>, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
-        let ctrl = ctrl.borrow();
-        typecase!(ctrl, self; {
-            ctrl: FnNode => {
-                let name = try!(ctrl.name(self));
-                let formal = try!(ctrl.formal(self));
-                let body = Closure::new(self, env.clone(), // TODO: only do this for mono-fns
-                                             ctrl.case(0).unwrap().get(1).unwrap()).as_any_ref();
-                let cases = ctrl.case_iter()
-                                .map(|case| {
-                                    assert_eq!(case.len(), 2);
-                                    let cond = case.get(0).unwrap();
-                                    let body = case.get(1).unwrap();
-                                    Array::new(self,
-                                        vec![cond, body, env.clone().as_any_ref()].into_iter())
-                                })
-                                .collect::<Vec<_>>();
-                Ok(State::Cont(FnClosure::new(self, name, formal, body,
-                    cases.into_iter()).as_any_ref(), k))
-            },
-            ctrl: App => {
-                let l = FnCont::new(self, k, ctrl.root(), env.clone());
-                Ok(State::Eval(ctrl.callee(), env, l.as_any_ref()))
-            },
-            ctrl: Def => {
-                let name = try!(ctrl.name(self));
-                let l = DefCont::new(self, k, name, env.clone());
-                Ok(State::Eval(ctrl.value(), env, l.as_any_ref()))
-            },
-            ctrl: Expr => {
-                if let Some(arg) = ctrl.args(0) {
-                    let l = ExprCont::new(self, k, ctrl.root(), 0, env.clone(), ctrl.args_iter());
-                    Ok(State::Eval(arg.clone(), env, l.as_any_ref()))
-                } else {
-                    let l = ExprCont::new(self, k, ctrl.root(), 0, env, iter::empty());
-                    self.apply_primop(l.borrow())
-                }
-            },
-            ctrl: Stmt => {
-                if let Some(arg) = ctrl.args(0) {
-                    let l = StmtCont::new(self, k, ctrl.root(), 0, env.clone(), ctrl.args_iter());
-                    Ok(State::Eval(arg.clone(), env, l.as_any_ref()))
-                } else {
-                    let l = StmtCont::new(self, k, ctrl.root(), 0, env, iter::empty());
-                    self.apply_primop(l.borrow())
-                }
-            },
-            ctrl: Ctrl => {
-                let l = CtrlCont::new(self, k, ctrl.root(), env.clone());
-                Ok(State::Eval(ctrl.determinant(), env, l.as_any_ref()))
-            },
-            ctrl: Closure => {
-                let mut senv = try!(ctrl.env(self));
-                senv = try!(env.borrow().concat(self, senv.borrow()));
-                Ok(State::Eval(ctrl.expr(), senv, k))
-            },
-            ctrl: Do => {
-                if let Some(stmt) = ctrl.stmts(0) {
-                    let l = DoCont::new(self, k, ctrl.root(), 0, env.clone());
-                    Ok(State::Eval(stmt, env, l.as_any_ref()))
-                } else {
-                    // TODO: continue with a tuple:
-                    Ok(State::Cont(ListEmpty::new(self).as_any_ref(), k))
-                }
-            },
-            ctrl: Var => {
-                env.lookup(self, try!(ctrl.name(self)).borrow()).map(|v| State::Cont(v, k))
-            },
-            ctrl: Const => {
-                Ok(State::Cont(ctrl.val(), k))
-            },
-            _ => { unimplemented!() }
-        })
-    }
-
-    fn cont(&mut self, v: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
-        let k = k.borrow();
-        typecase!(k, self; {
-            k: FnCont => {
-                let env = try!(k.env(self));
-                let l = ArgCont::new(self, k.parent(), v, env.clone());
-                let arg = try!(k.ast(self)).arg();
-                Ok(State::Eval(arg, env, l.as_any_ref()))
-            },
-            k: ArgCont => {
-                let callee = k.callee();
-                typecase!(callee.borrow(), self; {
-                    f: FnClosure => {
-                        let name = try!(f.name(self));
-                        let formal = try!(f.formal(self));
-                        let env = Env::new(self, None);
-                        try!(env.borrow().def(self, name.borrow(), f.as_any_ref()));
-                        try!(env.borrow().def(self, formal.borrow(), v.borrow()));
-                        Ok(State::Eval(f.body(), env, k.parent()))
-                    },
-                    _ => { unimplemented!() }
-                })
-            },
-            k: DefCont => {
-                try!(k.env(self).and_then(|env| {
-                    let name = try!(k.name(self));
-                    env.borrow().def(self, name.borrow(), v.borrow())
-                }));
-                // TODO: continue with a tuple:
-                Ok(State::Cont(ListEmpty::new(self).as_any_ref(), k.parent()))
-            },
-            k: ExprCont => {
-                let i = try!(k.index(self)); // v is the value of the i:th argument.
-                let j = i + 1;                 // The index of the next argument to evaluate
-                let ast = try!(k.ast(self));
-                let env = try!(k.env(self));
-                let new_k =
-                    ExprCont::new(self, k.parent(), ast.clone(), j, env.clone(), k.args_iter());
-                try!(new_k.borrow().set_arg(i, v)); // The new continuation knows that args[i] => v
-                if let Some(arg) = ast.borrow().args(j) {
-                    Ok(State::Eval(arg, env, new_k.as_any_ref())) // Eval the next arg.
-                } else {
-                    self.apply_primop(new_k.borrow())
-                }
-            },
-            k: StmtCont => {
-                let i = try!(k.index(self)); // v is the value of the i:th argument.
-                let j = i + 1;                    // The index of the next argument to evaluate
-                let ast = try!(k.ast(self));
-                let env = try!(k.env(self));
-                let new_k =
-                    StmtCont::new(self, k.parent(), ast.clone(), j, env.clone(), k.args_iter());
-                try!(new_k.borrow().set_arg(i, v)); // The new continuation knows that args[i] => v.
-                if let Some(arg) = ast.borrow().args(j) {
-                    Ok(State::Eval(arg, env, new_k.as_any_ref())) // Eval the next arg.
-                } else {
-                    self.apply_primop(new_k.borrow())
-                }
-            },
-            k: CtrlCont => {
-                let branch = try!(k.ast(self).and_then(|ctrl|
-                    ctrl.borrow().op(self)(self, v.borrow(), ctrl.args_iter())));
-                Ok(State::Eval(branch, try!(k.env(self)), k.parent()))
-            },
-            k: DoCont => {
-                let i = try!(k.index(self)); // v is the value of the i:th argument.
-                let j = i + 1;                    // The index of the next argument to evaluate.
-                let ast = try!(k.do_ast(self));
-                if let Some(stmt) = ast.borrow().stmts(j) {
-                    // Ignore v and move on to evaluate the next statement:
-                    let env = try!(k.env(self));
-                    let new_k = DoCont::new(self, k.parent(), ast, j, env.clone());
-                    Ok(State::Eval(stmt, env, new_k.as_any_ref()))
-                } else {
-                    Ok(State::Cont(v, k.parent())) // This was the last statement so continue with v.
-                }
-            },
-            k: Halt => {
-                Ok(State::Halt(v))
-            },
-            _ => { unimplemented!() }
-        })
     }
 
     pub fn alloc_rec<'a, T, I>(&mut self, typ: ValueHandle<Type>, fields: I)
@@ -395,19 +228,188 @@ impl Interpreter {
     }
 }
 
-impl Primop<ExprCont> for Interpreter {
-    fn apply_primop<'a>(&mut self, k: ValueHandle<'a, ExprCont>) -> Result<State, CtrError> {
-        let res = try!(k.ast(self).and_then(|expr|
-            expr.borrow().op(self)(self, k.args_iter())));
+pub fn interpret(ast: ValueHandle<Any>, env: Root<Env>) -> CtrResult<Any> {
+    let mut state = State::Eval(ast.root(), env, Halt::new().as_any_ref());
+    loop {
+        // Need to use a trampoline/state machine here for manual TCO.
+        state = match state {
+            State::Eval(ctrl, env, k) => try!(eval(ctrl, env, k)),
+            State::Cont(ctrl, k) => try!(cont(ctrl, k)),
+            State::Halt(v) => return Ok(v),
+        };
+    }
+}
+
+fn eval(ctrl: Root<Any>, env: Root<Env>, k: Root<Any>) -> Result<State, CtrError> {
+    let ctrl = ctrl.borrow();
+    typecase!(ctrl; {
+        ctrl: FnNode => {
+            let name = try!(ctrl.name());
+            let formal = try!(ctrl.formal());
+            let body = Closure::new(env.clone(), // TODO: only do this for mono-fns
+                                         ctrl.case(0).unwrap().get(1).unwrap()).as_any_ref();
+            let cases = ctrl.case_iter()
+                            .map(|case| {
+                                assert_eq!(case.len(), 2);
+                                let cond = case.get(0).unwrap();
+                                let body = case.get(1).unwrap();
+                                Array::new(
+                                    vec![cond, body, env.clone().as_any_ref()].into_iter())
+                            })
+                            .collect::<Vec<_>>();
+            Ok(State::Cont(FnClosure::new(name, formal, body,
+                cases.into_iter()).as_any_ref(), k))
+        },
+        ctrl: App => {
+            let l = FnCont::new(k, ctrl.root(), env.clone());
+            Ok(State::Eval(ctrl.callee(), env, l.as_any_ref()))
+        },
+        ctrl: Def => {
+            let name = try!(ctrl.name());
+            let l = DefCont::new(k, name, env.clone());
+            Ok(State::Eval(ctrl.value(), env, l.as_any_ref()))
+        },
+        ctrl: Expr => {
+            if let Some(arg) = ctrl.args(0) {
+                let l = ExprCont::new(k, ctrl.root(), 0, env.clone(), ctrl.args_iter());
+                Ok(State::Eval(arg.clone(), env, l.as_any_ref()))
+            } else {
+                let l = ExprCont::new(k, ctrl.root(), 0, env, iter::empty());
+                ExprCont::apply_primop(l.borrow())
+            }
+        },
+        ctrl: Stmt => {
+            if let Some(arg) = ctrl.args(0) {
+                let l = StmtCont::new(k, ctrl.root(), 0, env.clone(), ctrl.args_iter());
+                Ok(State::Eval(arg.clone(), env, l.as_any_ref()))
+            } else {
+                let l = StmtCont::new(k, ctrl.root(), 0, env, iter::empty());
+                StmtCont::apply_primop(l.borrow())
+            }
+        },
+        ctrl: Ctrl => {
+            let l = CtrlCont::new(k, ctrl.root(), env.clone());
+            Ok(State::Eval(ctrl.determinant(), env, l.as_any_ref()))
+        },
+        ctrl: Closure => {
+            let mut senv = try!(ctrl.env());
+            senv = try!(env.borrow().concat(senv.borrow()));
+            Ok(State::Eval(ctrl.expr(), senv, k))
+        },
+        ctrl: Do => {
+            if let Some(stmt) = ctrl.stmts(0) {
+                let l = DoCont::new(k, ctrl.root(), 0, env.clone());
+                Ok(State::Eval(stmt, env, l.as_any_ref()))
+            } else {
+                // TODO: continue with a tuple:
+                Ok(State::Cont(ListEmpty::new().as_any_ref(), k))
+            }
+        },
+        ctrl: Var => {
+            env.lookup(try!(ctrl.name()).borrow()).map(|v| State::Cont(v, k))
+        },
+        ctrl: Const => {
+            Ok(State::Cont(ctrl.val(), k))
+        },
+        _ => { unimplemented!() }
+    })
+}
+
+fn cont(v: Root<Any>, k: Root<Any>) -> Result<State, CtrError> {
+    let k = k.borrow();
+    typecase!(k; {
+        k: FnCont => {
+            let env = try!(k.env());
+            let l = ArgCont::new(k.parent(), v, env.clone());
+            let arg = try!(k.ast()).arg();
+            Ok(State::Eval(arg, env, l.as_any_ref()))
+        },
+        k: ArgCont => {
+            let callee = k.callee();
+            typecase!(callee.borrow(); {
+                f: FnClosure => {
+                    let name = try!(f.name());
+                    let formal = try!(f.formal());
+                    let env = Env::new(None);
+                    try!(env.borrow().def(name.borrow(), f.as_any_ref()));
+                    try!(env.borrow().def(formal.borrow(), v.borrow()));
+                    Ok(State::Eval(f.body(), env, k.parent()))
+                },
+                _ => { unimplemented!() }
+            })
+        },
+        k: DefCont => {
+            try!(k.env().and_then(|env| {
+                let name = try!(k.name());
+                env.borrow().def(name.borrow(), v.borrow())
+            }));
+            // TODO: continue with a tuple:
+            Ok(State::Cont(ListEmpty::new().as_any_ref(), k.parent()))
+        },
+        k: ExprCont => {
+            let i = try!(k.index()); // v is the value of the i:th argument.
+            let j = i + 1;                 // The index of the next argument to evaluate
+            let ast = try!(k.ast());
+            let env = try!(k.env());
+            let new_k = ExprCont::new(k.parent(), ast.clone(), j, env.clone(), k.args_iter());
+            try!(new_k.borrow().set_arg(i, v)); // The new continuation knows that args[i] => v
+            if let Some(arg) = ast.borrow().args(j) {
+                Ok(State::Eval(arg, env, new_k.as_any_ref())) // Eval the next arg.
+            } else {
+                ExprCont::apply_primop(new_k.borrow())
+            }
+        },
+        k: StmtCont => {
+            let i = try!(k.index()); // v is the value of the i:th argument.
+            let j = i + 1;                    // The index of the next argument to evaluate
+            let ast = try!(k.ast());
+            let env = try!(k.env());
+            let new_k = StmtCont::new(k.parent(), ast.clone(), j, env.clone(), k.args_iter());
+            try!(new_k.borrow().set_arg(i, v)); // The new continuation knows that args[i] => v.
+            if let Some(arg) = ast.borrow().args(j) {
+                Ok(State::Eval(arg, env, new_k.as_any_ref())) // Eval the next arg.
+            } else {
+                StmtCont::apply_primop(new_k.borrow())
+            }
+        },
+        k: CtrlCont => {
+            let branch = try!(k.ast().and_then(|ctrl|
+                ctrl.borrow().op()(v.borrow(), ctrl.args_iter())));
+            Ok(State::Eval(branch, try!(k.env()), k.parent()))
+        },
+        k: DoCont => {
+            let i = try!(k.index()); // v is the value of the i:th argument.
+            let j = i + 1;                    // The index of the next argument to evaluate.
+            let ast = try!(k.do_ast());
+            if let Some(stmt) = ast.borrow().stmts(j) {
+                // Ignore v and move on to evaluate the next statement:
+                let env = try!(k.env());
+                let new_k = DoCont::new(k.parent(), ast, j, env.clone());
+                Ok(State::Eval(stmt, env, new_k.as_any_ref()))
+            } else {
+                Ok(State::Cont(v, k.parent())) // This was the last statement so continue with v.
+            }
+        },
+        Halt => {
+            Ok(State::Halt(v))
+        },
+        _ => { unimplemented!() }
+    })
+}
+
+impl Primop for ExprCont {
+    fn apply_primop<'a>(k: ValueHandle<'a, ExprCont>) -> Result<State, CtrError> {
+        let res = try!(k.ast().and_then(|expr|
+            expr.borrow().op()(k.args_iter())));
         Ok(State::Cont(res, k.parent()))
     }
 }
 
-impl Primop<StmtCont> for Interpreter {
-    fn apply_primop<'a>(&mut self, k: ValueHandle<'a, StmtCont>) -> Result<State, CtrError> {
-        try!(k.ast(self).and_then(|expr| expr.borrow().op(self)(self, k.args_iter())));
+impl Primop for StmtCont {
+    fn apply_primop<'a>(k: ValueHandle<'a, StmtCont>) -> Result<State, CtrError> {
+        try!(k.ast().and_then(|expr| expr.borrow().op()(k.args_iter())));
         // TODO: continue with a tuple:
-        Ok(State::Cont(ListEmpty::new(self).as_any_ref(), k.parent()))
+        Ok(State::Cont(ListEmpty::new().as_any_ref(), k.parent()))
     }
 }
 
@@ -420,9 +422,9 @@ mod tests {
     #[test]
     fn collect() {
         let mut itp = Interpreter::new();
-        let a = Int::new(&mut itp, 3);
-        let b = Int::new(&mut itp, 5);
-        let tup = ListPair::new(&mut itp, a.clone().as_any_ref(), b.as_any_ref());
+        let a = Int::new(3);
+        let b = Int::new(5);
+        let tup = ListPair::new(a.clone().as_any_ref(), b.as_any_ref());
         itp.mark_roots();
         unsafe {
             itp.gc.collect();
